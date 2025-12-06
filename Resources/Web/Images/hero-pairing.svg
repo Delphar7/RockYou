@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 980">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#14141a"/>
+      <stop offset="1" stop-color="#0e0e13"/>
+    </linearGradient>
+    <linearGradient id="purpleGlow" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#662D91" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#7a38aa" stop-opacity="0.85"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <rect width="720" height="980" rx="24" fill="url(#bg)"/>
+
+  <!-- Top: RockYou -->
+  <g filter="url(#shadow)">
+    <rect x="170" y="70" width="380" height="250" rx="26" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.14)"/>
+    <rect x="200" y="96" width="320" height="64" rx="18" fill="url(#purpleGlow)"/>
+    <text x="360" y="136" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="22" font-weight="800">RockYou</text>
+    <text x="360" y="184" text-anchor="middle" fill="rgba(255,255,255,0.72)" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="13">Pair two devices as one setup</text>
+
+    <g>
+      <rect x="200" y="204" width="320" height="46" rx="16" fill="#171722" stroke="rgba(255,255,255,0.14)"/>
+      <text x="360" y="233" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="12">Navigation / playback → streamer</text>
+    </g>
+    <g>
+      <rect x="200" y="262" width="320" height="46" rx="16" fill="#171722" stroke="rgba(255,255,255,0.14)"/>
+      <text x="360" y="291" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="12">Power / volume → TV</text>
+    </g>
+  </g>
+
+  <!-- Flow arrows down -->
+  <g fill="none" stroke="rgba(255,255,255,0.30)" stroke-width="4" stroke-linecap="round">
+    <path d="M 360 330 C 360 370, 360 390, 360 420"/>
+    <path d="M 360 650 C 360 710, 360 730, 360 760"/>
+  </g>
+  <g fill="rgba(255,255,255,0.30)">
+    <path d="M 352 422 l 16 0 l -8 14 z"/>
+    <path d="M 352 762 l 16 0 l -8 14 z"/>
+  </g>
+
+  <!-- Middle: Roku streamer -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="430" width="500" height="200" rx="22" fill="#171722" stroke="rgba(255,255,255,0.14)"/>
+    <text x="140" y="468" fill="#ffffff" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="17" font-weight="800">Roku streamer</text>
+    <text x="140" y="494" fill="rgba(255,255,255,0.68)" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="13">Navigation • Playback • Apps</text>
+
+    <rect x="140" y="524" width="440" height="10" rx="5" fill="rgba(255,255,255,0.10)"/>
+    <rect x="140" y="552" width="320" height="10" rx="5" fill="rgba(255,255,255,0.10)"/>
+    <rect x="140" y="580" width="380" height="10" rx="5" fill="rgba(255,255,255,0.10)"/>
+
+    <rect x="430" y="460" width="150" height="34" rx="17" fill="rgba(102,45,145,0.14)" stroke="rgba(102,45,145,0.36)"/>
+    <text x="505" y="482" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="12">Keys go here</text>
+  </g>
+
+  <!-- Bottom: TV -->
+  <g filter="url(#shadow)">
+    <rect x="110" y="780" width="500" height="160" rx="22" fill="#171722" stroke="rgba(255,255,255,0.14)"/>
+    <text x="140" y="818" fill="#ffffff" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="17" font-weight="800">TV</text>
+    <text x="140" y="844" fill="rgba(255,255,255,0.68)" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="13">Power • Volume</text>
+
+    <g opacity="0.95">
+      <circle cx="470" cy="850" r="18" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.12)"/>
+      <text x="470" y="855" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="13">⏻</text>
+      <rect x="505" y="832" width="90" height="36" rx="18" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.12)"/>
+      <text x="550" y="855" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="12">VOL</text>
+    </g>
+
+    <rect x="260" y="882" width="320" height="40" rx="20" fill="rgba(102,45,145,0.14)" stroke="rgba(102,45,145,0.36)"/>
+    <text x="420" y="907" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="12">Hardware keys route here</text>
+  </g>
+</svg>

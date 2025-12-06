@@ -1,0 +1,311 @@
+//
+//  RemoteControlView.swift
+//  RockYou
+//
+//  Main remote control UI with D-pad, transport, and volume controls.
+//  Landscape (iPad/Mac): Remote on left, info panel on right, app strip full width.
+//
+
+import SwiftUI
+
+struct RemoteControlView: View {
+  @State private var settings = AppSettings.shared
+  let onAction: (RemoteAction) -> Void
+  let windowIsActive: Bool
+
+  @State private var showingConfigure = false
+  @State private var showingTVSelector = false
+  @FocusState private var isFocused: Bool
+  @State private var containerSize: CGSize = .zero
+
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+  @Environment(\.scenePhase) private var scenePhase
+
+  private var pairingStore: PairingStore { PairingStore.shared }
+  private var discovery: RokuDiscoveryService { RokuDiscoveryService.shared }
+
+  private var selection: RemoteControlSelection {
+    RemoteControlSelection(pairingStore: pairingStore, discovery: discovery)
+  }
+
+  // MARK: - Unified Layout Detection
+
+  /// Unified layout mode detection
+  private var layoutMode: LayoutMode {
+    RemoteControlPlatform.layoutMode(
+      containerSize: containerSize, horizontalSizeClass: horizontalSizeClass)
+  }
+
+  /// Scale factor for controls (Mac is 15% smaller)
+  private var scaleFactor: CGFloat {
+    RemoteControlPlatform.scaleFactor
+  }
+
+  var body: some View {
+    GeometryReader { geometry in
+      ZStack(alignment: .top) {
+        // Main layout based on unified layout mode
+        mainLayout(in: geometry)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        // Sweep overlays (tooltip + sweep animation)
+        TooltipOverlayView()
+        SweepOverlayView()
+      }
+      .overlayPreferenceValue(TVSelectorBarBoundsKey.self) { barBounds in
+        Group {
+          if showingTVSelector, let barBounds {
+            TVSelectorDropdown(
+              isShowing: $showingTVSelector,
+              isPresentingConfigure: $showingConfigure,
+              barBounds: barBounds
+            )
+          }
+        }
+      }
+      .onAppear {
+        containerSize = geometry.size
+        Task { await updateActiveStatePollingEnablement() }
+      }
+      .onChange(of: scenePhase) { _, newValue in
+        Task { await updateActiveStatePollingEnablement(phase: newValue) }
+      }
+      .onChange(of: selection.selectedDeviceId) { _, newDeviceId in
+        Task { await updateActiveStatePollingEnablement(selectedDeviceId: newDeviceId) }
+      }
+      .onChange(of: geometry.size) { _, newSize in
+        containerSize = newSize
+      }
+    }
+    // Foreground gating for AppIconVisual glow animations
+    .environment(\.glowAnimationForegroundEnabled, glowAnimationForegroundEnabled)
+    .contentShape(Rectangle())
+    .focusable()
+    .focused($isFocused)
+    .focusEffectDisabled()
+    .platformRemoteSurface(isActive: windowIsActive)
+    .remoteControlKeyPresses(onAction: onAction)
+    .platformSettingsPresentation(
+      isPresented: $showingConfigure,
+      sheet: { SettingsView(isPresented: $showingConfigure) },
+      panel: { SettingsView(isPresented: $showingConfigure, doneButtonPlacement: .leading) },
+      inspector: {
+        SettingsView(isPresented: $showingConfigure)
+          .inspectorColumnWidth(min: 280, ideal: 320, max: 380)
+      }
+    )
+    .task(id: selection.selectedDeviceIP) {
+      // Connect to selected device to get state updates
+      await connectToSelectedDevice()
+    }
+  }
+
+  private var glowAnimationForegroundEnabled: Bool {
+    RemoteControlPlatform.glowAnimationForegroundEnabled(
+      scenePhase: scenePhase, windowIsActive: windowIsActive)
+  }
+
+  // MARK: - Layout Views
+
+  private func tvSelectorTapped() {
+    withAnimation(.easeInOut(duration: 0.2)) {
+      showingTVSelector.toggle()
+    }
+  }
+
+  @ViewBuilder
+  private func mainLayout(in geometry: GeometryProxy) -> some View {
+    VStack(spacing: 0) {
+      switch layoutMode {
+      case .portraitExpanded:
+        RemotePortraitExpandedLayoutView(
+          fullHeight: geometry.size.height,
+          selectedDeviceId: selection.selectedDeviceId,
+          selectedTVName: selection.selectedTVName,
+          selectedStreamerName: selection.selectedStreamerName,
+          showingConfigure: $showingConfigure,
+          showingTVSelector: $showingTVSelector,
+          onAction: onAction,
+          onLaunchApp: { app in launchApp(app) },
+          hardwareControlsAvailable: selection.hardwareControlsAvailable
+        )
+      case .landscapeCompact:
+        RemoteLandscapeCompactLayoutView(
+          selectedDeviceId: selection.selectedDeviceId,
+          selectedTVName: selection.selectedTVName,
+          selectedStreamerName: selection.selectedStreamerName,
+          showingConfigure: $showingConfigure,
+          showingTVSelector: $showingTVSelector,
+          onAction: onAction,
+          onLaunchApp: { app in launchApp(app) },
+          hardwareControlsAvailable: selection.hardwareControlsAvailable
+        )
+      case .landscapeSplit:
+        splitLayoutView(deviceId: selection.selectedDeviceId)
+      case .portraitCompact:
+        compactLayoutView()
+      }
+
+      bottomAppStrip()
+    }
+  }
+
+  @ViewBuilder
+  private func bottomAppStrip() -> some View {
+    if let deviceId = selection.selectedDeviceId {
+      let config = AppStripConfig.config(for: layoutMode)
+      if config.isVisible && config.position == .bottom {
+        if layoutMode == .portraitCompact && config.direction == .horizontal {
+          NowPlayingProgressHeaderView(deviceId: deviceId)
+        }
+        AppStripView(
+          deviceId: deviceId,
+          direction: config.direction,
+          lanes: config.lanes,
+          sizing: config.sizing,
+          showLabels: config.showLabels,
+          appLaunchDelay: settings.phoneAppLaunchDelay,
+          onLaunch: { app in launchApp(app) }
+        )
+        .padding(config.padding)
+      }
+    }
+  }
+
+  // MARK: - Shared Layout Components
+
+  /// Split layout: Remote controls on left, Info panel on right
+  /// Used by: iPad landscape, Mac fat window
+  @ViewBuilder
+  private func splitLayoutView(deviceId: String?) -> some View {
+    HStack(spacing: 0) {
+      remoteControlsSection
+        .frame(maxWidth: .infinity)
+
+      Divider()
+        .background(Color.white.opacity(0.1))
+
+      NowPlayingPanel(deviceId: deviceId)
+        .frame(maxWidth: .infinity)
+    }
+  }
+
+  /// Compact layout: Just remote controls
+  /// Used by: iPhone portrait, Mac thin window
+  @ViewBuilder
+  private func compactLayoutView() -> some View {
+    remoteControlsSection
+  }
+
+  // MARK: - Remote Controls Section
+
+  private var remoteControlsSection: some View {
+    RemoteControlsSectionView(
+      scaleFactor: scaleFactor,
+      selectedTVName: selection.selectedTVName,
+      selectedStreamerName: selection.selectedStreamerName,
+      selectedDeviceId: selection.selectedDeviceId,
+      hardwareControlsAvailable: selection.hardwareControlsAvailable,
+      volumeControlsOffsetY: layoutMode == .portraitCompact ? -1 : 0,
+      showingConfigure: $showingConfigure,
+      showingTVSelector: $showingTVSelector,
+      phonePowerDelay: settings.phonePowerDelay,
+      phoneHomeDelay: settings.phoneHomeDelay,
+      onAction: onAction
+    )
+  }
+
+  // MARK: - Device Connection
+
+  private func connectToSelectedDevice() async {
+    guard let ip = selection.selectedDeviceIP else {
+      await RokuECPClient.shared.setMediaProgressEnabledDeviceIds([])
+      await RokuECPClient.shared.setAppListRefreshEnabledDeviceIds([])
+      await RokuECPClient.shared.setActiveStatePollingEnabledDeviceIds([])
+      Log.warn("Remote", "No selected device IP")
+      return
+    }
+
+    // Find the device and try to connect
+    let device = discovery.discoveredDevices.first { $0.ipAddress == ip }
+    if let device = device {
+      await RokuECPClient.shared.setMediaProgressEnabledDeviceIds([device.id])
+      await RokuECPClient.shared.setAppListRefreshEnabledDeviceIds([device.id])
+      let shouldEnable = RemoteControlPlatform.shouldEnableActiveStatePolling(
+        scenePhase: scenePhase,
+        selectedDeviceId: device.id
+      )
+      await RokuECPClient.shared.setActiveStatePollingEnabledDeviceIds(
+        shouldEnable ? [device.id] : [])
+      let connected = await RokuECPClient.shared.ensureConnected(to: device, primeState: true)
+      if connected {
+        Log.info("Remote", "✅ Connected to \(device.name) for state updates")
+
+        // Force an immediate state snapshot so UI doesn't wait for the poll loop tick.
+        await RokuECPClient.shared.snapshotActiveStateNow(for: device)
+      }
+
+      // Fetch apps for the device (if not cached)
+      let hasApps = AppCacheManager.shared.hasApps(for: device.id)
+      Log.debug("Remote", "📱 Device \(device.name) hasApps: \(hasApps)")
+      if !hasApps {
+        Log.debug("Remote", "📲 Fetching apps for \(device.name)...")
+        await AppCacheManager.shared.fetchApps(for: device.id, deviceName: device.name)
+      }
+    } else {
+      await RokuECPClient.shared.setMediaProgressEnabledDeviceIds([])
+      await RokuECPClient.shared.setAppListRefreshEnabledDeviceIds([])
+      await RokuECPClient.shared.setActiveStatePollingEnabledDeviceIds([])
+      Log.warn("Remote", "Device not found for IP: \(ip)")
+    }
+  }
+
+  // MARK: - Active State Polling Enablement
+
+  private func updateActiveStatePollingEnablement(
+    phase: ScenePhase? = nil,
+    selectedDeviceId: String? = nil
+  ) async {
+    let effectivePhase = phase ?? scenePhase
+    let effectiveDeviceId = selectedDeviceId ?? selection.selectedDeviceId
+
+    let shouldEnable = RemoteControlPlatform.shouldEnableActiveStatePolling(
+      scenePhase: effectivePhase,
+      selectedDeviceId: effectiveDeviceId
+    )
+    await RokuECPClient.shared.setActiveStatePollingEnabledDeviceIds(
+      shouldEnable ? Set([effectiveDeviceId].compactMap { $0 }) : []
+    )
+  }
+
+  // MARK: - App Launch
+
+  private func launchApp(_ app: RokuApp) {
+    guard let tvId = PairingStore.shared.currentTVId else { return }
+    guard let targetDevice = selection.selectedDevice else { return }
+
+    // Required devices for wake-gated app launches:
+    // - Always include the TV.
+    // - Include the paired streamer (if present) so the "pair" wakes as a unit.
+    var requiredDevices: [DeviceInfo] = []
+    if let tv = discovery.tvs.first(where: { $0.id == tvId }) {
+      requiredDevices.append(tv)
+    }
+    if let streamerId = PairingStore.shared.streamerIdForTV(tvId),
+       let streamer = discovery.streamingDevices.first(where: { $0.id == streamerId }) {
+      requiredDevices.append(streamer)
+    }
+
+    Task {
+      let success = await RokuECPClient.shared.launchAppInSilo(
+        appId: app.id,
+        siloId: tvId,
+        requiredDevices: requiredDevices,
+        targetDevice: targetDevice
+      )
+      if !success {
+        Log.warn("Remote", "Failed to launch \(app.name)")
+      }
+    }
+  }
+}

@@ -1,0 +1,1328 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		D89F41602EB7FC3D00D66A14 /* RockYou Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D81AB0E92EC2C06400DA3A6E /* RockYou Watch App.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D8DAD100000000000000001 /* DPad-Ring.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000001 /* DPad-Ring.png */; };
+		D8DAD100000000000000003 /* Stick.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000003 /* Stick.png */; };
+		D8DAD100000000000000004 /* StickShadow.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000004 /* StickShadow.png */; };
+		D8DAD100000000000000005 /* PlasticTexture.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000005 /* PlasticTexture.png */; };
+		D8DAD200000000000000001 /* DPad-Ring.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000001 /* DPad-Ring.png */; };
+		D8DAD200000000000000003 /* Stick.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000003 /* Stick.png */; };
+		D8DAD200000000000000004 /* StickShadow.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000004 /* StickShadow.png */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D81AB0F62EC2C06600DA3A6E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D89F41292EB7FC3B00D66A14 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D81AB0E82EC2C06400DA3A6E;
+			remoteInfo = "RockYou Watch App";
+		};
+		D81AB1002EC2C06600DA3A6E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D89F41292EB7FC3B00D66A14 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D81AB0E82EC2C06400DA3A6E;
+			remoteInfo = "RockYou Watch App";
+		};
+		D89F41432EB7FC3D00D66A14 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D89F41292EB7FC3B00D66A14 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D89F41302EB7FC3B00D66A14;
+			remoteInfo = RockYou;
+		};
+		D89F414D2EB7FC3D00D66A14 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D89F41292EB7FC3B00D66A14 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D89F41302EB7FC3B00D66A14;
+			remoteInfo = RockYou;
+		};
+		D89F41622EB7FC3D00D66A14 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D89F41292EB7FC3B00D66A14 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D81AB0E82EC2C06400DA3A6E;
+			remoteInfo = "RockYou Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D89F41612EB7FC3D00D66A14 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				D89F41602EB7FC3D00D66A14 /* RockYou Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		D81AB0E92EC2C06400DA3A6E /* RockYou Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "RockYou Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D81AB0F52EC2C06600DA3A6E /* RockYou Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "RockYou Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D81AB0FF2EC2C06600DA3A6E /* RockYou Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "RockYou Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D89F41312EB7FC3B00D66A14 /* RockYou.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RockYou.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D89F41422EB7FC3D00D66A14 /* RockYouTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RockYouTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D89F414C2EB7FC3D00D66A14 /* RockYouUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RockYouUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D8DAD000000000000000001 /* DPad-Ring.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "DPad-Ring.png"; path = "Resources/DPad-Ring.png"; sourceTree = "<group>"; };
+		D8DAD000000000000000003 /* Stick.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Stick.png; path = Resources/Stick.png; sourceTree = "<group>"; };
+		D8DAD000000000000000004 /* StickShadow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = StickShadow.png; path = Resources/StickShadow.png; sourceTree = "<group>"; };
+		D8DAD000000000000000005 /* PlasticTexture.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = PlasticTexture.png; path = Resources/PlasticTexture.png; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D89F41542EB7FC3D00D66A14 /* Exceptions for "RockYou" folder in "RockYou" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D89F41302EB7FC3B00D66A14 /* RockYou */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		D81AB0EA2EC2C06400DA3A6E /* RockYou Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "RockYou Watch App";
+			sourceTree = "<group>";
+		};
+		D81AB0F82EC2C06600DA3A6E /* RockYou Watch AppTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "RockYou Watch AppTests";
+			sourceTree = "<group>";
+		};
+		D81AB1022EC2C06600DA3A6E /* RockYou Watch AppUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "RockYou Watch AppUITests";
+			sourceTree = "<group>";
+		};
+		D89F41332EB7FC3B00D66A14 /* RockYou */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D89F41542EB7FC3D00D66A14 /* Exceptions for "RockYou" folder in "RockYou" target */,
+			);
+			path = RockYou;
+			sourceTree = "<group>";
+		};
+		D89F41452EB7FC3D00D66A14 /* RockYouTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RockYouTests;
+			sourceTree = "<group>";
+		};
+		D89F414F2EB7FC3D00D66A14 /* RockYouUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RockYouUITests;
+			sourceTree = "<group>";
+		};
+		D8AA000C2EC4A00100000001 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D81AB0E62EC2C06400DA3A6E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D81AB0F22EC2C06600DA3A6E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D81AB0FC2EC2C06600DA3A6E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D89F412E2EB7FC3B00D66A14 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D89F413F2EB7FC3D00D66A14 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D89F41492EB7FC3D00D66A14 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D813B6ED2EF9038300262449 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				D8DAD000000000000000001 /* DPad-Ring.png */,
+				D8DAD000000000000000003 /* Stick.png */,
+				D8DAD000000000000000004 /* StickShadow.png */,
+				D8DAD000000000000000005 /* PlasticTexture.png */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		D89F41282EB7FC3B00D66A14 = {
+			isa = PBXGroup;
+			children = (
+				D8AA000C2EC4A00100000001 /* Shared */,
+				D89F41332EB7FC3B00D66A14 /* RockYou */,
+				D89F41452EB7FC3D00D66A14 /* RockYouTests */,
+				D89F414F2EB7FC3D00D66A14 /* RockYouUITests */,
+				D81AB0EA2EC2C06400DA3A6E /* RockYou Watch App */,
+				D81AB0F82EC2C06600DA3A6E /* RockYou Watch AppTests */,
+				D81AB1022EC2C06600DA3A6E /* RockYou Watch AppUITests */,
+				D89F41322EB7FC3B00D66A14 /* Products */,
+				D813B6ED2EF9038300262449 /* Recovered References */,
+			);
+			sourceTree = "<group>";
+		};
+		D89F41322EB7FC3B00D66A14 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D89F41312EB7FC3B00D66A14 /* RockYou.app */,
+				D89F41422EB7FC3D00D66A14 /* RockYouTests.xctest */,
+				D89F414C2EB7FC3D00D66A14 /* RockYouUITests.xctest */,
+				D81AB0E92EC2C06400DA3A6E /* RockYou Watch App.app */,
+				D81AB0F52EC2C06600DA3A6E /* RockYou Watch AppTests.xctest */,
+				D81AB0FF2EC2C06600DA3A6E /* RockYou Watch AppUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D81AB0E82EC2C06400DA3A6E /* RockYou Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D81AB10D2EC2C06600DA3A6E /* Build configuration list for PBXNativeTarget "RockYou Watch App" */;
+			buildPhases = (
+				D81AB0E52EC2C06400DA3A6E /* Sources */,
+				D81AB0E62EC2C06400DA3A6E /* Frameworks */,
+				D81AB0E72EC2C06400DA3A6E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D81AB0EA2EC2C06400DA3A6E /* RockYou Watch App */,
+				D8AA000C2EC4A00100000001 /* Shared */,
+			);
+			name = "RockYou Watch App";
+			packageProductDependencies = (
+			);
+			productName = "RockYou Watch App";
+			productReference = D81AB0E92EC2C06400DA3A6E /* RockYou Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D81AB0F42EC2C06600DA3A6E /* RockYou Watch AppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D81AB10E2EC2C06600DA3A6E /* Build configuration list for PBXNativeTarget "RockYou Watch AppTests" */;
+			buildPhases = (
+				D81AB0F12EC2C06600DA3A6E /* Sources */,
+				D81AB0F22EC2C06600DA3A6E /* Frameworks */,
+				D81AB0F32EC2C06600DA3A6E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D81AB0F72EC2C06600DA3A6E /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D81AB0F82EC2C06600DA3A6E /* RockYou Watch AppTests */,
+			);
+			name = "RockYou Watch AppTests";
+			packageProductDependencies = (
+			);
+			productName = "RockYou Watch AppTests";
+			productReference = D81AB0F52EC2C06600DA3A6E /* RockYou Watch AppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		D81AB0FE2EC2C06600DA3A6E /* RockYou Watch AppUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D81AB10F2EC2C06600DA3A6E /* Build configuration list for PBXNativeTarget "RockYou Watch AppUITests" */;
+			buildPhases = (
+				D81AB0FB2EC2C06600DA3A6E /* Sources */,
+				D81AB0FC2EC2C06600DA3A6E /* Frameworks */,
+				D81AB0FD2EC2C06600DA3A6E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D81AB1012EC2C06600DA3A6E /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D81AB1022EC2C06600DA3A6E /* RockYou Watch AppUITests */,
+			);
+			name = "RockYou Watch AppUITests";
+			packageProductDependencies = (
+			);
+			productName = "RockYou Watch AppUITests";
+			productReference = D81AB0FF2EC2C06600DA3A6E /* RockYou Watch AppUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		D89F41302EB7FC3B00D66A14 /* RockYou */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D89F41552EB7FC3D00D66A14 /* Build configuration list for PBXNativeTarget "RockYou" */;
+			buildPhases = (
+				D89F412D2EB7FC3B00D66A14 /* Sources */,
+				D89F412E2EB7FC3B00D66A14 /* Frameworks */,
+				D89F412F2EB7FC3B00D66A14 /* Resources */,
+				D89F41612EB7FC3D00D66A14 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D89F41632EB7FC3D00D66A14 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D89F41332EB7FC3B00D66A14 /* RockYou */,
+				D8AA000C2EC4A00100000001 /* Shared */,
+			);
+			name = RockYou;
+			packageProductDependencies = (
+			);
+			productName = RockYou;
+			productReference = D89F41312EB7FC3B00D66A14 /* RockYou.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D89F41412EB7FC3D00D66A14 /* RockYouTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D89F415A2EB7FC3D00D66A14 /* Build configuration list for PBXNativeTarget "RockYouTests" */;
+			buildPhases = (
+				D89F413E2EB7FC3D00D66A14 /* Sources */,
+				D89F413F2EB7FC3D00D66A14 /* Frameworks */,
+				D89F41402EB7FC3D00D66A14 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D89F41442EB7FC3D00D66A14 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D89F41452EB7FC3D00D66A14 /* RockYouTests */,
+			);
+			name = RockYouTests;
+			packageProductDependencies = (
+			);
+			productName = RockYouTests;
+			productReference = D89F41422EB7FC3D00D66A14 /* RockYouTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		D89F414B2EB7FC3D00D66A14 /* RockYouUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D89F415D2EB7FC3D00D66A14 /* Build configuration list for PBXNativeTarget "RockYouUITests" */;
+			buildPhases = (
+				D89F41482EB7FC3D00D66A14 /* Sources */,
+				D89F41492EB7FC3D00D66A14 /* Frameworks */,
+				D89F414A2EB7FC3D00D66A14 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D89F414E2EB7FC3D00D66A14 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D89F414F2EB7FC3D00D66A14 /* RockYouUITests */,
+			);
+			name = RockYouUITests;
+			packageProductDependencies = (
+			);
+			productName = RockYouUITests;
+			productReference = D89F414C2EB7FC3D00D66A14 /* RockYouUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D89F41292EB7FC3B00D66A14 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2610;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					D81AB0E82EC2C06400DA3A6E = {
+						CreatedOnToolsVersion = 26.1;
+					};
+					D81AB0F42EC2C06600DA3A6E = {
+						CreatedOnToolsVersion = 26.1;
+						TestTargetID = D81AB0E82EC2C06400DA3A6E;
+					};
+					D81AB0FE2EC2C06600DA3A6E = {
+						CreatedOnToolsVersion = 26.1;
+						TestTargetID = D81AB0E82EC2C06400DA3A6E;
+					};
+					D89F41302EB7FC3B00D66A14 = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
+					D89F41412EB7FC3D00D66A14 = {
+						CreatedOnToolsVersion = 26.0.1;
+						TestTargetID = D89F41302EB7FC3B00D66A14;
+					};
+					D89F414B2EB7FC3D00D66A14 = {
+						CreatedOnToolsVersion = 26.0.1;
+						TestTargetID = D89F41302EB7FC3B00D66A14;
+					};
+				};
+			};
+			buildConfigurationList = D89F412C2EB7FC3B00D66A14 /* Build configuration list for PBXProject "RockYou" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = D89F41282EB7FC3B00D66A14;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D89F41322EB7FC3B00D66A14 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D89F41302EB7FC3B00D66A14 /* RockYou */,
+				D89F41412EB7FC3D00D66A14 /* RockYouTests */,
+				D89F414B2EB7FC3D00D66A14 /* RockYouUITests */,
+				D81AB0E82EC2C06400DA3A6E /* RockYou Watch App */,
+				D81AB0F42EC2C06600DA3A6E /* RockYou Watch AppTests */,
+				D81AB0FE2EC2C06600DA3A6E /* RockYou Watch AppUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D81AB0E72EC2C06400DA3A6E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D8DAD200000000000000001 /* DPad-Ring.png in Resources */,
+				D8DAD200000000000000003 /* Stick.png in Resources */,
+				D8DAD200000000000000004 /* StickShadow.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D81AB0F32EC2C06600DA3A6E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D81AB0FD2EC2C06600DA3A6E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D89F412F2EB7FC3B00D66A14 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D8DAD100000000000000001 /* DPad-Ring.png in Resources */,
+				D8DAD100000000000000003 /* Stick.png in Resources */,
+				D8DAD100000000000000004 /* StickShadow.png in Resources */,
+				D8DAD100000000000000005 /* PlasticTexture.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D89F41402EB7FC3D00D66A14 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D89F414A2EB7FC3D00D66A14 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D81AB0E52EC2C06400DA3A6E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D81AB0F12EC2C06600DA3A6E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D81AB0FB2EC2C06600DA3A6E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D89F412D2EB7FC3B00D66A14 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D89F413E2EB7FC3D00D66A14 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D89F41482EB7FC3D00D66A14 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D81AB0F72EC2C06600DA3A6E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D81AB0E82EC2C06400DA3A6E /* RockYou Watch App */;
+			targetProxy = D81AB0F62EC2C06600DA3A6E /* PBXContainerItemProxy */;
+		};
+		D81AB1012EC2C06600DA3A6E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D81AB0E82EC2C06400DA3A6E /* RockYou Watch App */;
+			targetProxy = D81AB1002EC2C06600DA3A6E /* PBXContainerItemProxy */;
+		};
+		D89F41442EB7FC3D00D66A14 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D89F41302EB7FC3B00D66A14 /* RockYou */;
+			targetProxy = D89F41432EB7FC3D00D66A14 /* PBXContainerItemProxy */;
+		};
+		D89F414E2EB7FC3D00D66A14 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D89F41302EB7FC3B00D66A14 /* RockYou */;
+			targetProxy = D89F414D2EB7FC3D00D66A14 /* PBXContainerItemProxy */;
+		};
+		D89F41632EB7FC3D00D66A14 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D81AB0E82EC2C06400DA3A6E /* RockYou Watch App */;
+			targetProxy = D89F41622EB7FC3D00D66A14 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		D81AB1072EC2C06600DA3A6E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				ENABLE_PREVIEWS = YES;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=watchos*]" = (
+					"Shared/*+iOS.swift",
+					"Shared/Platform/*+iOS.swift",
+					"Shared/UI/*+iOS.swift",
+					"Shared/UI/Platform/*+iOS.swift",
+					"Shared/Services/*+iOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+iOS+macOS.swift",
+					"Shared/Platform/*+iOS+macOS.swift",
+					"Shared/UI/*+iOS+macOS.swift",
+					"Shared/UI/Platform/*+iOS+macOS.swift",
+					"Shared/Services/*+iOS+macOS.swift",
+					"Shared/UI/Platform/AppStripViewInit+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonLegacy+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonPreview+nonWatch.swift",
+					"Shared/UI/Platform/SafePowerButtonPlatform+nonWatch.swift",
+					Shared/UI/Platform/TVSelectorListPlatform.swift,
+					Shared/NetworkInfo.swift,
+					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+nonWatch.swift",
+					"Shared/UI/Styles+nonWatch.swift",
+				);
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=watchsimulator*]" = (
+					"Shared/*+iOS.swift",
+					"Shared/Platform/*+iOS.swift",
+					"Shared/UI/*+iOS.swift",
+					"Shared/UI/Platform/*+iOS.swift",
+					"Shared/Services/*+iOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+iOS+macOS.swift",
+					"Shared/Platform/*+iOS+macOS.swift",
+					"Shared/UI/*+iOS+macOS.swift",
+					"Shared/UI/Platform/*+iOS+macOS.swift",
+					"Shared/Services/*+iOS+macOS.swift",
+					"Shared/UI/Platform/AppStripViewInit+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonLegacy+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonPreview+nonWatch.swift",
+					"Shared/UI/Platform/SafePowerButtonPlatform+nonWatch.swift",
+					Shared/UI/Platform/TVSelectorListPlatform.swift,
+					Shared/NetworkInfo.swift,
+					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+nonWatch.swift",
+					"Shared/UI/Styles+nonWatch.swift",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = RockYou;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jtr.RockYou;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYou.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		D81AB1082EC2C06600DA3A6E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				ENABLE_PREVIEWS = YES;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=watchos*]" = (
+					"Shared/*+iOS.swift",
+					"Shared/Platform/*+iOS.swift",
+					"Shared/UI/*+iOS.swift",
+					"Shared/UI/Platform/*+iOS.swift",
+					"Shared/Services/*+iOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+iOS+macOS.swift",
+					"Shared/Platform/*+iOS+macOS.swift",
+					"Shared/UI/*+iOS+macOS.swift",
+					"Shared/UI/Platform/*+iOS+macOS.swift",
+					"Shared/Services/*+iOS+macOS.swift",
+					"Shared/UI/Platform/AppStripViewInit+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonLegacy+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonPreview+nonWatch.swift",
+					"Shared/UI/Platform/SafePowerButtonPlatform+nonWatch.swift",
+					Shared/UI/Platform/TVSelectorListPlatform.swift,
+					Shared/NetworkInfo.swift,
+					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+nonWatch.swift",
+					"Shared/UI/Styles+nonWatch.swift",
+				);
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=watchsimulator*]" = (
+					"Shared/*+iOS.swift",
+					"Shared/Platform/*+iOS.swift",
+					"Shared/UI/*+iOS.swift",
+					"Shared/UI/Platform/*+iOS.swift",
+					"Shared/Services/*+iOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+iOS+macOS.swift",
+					"Shared/Platform/*+iOS+macOS.swift",
+					"Shared/UI/*+iOS+macOS.swift",
+					"Shared/UI/Platform/*+iOS+macOS.swift",
+					"Shared/Services/*+iOS+macOS.swift",
+					"Shared/UI/Platform/AppStripViewInit+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonLegacy+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonPreview+nonWatch.swift",
+					"Shared/UI/Platform/SafePowerButtonPlatform+nonWatch.swift",
+					Shared/UI/Platform/TVSelectorListPlatform.swift,
+					Shared/NetworkInfo.swift,
+					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+nonWatch.swift",
+					"Shared/UI/Styles+nonWatch.swift",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = RockYou;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jtr.RockYou;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYou.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		D81AB1092EC2C06600DA3A6E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.jtr.RockYou-Watch-AppTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RockYou Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RockYou Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		D81AB10A2EC2C06600DA3A6E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.jtr.RockYou-Watch-AppTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RockYou Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RockYou Watch App";
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		D81AB10B2EC2C06600DA3A6E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.jtr.RockYou-Watch-AppUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = "RockYou Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		D81AB10C2EC2C06600DA3A6E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.jtr.RockYou-Watch-AppUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = "RockYou Watch App";
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		D89F41562EB7FC3D00D66A14 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = RockYou/RockYou.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=iphoneos*]" = (
+					"RockYou/*+macOS.swift",
+					"RockYou/UI/*+macOS.swift",
+					"RockYou/UI/Platform/*+macOS.swift",
+					"RockYou/Platform/*+macOS.swift",
+					"RockYou/Settings/*+macOS.swift",
+					"RockYou/ProtocolExplorer/*+macOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+watchOS.swift",
+					"Shared/Platform/*+watchOS.swift",
+					"Shared/UI/*+watchOS.swift",
+					"Shared/UI/Platform/*+watchOS.swift",
+					"Shared/Services/*+watchOS.swift",
+					"Shared/*+macOS+watchOS.swift",
+					"Shared/Platform/*+macOS+watchOS.swift",
+					"Shared/UI/*+macOS+watchOS.swift",
+					"Shared/UI/Platform/*+macOS+watchOS.swift",
+					"Shared/Services/*+macOS+watchOS.swift",
+				);
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=iphonesimulator*]" = (
+					"RockYou/*+macOS.swift",
+					"RockYou/UI/*+macOS.swift",
+					"RockYou/UI/Platform/*+macOS.swift",
+					"RockYou/Platform/*+macOS.swift",
+					"RockYou/Settings/*+macOS.swift",
+					"RockYou/ProtocolExplorer/*+macOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+watchOS.swift",
+					"Shared/Platform/*+watchOS.swift",
+					"Shared/UI/*+watchOS.swift",
+					"Shared/UI/Platform/*+watchOS.swift",
+					"Shared/Services/*+watchOS.swift",
+					"Shared/*+macOS+watchOS.swift",
+					"Shared/Platform/*+macOS+watchOS.swift",
+					"Shared/UI/*+macOS+watchOS.swift",
+					"Shared/UI/Platform/*+macOS+watchOS.swift",
+					"Shared/Services/*+macOS+watchOS.swift",
+				);
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = (
+					"RockYou/*+iOS.swift",
+					"RockYou/UI/*+iOS.swift",
+					"RockYou/UI/Platform/*+iOS.swift",
+					"RockYou/Platform/*+iOS.swift",
+					"RockYou/Settings/*+iOS.swift",
+					"Shared/*+iOS.swift",
+					"Shared/Platform/*+iOS.swift",
+					"Shared/UI/*+iOS.swift",
+					"Shared/UI/Platform/*+iOS.swift",
+					"Shared/Services/*+iOS.swift",
+					"Shared/*+watchOS.swift",
+					"Shared/Platform/*+watchOS.swift",
+					"Shared/UI/*+watchOS.swift",
+					"Shared/UI/Platform/*+watchOS.swift",
+					"Shared/Services/*+watchOS.swift",
+					"Shared/*+iOS+watchOS.swift",
+					"Shared/Platform/*+iOS+watchOS.swift",
+					"Shared/UI/*+iOS+watchOS.swift",
+					"Shared/UI/Platform/*+iOS+watchOS.swift",
+					"Shared/Services/*+iOS+watchOS.swift",
+					Shared/UI/Platform/AppIconButton.swift,
+					"Shared/UI/Platform/SweepableModifier+nonMac.swift",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RockYou/Info.plist;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYou;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D89F41572EB7FC3D00D66A14 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = RockYou/RockYou.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=iphoneos*]" = (
+					"RockYou/*+macOS.swift",
+					"RockYou/UI/*+macOS.swift",
+					"RockYou/UI/Platform/*+macOS.swift",
+					"RockYou/Platform/*+macOS.swift",
+					"RockYou/Settings/*+macOS.swift",
+					"RockYou/ProtocolExplorer/*+macOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+watchOS.swift",
+					"Shared/Platform/*+watchOS.swift",
+					"Shared/UI/*+watchOS.swift",
+					"Shared/UI/Platform/*+watchOS.swift",
+					"Shared/Services/*+watchOS.swift",
+					"Shared/*+macOS+watchOS.swift",
+					"Shared/Platform/*+macOS+watchOS.swift",
+					"Shared/UI/*+macOS+watchOS.swift",
+					"Shared/UI/Platform/*+macOS+watchOS.swift",
+					"Shared/Services/*+macOS+watchOS.swift",
+				);
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=iphonesimulator*]" = (
+					"RockYou/*+macOS.swift",
+					"RockYou/UI/*+macOS.swift",
+					"RockYou/UI/Platform/*+macOS.swift",
+					"RockYou/Platform/*+macOS.swift",
+					"RockYou/Settings/*+macOS.swift",
+					"RockYou/ProtocolExplorer/*+macOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+watchOS.swift",
+					"Shared/Platform/*+watchOS.swift",
+					"Shared/UI/*+watchOS.swift",
+					"Shared/UI/Platform/*+watchOS.swift",
+					"Shared/Services/*+watchOS.swift",
+					"Shared/*+macOS+watchOS.swift",
+					"Shared/Platform/*+macOS+watchOS.swift",
+					"Shared/UI/*+macOS+watchOS.swift",
+					"Shared/UI/Platform/*+macOS+watchOS.swift",
+					"Shared/Services/*+macOS+watchOS.swift",
+				);
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = (
+					"RockYou/*+iOS.swift",
+					"RockYou/UI/*+iOS.swift",
+					"RockYou/UI/Platform/*+iOS.swift",
+					"RockYou/Platform/*+iOS.swift",
+					"RockYou/Settings/*+iOS.swift",
+					"Shared/*+iOS.swift",
+					"Shared/Platform/*+iOS.swift",
+					"Shared/UI/*+iOS.swift",
+					"Shared/UI/Platform/*+iOS.swift",
+					"Shared/Services/*+iOS.swift",
+					"Shared/*+watchOS.swift",
+					"Shared/Platform/*+watchOS.swift",
+					"Shared/UI/*+watchOS.swift",
+					"Shared/UI/Platform/*+watchOS.swift",
+					"Shared/Services/*+watchOS.swift",
+					"Shared/*+iOS+watchOS.swift",
+					"Shared/Platform/*+iOS+watchOS.swift",
+					"Shared/UI/*+iOS+watchOS.swift",
+					"Shared/UI/Platform/*+iOS+watchOS.swift",
+					"Shared/Services/*+iOS+watchOS.swift",
+					Shared/UI/Platform/AppIconButton.swift,
+					"Shared/UI/Platform/SweepableModifier+nonMac.swift",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RockYou/Info.plist;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYou;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D89F41582EB7FC3D00D66A14 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = TEAMID;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		D89F41592EB7FC3D00D66A14 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = TEAMID;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				"EXCLUDED_ARCHS[sdk=watchsimulator*]" = x86_64;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		D89F415B2EB7FC3D00D66A14 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYouTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RockYou.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RockYou";
+				XROS_DEPLOYMENT_TARGET = 2.0;
+			};
+			name = Debug;
+		};
+		D89F415C2EB7FC3D00D66A14 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYouTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RockYou.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RockYou";
+				XROS_DEPLOYMENT_TARGET = 2.0;
+			};
+			name = Release;
+		};
+		D89F415E2EB7FC3D00D66A14 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYouUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = RockYou;
+				XROS_DEPLOYMENT_TARGET = 2.0;
+			};
+			name = Debug;
+		};
+		D89F415F2EB7FC3D00D66A14 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYouUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = RockYou;
+				XROS_DEPLOYMENT_TARGET = 2.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		D81AB10D2EC2C06600DA3A6E /* Build configuration list for PBXNativeTarget "RockYou Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D81AB1072EC2C06600DA3A6E /* Debug */,
+				D81AB1082EC2C06600DA3A6E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D81AB10E2EC2C06600DA3A6E /* Build configuration list for PBXNativeTarget "RockYou Watch AppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D81AB1092EC2C06600DA3A6E /* Debug */,
+				D81AB10A2EC2C06600DA3A6E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D81AB10F2EC2C06600DA3A6E /* Build configuration list for PBXNativeTarget "RockYou Watch AppUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D81AB10B2EC2C06600DA3A6E /* Debug */,
+				D81AB10C2EC2C06600DA3A6E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D89F412C2EB7FC3B00D66A14 /* Build configuration list for PBXProject "RockYou" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D89F41582EB7FC3D00D66A14 /* Debug */,
+				D89F41592EB7FC3D00D66A14 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D89F41552EB7FC3D00D66A14 /* Build configuration list for PBXNativeTarget "RockYou" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D89F41562EB7FC3D00D66A14 /* Debug */,
+				D89F41572EB7FC3D00D66A14 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D89F415A2EB7FC3D00D66A14 /* Build configuration list for PBXNativeTarget "RockYouTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D89F415B2EB7FC3D00D66A14 /* Debug */,
+				D89F415C2EB7FC3D00D66A14 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D89F415D2EB7FC3D00D66A14 /* Build configuration list for PBXNativeTarget "RockYouUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D89F415E2EB7FC3D00D66A14 /* Debug */,
+				D89F415F2EB7FC3D00D66A14 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D89F41292EB7FC3B00D66A14 /* Project object */;
+}
