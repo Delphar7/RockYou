@@ -32,7 +32,7 @@ struct RokuPurpleCapsuleLabel: View {
   var body: some View {
     HStack(spacing: 3) {
       if showStreamerPowerIcon {
-        StreamingDeviceIcon(size: badgeIconBaseSize * badgeIconScale, powerMode: streamerPowerMode)
+        StreamingDeviceIcon(size: badgeIconBaseSize * badgeIconScale, bodyColor: streamerPowerMode.statusColor)
       }
       Text(text)
         .foregroundStyle(.white)

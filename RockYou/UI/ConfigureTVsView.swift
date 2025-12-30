@@ -396,7 +396,7 @@ struct TVRow: View {
   @ViewBuilder
   private var tvIcon: some View {
     let pm = powerMode(for: tv)
-    let base = RokuTVIcon(size: 32, powerMode: pm)
+    let base = RokuTVIcon(size: 32, screenColor: pm.statusColor)
 
       // Only allow "remove from cache" via sweep when the device is clearly off (red state).
       if (pm == .off || pm == .displayOff), let onRemoveFromCache {
@@ -426,7 +426,7 @@ struct TVRow: View {
   @ViewBuilder
   private func streamerIcon(_ streamer: DeviceInfo, size: CGFloat, isCurrent: Bool) -> some View {
     let pm = powerMode(for: streamer)
-    let base = StreamingDeviceIcon(size: size, powerMode: pm)
+    let base = StreamingDeviceIcon(size: size, bodyColor: pm.statusColor)
 
       if (pm == .off || pm == .displayOff), let onRemoveStreamerFromCache {
         base.sweepable(

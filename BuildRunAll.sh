@@ -8,6 +8,7 @@ RUNALL_LOG_ARCHIVE_DIR="$DERIVED_DATA_BASE/Logs/BuildRunall"
 
 RESET_SIM=0
 LINT_ONLY=0
+LAUNCH_CONSOLE=0
 
 mkdir -p "$DERIVED_DATA_BASE" "$RUNALL_LOG_ARCHIVE_DIR"
 
@@ -73,7 +74,10 @@ prune_archives_for_basename() {
     ensure_dir "$RUNALL_LOG_ARCHIVE_DIR"
 
     local -a files
-    mapfile -t files < <(find "$RUNALL_LOG_ARCHIVE_DIR" -maxdepth 1 -type f -name "*-${base_log_name}" -print | sort)
+    # bash 3.2 (macOS default) has no `mapfile`.
+    while IFS= read -r line; do
+        files+=("$line")
+    done < <(find "$RUNALL_LOG_ARCHIVE_DIR" -maxdepth 1 -type f -name "*-${base_log_name}" -print | sort)
 
     local count=${#files[@]}
     if [ "$count" -le 15 ]; then
@@ -121,6 +125,13 @@ launch_sim_console() {
     local sim_id=$1
     local bundle_id=$2
 
+    # Default behavior: just launch and return (non-blocking).
+    # If you want to tail live logs, pass --console.
+    if [ "$LAUNCH_CONSOLE" -eq 0 ]; then
+        xcrun simctl launch --terminate-running-process "$sim_id" "$bundle_id" >/dev/null
+        return 0
+    fi
+
     # When stdout is piped (e.g. run-all uses `... | tee phone.log`), `simctl launch --console-pty`
     # can detach/terminate early because it isn't attached to a real TTY. Wrap it in `script` to
     # force a pseudo-tty so logs stay connected and the process doesn't get torn down.
@@ -163,6 +174,12 @@ done
 # Option: --lint (build only; no install/launch)
 while [[ "${1:-}" == "--lint" ]]; do
     LINT_ONLY=1
+    shift
+done
+
+# Option: --console (launch and keep streaming console output; blocks until app exits / Ctrl-C)
+while [[ "${1:-}" == "--console" ]]; do
+    LAUNCH_CONSOLE=1
     shift
 done
 
@@ -344,6 +361,7 @@ if [ $# -eq 0 ]; then
     echo "Options:"
     echo "  --ResetSim  - Terminate+uninstall before install (slower; fixes some sim launch flakiness)"
     echo "  --lint      - Build only (no install/launch). If no targets given, builds phone+ipad+watch+mac."
+    echo "  --console   - Keep streaming simulator console output (blocks; useful in tmux panes)"
     echo ""
     echo "Targets (can combine multiple):"
     echo "  phone      - iPhone app"
@@ -405,15 +423,17 @@ case "$1" in
         archive_existing_log_file "$PROJECT_DIR/phone.log"
         archive_existing_log_file "$PROJECT_DIR/watch.log"
 
-        # Start phone in pane 1 with logging
-        tmux send-keys -t ".1" "./BuildRunAll.sh phone 2>&1 | tee phone.log" Enter
+        # Start phone in pane 1 with logging (console mode blocks in that pane, which is desired).
+        tmux send-keys -t ".1" "./BuildRunAll.sh --console phone 2>&1 | tee phone.log" Enter
 
         # Wait for phone to build and start
         sleep 4
 
-        # Run watch in current pane with logging
+        # Start watch in the *current* pane with logging (console mode blocks in that pane).
         echo "⌚ Starting Watch app in this pane..."
-        exec ./BuildRunAll.sh watch 2>&1 | tee watch.log
+        tmux send-keys -t "." "./BuildRunAll.sh --console watch 2>&1 | tee watch.log" Enter
+        echo "✅ run-all launched both (phone: pane 1, watch: current pane)."
+        exit 0
         ;;
 
     both)

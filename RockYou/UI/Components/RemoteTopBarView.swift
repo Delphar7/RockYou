@@ -1,7 +1,12 @@
 import SwiftUI
 
 struct RemoteTopBarView: View {
-  private static let docsURL = URL(string: "https://jtr.sh/RockYou/docs/")!
+  private static let docsURL: URL = {
+    guard let url = URL(string: "https://jtr.sh/RockYou/docs/") else {
+      preconditionFailure("Invalid docs URL")
+    }
+    return url
+  }()
   private static let helpMaterialSeed: UInt64 = 0xC0FFEE
 
   let scaleFactor: CGFloat

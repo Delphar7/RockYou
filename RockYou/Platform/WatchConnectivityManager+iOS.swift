@@ -108,11 +108,7 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
             guard let self = self else { return }
             // Convert Date dict to TimeInterval dict for transmission
             let mruDict: [String: TimeInterval] = mruMap.mapValues { $0.timeIntervalSince1970 }
-            self.sendToWatch([
-              "type": "mruUpdate",
-              "deviceId": deviceId,
-              "mru": mruDict,
-            ])
+            self.sendToWatch(.event(.mruUpdate(deviceId: deviceId, mru: mruDict)))
           }
         }
     }
@@ -120,23 +116,17 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
 
   /// Push device state to watch
   private func pushStateToWatch(deviceId: String, state: DeviceState) {
-    sendToWatch([
-      "type": "deviceState",
-      "deviceId": deviceId,
-      "state": state.toDictionary()
-    ])
+    sendToWatch(.event(.deviceState(deviceId: deviceId, state: state)))
+    updateWatchApplicationContext()
   }
 
   /// Push all known device states to watch (called when watch becomes reachable)
   private func pushAllDeviceStates() {
     for device in RokuDiscoveryService.shared.discoveredDevices {
       let state = DeviceStateManager.shared.state(for: device.id)
-      sendToWatch([
-        "type": "deviceState",
-        "deviceId": device.id,
-        "state": state.toDictionary()
-      ])
+      sendToWatch(.event(.deviceState(deviceId: device.id, state: state)))
     }
+    updateWatchApplicationContext()
   }
 
   /// Debounced device list push - coalesces rapid updates
@@ -146,62 +136,44 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
       try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 sec debounce
       guard !Task.isCancelled else { return }
       pushDeviceListToWatch()
+      updateWatchApplicationContext()
     }
+  }
+
+  /// Public entry point for settings changes: refresh the WC applicationContext and (if reachable)
+  /// push a deviceList event so the watch can apply the new settings immediately.
+  func refreshWatchContext() {
+    updateWatchApplicationContext()
+    pushDeviceListToWatch()
   }
 
   // MARK: - Message Handling
 
-  private func handleWatchMessage(_ message: [String: Any], reply: @escaping ([String: Any]) -> Void) {
-    guard let type = message["type"] as? String else {
-      reply(["error": "missing type"])
-        return
-      }
+  private func handleWatchRequest(_ request: WCRequest) async -> WCReply {
+    switch request {
+    case .handshake, .requestDevices:
+      let devices = await buildDeviceListWaitingForDiscovery()
+      return .handshake(WCHandshakeReply(devices: devices, settings: AppSettings.shared.watchConnectivitySettings))
 
-      Log.noisy("iPhoneWC", "handle type=\(type)")
+    case .keypress(let deviceId, let deviceIdx, let key):
+      return await handleKeypress(deviceId: deviceId, deviceIdx: deviceIdx, key: key)
 
-    switch type {
-    case "handshake", "requestDevices":
-      Task {
-        let devices = await buildDeviceListWaitingForDiscovery()
-        let settings = AppSettings.shared
-        reply([
-          "status": "ok",
-          "devices": devices,
-          "settings": [
-            "watchPowerDelay": settings.watchPowerDelay ?? 0.0,
-            "phonePowerDelay": settings.phonePowerDelay ?? 0.0,
-            "watchHomeDelay": settings.watchHomeDelay ?? 0.0,
-            "phoneHomeDelay": settings.phoneHomeDelay ?? 0.0,
-              "watchAppLaunchDelay": settings.watchAppLaunchDelay ?? 0.0,
-              "phoneAppLaunchDelay": settings.phoneAppLaunchDelay ?? 0.0,
-            "watchLaunchScreen": settings.watchLaunchScreen.rawValue,
-            "watchAlwaysLaunchToMedia": settings.watchAlwaysLaunchToMedia,
-          ],
-        ])
-      }
+    case .requestApps(let deviceId):
+      return await handleRequestApps(deviceId: deviceId)
 
-    case "keypress":
-      handleKeypress(message, reply: reply)
+    case .launchApp(let deviceId, let deviceIdx, let appId):
+      return await handleLaunchApp(deviceId: deviceId, deviceIdx: deviceIdx, appId: appId)
 
-    case "requestApps":
-      handleRequestApps(message, reply: reply)
+    case .requestIcon(let req):
+      return await handleRequestIcon(req)
 
-    case "launchApp":
-      handleLaunchApp(message, reply: reply)
-
-    case "requestIcon":
-      handleRequestIcon(message, reply: reply)
-
-    case "requestIconsBatch":
-      handleRequestIconsBatch(message, reply: reply)
-
-    default:
-      reply(["error": "unknown type"])
+    case .requestIconsBatch(let req):
+      return await handleRequestIconsBatch(req)
     }
   }
 
   /// Wait for discovery to complete if it's running and we have no devices yet
-  private func buildDeviceListWaitingForDiscovery() async -> [[String: Any]] {
+  private func buildDeviceListWaitingForDiscovery() async -> [DeviceInfo] {
     let discovery = RokuDiscoveryService.shared
 
     // If empty and still scanning, wait up to 5 seconds
@@ -217,285 +189,202 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     return buildDeviceList()
   }
 
-  private func handleKeypress(_ message: [String: Any], reply: @escaping ([String: Any]) -> Void) {
+  private func handleKeypress(deviceId: String?, deviceIdx: String?, key: String) async -> WCReply {
     let now = Date()
-      guard let key = message["key"] as? String else {
-        reply(["error": "missing key"])
-        return
-      }
-
-      let deviceId = message["deviceId"] as? String
-      let deviceIdx = message["device"] as? String
-
-      Log.noisy(
-        "iPhoneWC",
-        "keypress: received key=\(key) deviceId=\(deviceId ?? "nil") deviceIdx=\(deviceIdx ?? "nil")")
+    Log.noisy(
+      "iPhoneWC",
+      "keypress: received key=\(key) deviceId=\(deviceId ?? "nil") deviceIdx=\(deviceIdx ?? "nil")")
 
     // Throttle: skip if less than 200ms since last keypress
     let elapsed = now.timeIntervalSince(lastKeypressTime)
     if elapsed < keypressThrottleInterval {
       Log.debug("iPhone", "⏭️ Keypress throttled: \(key) (only \(Int(elapsed * 1000))ms since last)")
-      reply(["status": "throttled"])
-      return
+      return .throttled
     }
-      lastKeypressTime = now
+    lastKeypressTime = now
 
-      Log.debug(
-        "iPhone",
-        "📥 Keypress received: \(key) for deviceId=\(deviceId ?? "nil") deviceIdx=\(deviceIdx ?? "nil")"
+    Log.debug(
+      "iPhone",
+      "📥 Keypress received: \(key) for deviceId=\(deviceId ?? "nil") deviceIdx=\(deviceIdx ?? "nil")"
+    )
+
+    let device: DeviceInfo? = {
+      if let deviceId {
+        return RokuDiscoveryService.shared.discoveredDevices.first(where: { $0.id == deviceId })
+      }
+      if let deviceIdx {
+        return deviceMap[deviceIdx] ?? lookupDevice(idx: deviceIdx)
+      }
+      return nil
+    }()
+
+    guard let device else {
+      Log.noisy(
+        "iPhoneWC",
+        "keypress: unknown device deviceId=\(deviceId ?? "nil") deviceIdx=\(deviceIdx ?? "nil") key=\(key)"
       )
-
-      let device: DeviceInfo? = {
-        if let deviceId {
-          return RokuDiscoveryService.shared.discoveredDevices.first(where: { $0.id == deviceId })
-        }
-        if let deviceIdx {
-          return deviceMap[deviceIdx] ?? lookupDevice(idx: deviceIdx)
-        }
-        return nil
-      }()
-
-      guard let device else {
-        Log.noisy(
-          "iPhoneWC",
-          "keypress: unknown device deviceId=\(deviceId ?? "nil") deviceIdx=\(deviceIdx ?? "nil") key=\(key)"
-        )
-        Log.warn(
-          "iPhone", "Unknown device: deviceId=\(deviceId ?? "nil") deviceIdx=\(deviceIdx ?? "nil")")
-      reply(["error": "unknown device"])
-      return
+      Log.warn(
+        "iPhone", "Unknown device: deviceId=\(deviceId ?? "nil") deviceIdx=\(deviceIdx ?? "nil")")
+      return .error("unknown device")
     }
 
     // Send keypress via RokuECPClient (WebSocket first, HTTP fallback)
-    Task {
-      let sendTime = Date()
-        Log.noisy(
-          "iPhoneWC",
-          "keypress: forwarding to Roku key=\(key) deviceId=\(device.id) name='\(device.name)'")
-      let success = await RokuECPClient.shared.sendKeypress(key, to: device)
-      let sendElapsed = Date().timeIntervalSince(sendTime) * 1000
-      Log.debug("iPhone", "📤 Keypress sent: \(key) → \(success ? "✅" : "❌") (\(Int(sendElapsed))ms)")
-        Log.noisy(
-          "iPhoneWC",
-          "keypress: RokuECPClient result=\(success ? "ok" : "fail") key=\(key) deviceId=\(device.id)")
-      reply(success ? ["status": "ok"] : ["error": "keypress failed"])
-    }
+    let sendTime = Date()
+    Log.noisy(
+      "iPhoneWC",
+      "keypress: forwarding to Roku key=\(key) deviceId=\(device.id) name='\(device.name)'")
+    let success = await RokuECPClient.shared.sendKeypress(key, to: device)
+    let sendElapsed = Date().timeIntervalSince(sendTime) * 1000
+    Log.debug("iPhone", "📤 Keypress sent: \(key) → \(success ? "✅" : "❌") (\(Int(sendElapsed))ms)")
+    Log.noisy(
+      "iPhoneWC",
+      "keypress: RokuECPClient result=\(success ? "ok" : "fail") key=\(key) deviceId=\(device.id)")
+    return success ? .ok : .error("keypress failed")
   }
 
-  private func buildDeviceList() -> [[String: Any]] {
+  private func buildDeviceList() -> [DeviceInfo] {
     let devices = RokuDiscoveryService.shared.discoveredDevices
     deviceMap.removeAll()
 
-    var result: [[String: Any]] = []
-    for (index, device) in devices.enumerated() {
+    return devices.enumerated().map { index, device in
       let idx = String(index + 1)
-      deviceMap[idx] = device
-
-      var entry: [String: Any] = [
-        "idx": idx,
-        "id": device.id,
-        "name": device.name,
-        "ip": device.ipAddress,
-        "isTV": device.isTV,
-        "deviceType": device.isTV ? "tv" : "streamer"
-      ]
-      if let location = device.location {
-        entry["location"] = location
-      }
-      result.append(entry)
+      var out = device
+      out.idx = idx
+      deviceMap[idx] = out
+      return out
     }
-    return result
   }
 
   private func lookupDevice(idx: String) -> DeviceInfo? {
-    let devices = RokuDiscoveryService.shared.discoveredDevices
-    for (index, device) in devices.enumerated() {
-      deviceMap[String(index + 1)] = device
-    }
+    _ = buildDeviceList()
     return deviceMap[idx]
   }
 
   // MARK: - App Handling
 
-  private func handleRequestApps(_ message: [String: Any], reply: @escaping ([String: Any]) -> Void) {
-    guard let deviceId = message["deviceId"] as? String else {
-      Log.warn("iPhone", "requestApps: missing deviceId")
-      reply(["error": "missing deviceId"])
-      return
-    }
-
+  private func handleRequestApps(deviceId: String) async -> WCReply {
     Log.debug("iPhone", "📲 Watch requested apps for device: \(deviceId)")
 
     // Get apps from cache
-    Task { @MainActor in
+    let initialApps: [RokuApp] = await MainActor.run {
       let cache = AppCacheManager.shared
       let apps = cache.apps(for: deviceId)
 
       Log.debug("iPhone", "📱 Found \(apps.count) cached apps for \(deviceId)")
 
-      let appDicts: [[String: Any]] = apps.map { app in
-        ["id": app.id, "name": app.name, "type": app.type ?? ""]
+      let mruDict: [String: TimeInterval] = Dictionary(
+        uniqueKeysWithValues: apps.compactMap { app in
+          guard let lastUsed = cache.lastUsedAt(appId: app.id, deviceId: deviceId) else { return nil }
+          return (app.id, lastUsed.timeIntervalSince1970)
         }
+      )
 
-        // Get MRU data for this device - build dict from public API
-        var mruDict: [String: TimeInterval] = [:]
-        for app in apps {
-          if let lastUsed = cache.lastUsedAt(appId: app.id, deviceId: deviceId) {
-            mruDict[app.id] = lastUsed.timeIntervalSince1970
-          }
-        }
-
-        // Send apps and MRU to watch
-        sendToWatch([
-          "type": "appList",
-          "deviceId": deviceId,
-          "apps": appDicts,
-          "mru": mruDict,  // Include MRU so watch can sort properly
-        ])
-      reply(["status": "ok", "count": apps.count])
+      sendToWatch(.event(.appList(WCAppListEvent(deviceId: deviceId, apps: apps, mru: mruDict))))
 
       // If no apps cached, fetch them
       if apps.isEmpty {
         Log.debug("iPhone", "📡 No apps cached, fetching from device...")
-        if let device = RokuDiscoveryService.shared.discoveredDevices.first(where: { $0.id == deviceId }) {
-          await cache.fetchApps(for: device.id, deviceName: device.name)
-          // Send again after fetch
-          let newApps = cache.apps(for: deviceId)
-          Log.debug("iPhone", "✅ Fetched \(newApps.count) apps, sending to watch")
-          let newDicts: [[String: Any]] = newApps.map { ["id": $0.id, "name": $0.name, "type": $0.type ?? ""]
-            }
-            // Include MRU again
-            var newMruDict: [String: TimeInterval] = [:]
-            for app in newApps {
-              if let lastUsed = cache.lastUsedAt(appId: app.id, deviceId: deviceId) {
-                newMruDict[app.id] = lastUsed.timeIntervalSince1970
-              }
-            }
-            sendToWatch([
-              "type": "appList",
-              "deviceId": deviceId,
-              "apps": newDicts,
-              "mru": newMruDict
-          ])
-        } else {
+        if RokuDiscoveryService.shared.discoveredDevices.first(where: { $0.id == deviceId }) == nil {
           Log.warn("iPhone", "Device not found: \(deviceId)")
         }
       }
+      return apps
     }
+
+    if initialApps.isEmpty,
+       let device = RokuDiscoveryService.shared.discoveredDevices.first(where: { $0.id == deviceId }) {
+      await MainActor.run {
+        Log.debug("iPhone", "📡 Fetching apps from device: \(device.name)")
+      }
+      await AppCacheManager.shared.fetchApps(for: device.id, deviceName: device.name)
+
+      // Send updated list.
+      let newApps = await MainActor.run { AppCacheManager.shared.apps(for: deviceId) }
+      let mruDict: [String: TimeInterval] = await MainActor.run {
+        Dictionary(
+          uniqueKeysWithValues: newApps.compactMap { app in
+            guard let lastUsed = AppCacheManager.shared.lastUsedAt(appId: app.id, deviceId: deviceId) else { return nil }
+            return (app.id, lastUsed.timeIntervalSince1970)
+          }
+        )
+      }
+      sendToWatch(.event(.appList(WCAppListEvent(deviceId: deviceId, apps: newApps, mru: mruDict))))
+      return .appsAck(count: newApps.count)
+    }
+
+    return .appsAck(count: initialApps.count)
   }
 
-  private func handleLaunchApp(_ message: [String: Any], reply: @escaping ([String: Any]) -> Void)
-    {
-      guard let appId = message["appId"] as? String else {
-        reply(["error": "missing appId"])
-        return
+  private func handleLaunchApp(deviceId: String?, deviceIdx: String?, appId: String) async -> WCReply {
+    let device: DeviceInfo? = {
+      if let deviceId {
+        return RokuDiscoveryService.shared.discoveredDevices.first(where: { $0.id == deviceId })
       }
-
-      let deviceId = message["deviceId"] as? String
-      let deviceIdx = message["device"] as? String
-
-      let device: DeviceInfo? = {
-        if let deviceId {
-          return RokuDiscoveryService.shared.discoveredDevices.first(where: { $0.id == deviceId })
-        }
-        if let deviceIdx {
-          return deviceMap[deviceIdx] ?? lookupDevice(idx: deviceIdx)
-        }
-        return nil
-      }()
-
-      guard let device else {
-        Log.noisy(
-          "iPhoneWC",
-          "launchApp: unknown device deviceId=\(deviceId ?? "nil") deviceIdx=\(deviceIdx ?? "nil") appId=\(appId)")
-      reply(["error": "unknown device"])
-        return
+      if let deviceIdx {
+        return deviceMap[deviceIdx] ?? lookupDevice(idx: deviceIdx)
       }
+      return nil
+    }()
 
-      Task {
-        Log.noisy(
-          "iPhoneWC",
-          "launchApp: forwarding to Roku appId=\(appId) deviceId=\(device.id) name='\(device.name)'")
-      let success = await RokuECPClient.shared.launchApp(appId: appId, device: device)
-        Log.noisy(
-          "iPhoneWC",
-          "launchApp: RokuECPClient result=\(success ? "ok" : "fail") appId=\(appId) deviceId=\(device.id)")
-      reply(success ? ["status": "ok"] : ["error": "launch failed"])
+    guard let device else {
+      Log.noisy(
+        "iPhoneWC",
+        "launchApp: unknown device deviceId=\(deviceId ?? "nil") deviceIdx=\(deviceIdx ?? "nil") appId=\(appId)")
+      return .error("unknown device")
     }
+
+    Log.noisy(
+      "iPhoneWC",
+      "launchApp: forwarding to Roku appId=\(appId) deviceId=\(device.id) name='\(device.name)'")
+    let success = await RokuECPClient.shared.launchApp(appId: appId, device: device)
+    Log.noisy(
+      "iPhoneWC",
+      "launchApp: RokuECPClient result=\(success ? "ok" : "fail") appId=\(appId) deviceId=\(device.id)")
+    return success ? .ok : .error("launch failed")
   }
 
-  private func handleRequestIcon(_ message: [String: Any], reply: @escaping ([String: Any]) -> Void) {
-    guard let deviceId = message["deviceId"] as? String,
-          let appId = message["appId"] as? String else {
-      reply(["error": "missing deviceId or appId"])
-      return
+  private func handleRequestIcon(_ req: WCIconRequest) async -> WCReply {
+    let deviceId = req.deviceId
+    let appId = req.appId
+    let watchHash = req.hash
+
+    if let (data, hash) = await getIconWithHash(appId: appId, deviceId: deviceId) {
+      if hash != watchHash {
+        sendIconDataToWatch(appId: appId, deviceId: deviceId, data: data, hash: hash)
+        return .iconStatus(.sent)
+      }
+      return .iconStatus(.unchanged)
     }
+    return .iconStatus(.notFound)
+  }
 
-    let watchHash = message["hash"] as? String ?? ""
+  private func handleRequestIconsBatch(_ req: WCIconsBatchRequest) async -> WCReply {
+    let deviceId = req.deviceId
+    Log.debug("iPhone", "📦 Batch icon request: \(req.ordered.count) apps, deviceId=\(deviceId)")
 
-    Task { @MainActor in
-      // Try to get and send icon (with hash comparison)
+    var sentCount = 0
+    var unchangedCount = 0
+
+    for pair in req.ordered {
+      let appId = pair.appId
+      let watchHash = pair.hash
       if let (data, hash) = await getIconWithHash(appId: appId, deviceId: deviceId) {
-        // Only send if hash differs
         if hash != watchHash {
           sendIconDataToWatch(appId: appId, deviceId: deviceId, data: data, hash: hash)
-          reply(["status": "sent"])
+          sentCount += 1
         } else {
-          reply(["status": "unchanged"])
-        }
-      } else {
-        reply(["error": "icon not found"])
-      }
-    }
-  }
-
-  private func handleRequestIconsBatch(_ message: [String: Any], reply: @escaping ([String: Any]) -> Void) {
-    guard let deviceId = message["deviceId"] as? String else {
-      reply(["error": "missing deviceId"])
-      return
-    }
-
-    // Support both ordered array (new) and dictionary (legacy)
-    var orderedPairs: [(String, String)] = []
-
-    if let ordered = message["orderedHashes"] as? [[String]] {
-      // New format: array of [appId, hash] pairs - preserves display order
-      orderedPairs = ordered.compactMap { pair in
-        guard pair.count >= 2 else { return nil }
-        return (pair[0], pair[1])
-      }
-    } else if let hashes = message["hashes"] as? [String: String] {
-      // Legacy format: dictionary (unordered)
-      orderedPairs = hashes.map { ($0.key, $0.value) }
-    } else {
-      reply(["error": "missing hashes"])
-      return
-    }
-
-    Log.debug("iPhone", "📦 Batch icon request: \(orderedPairs.count) apps, deviceId=\(deviceId)")
-
-    Task { @MainActor in
-      var sentCount = 0
-      var unchangedCount = 0
-
-      for (appId, watchHash) in orderedPairs {
-        if let (data, hash) = await getIconWithHash(appId: appId, deviceId: deviceId) {
-          if hash != watchHash {
-            sendIconDataToWatch(appId: appId, deviceId: deviceId, data: data, hash: hash)
-            sentCount += 1
-          } else {
-            unchangedCount += 1
-          }
+          unchangedCount += 1
         }
       }
-
-      Log.debug("iPhone", "📦 Batch complete: sent=\(sentCount), unchanged=\(unchangedCount)")
-      reply(["status": "ok", "sent": sentCount, "unchanged": unchangedCount])
     }
+
+    Log.debug("iPhone", "📦 Batch complete: sent=\(sentCount), unchanged=\(unchangedCount)")
+    return .iconsBatchAck(sent: sentCount, unchanged: unchangedCount)
   }
 
   /// Get icon data and its SHA-1 hash (fetches from Roku if not cached)
   /// Hash is of ORIGINAL data - computed once when fetched, never recomputed
+  @MainActor
   private func getIconWithHash(appId: String, deviceId: String) async -> (Data, String)? {
     let cache = AppCacheManager.shared
 
@@ -569,10 +458,47 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
 
   // MARK: - Send to Watch
 
-  private func sendToWatch(_ message: [String: Any]) {
+  private func sendToWatch(_ message: WCWireMessage) {
     guard let session = session, session.isReachable else { return }
-    session.sendMessage(message, replyHandler: nil) { error in
-      Log.error("iPhone", "Send to Watch error: \(error.localizedDescription)")
+    do {
+      let payload = try WCWireCodec.encode(message)
+      session.sendMessageData(payload, replyHandler: nil) { error in
+        Log.error("iPhone", "Send to Watch error: \(error.localizedDescription)")
+      }
+    } catch {
+      Log.error("iPhone", "Failed to encode WCWireMessage: \(error.localizedDescription)")
+    }
+  }
+
+  /// Persist a snapshot for watch complications/widgets via applicationContext.
+  /// This does not require reachability and is available on the watch at next activation.
+  private func updateWatchApplicationContext() {
+    guard let session else { return }
+    guard session.activationState == .activated else { return }
+
+    let discovery = RokuDiscoveryService.shared
+    _ = discovery.discoveredDevices
+
+    let devicesWithIdx = buildDeviceList()
+    let statesById: [String: DeviceState] = Dictionary(
+      uniqueKeysWithValues: devicesWithIdx.map { ($0.id, DeviceStateManager.shared.state(for: $0.id)) }
+    )
+    let snapshot = WatchSurfaceSnapshot(
+      generatedAt: Date().timeIntervalSince1970,
+      devices: devicesWithIdx,
+      deviceStates: statesById
+    )
+    let context = WCApplicationContext(snapshot: snapshot, settings: AppSettings.shared.watchConnectivitySettings)
+    let contextData = (try? JSONEncoder().encode(context)) ?? Data()
+
+    do {
+      try session.updateApplicationContext([
+        WCApplicationContext.key: contextData
+      ])
+    } catch {
+      DebugBuild.run {
+        Log.warn("iPhoneWC", "updateApplicationContext failed: \(error.localizedDescription)")
+      }
     }
   }
 
@@ -580,7 +506,7 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
   private func pushDeviceListToWatch() {
     let devices = buildDeviceList()
     guard !devices.isEmpty else { return }
-    sendToWatch(["type": "deviceList", "devices": devices])
+    sendToWatch(.event(.deviceList(WCDeviceListEvent(devices: devices, settings: AppSettings.shared.watchConnectivitySettings))))
   }
 }
 
@@ -621,24 +547,38 @@ extension WatchConnectivityManager: WCSessionDelegate {
     }
   }
 
-  // Message without reply handler
-  nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+  nonisolated func session(_ session: WCSession, didReceiveMessageData messageData: Data) {
     Task { @MainActor in
       self.updateConfigurationState(session: session, receivedMessage: true)
-          let t = message["type"] as? String ?? "?"
-          Log.noisy("iPhoneWC", "didReceiveMessage type=\(t) keys=\(Array(message.keys).sorted())")
-      self.handleWatchMessage(message) { _ in }
+      do {
+        let msg = try WCWireCodec.decode(messageData)
+        guard case .request(let request) = msg else { return }
+        _ = await self.handleWatchRequest(request)
+      } catch {
+        Log.warn("iPhoneWC", "Failed to decode WC request: \(error.localizedDescription)")
+      }
     }
   }
 
-  // Message with reply handler
-  nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+  nonisolated func session(
+    _ session: WCSession,
+    didReceiveMessageData messageData: Data,
+    replyHandler: @escaping (Data) -> Void
+  ) {
     Task { @MainActor in
       self.updateConfigurationState(session: session, receivedMessage: true)
-          let t = message["type"] as? String ?? "?"
-          Log.noisy(
-            "iPhoneWC", "didReceiveMessage(reply) type=\(t) keys=\(Array(message.keys).sorted())")
-      self.handleWatchMessage(message, reply: replyHandler)
+      do {
+        let msg = try WCWireCodec.decode(messageData)
+        guard case .request(let request) = msg else { return }
+        let reply = await self.handleWatchRequest(request)
+        let replyData = try WCWireCodec.encode(.reply(reply))
+        replyHandler(replyData)
+      } catch {
+        Log.warn("iPhoneWC", "Failed to decode WC request: \(error.localizedDescription)")
+        if let replyData = try? WCWireCodec.encode(.reply(.error("decode failed"))) {
+          replyHandler(replyData)
+        }
+      }
     }
   }
 }

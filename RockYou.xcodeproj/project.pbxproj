@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		D89F41602EB7FC3D00D66A14 /* RockYou Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D81AB0E92EC2C06400DA3A6E /* RockYou Watch App.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D8AA01062F1C000100000001 /* RockYou Watch Widgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D8AA01002F1C000100000001 /* RockYou Watch Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D8DAD100000000000000001 /* DPad-Ring.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000001 /* DPad-Ring.png */; };
 		D8DAD100000000000000003 /* Stick.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000003 /* Stick.png */; };
 		D8DAD100000000000000004 /* StickShadow.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000004 /* StickShadow.png */; };
@@ -53,6 +54,13 @@
 			remoteGlobalIDString = D81AB0E82EC2C06400DA3A6E;
 			remoteInfo = "RockYou Watch App";
 		};
+		D8AA010C2F1C000100000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D89F41292EB7FC3B00D66A14 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D8AA01012F1C000100000001;
+			remoteInfo = "RockYou Watch Widgets";
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -67,6 +75,17 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D8AA01052F1C000100000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				D8AA01062F1C000100000001 /* RockYou Watch Widgets.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -76,6 +95,7 @@
 		D89F41312EB7FC3B00D66A14 /* RockYou.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RockYou.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D89F41422EB7FC3D00D66A14 /* RockYouTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RockYouTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D89F414C2EB7FC3D00D66A14 /* RockYouUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RockYouUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D8AA01002F1C000100000001 /* RockYou Watch Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "RockYou Watch Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8DAD000000000000000001 /* DPad-Ring.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "DPad-Ring.png"; path = "Resources/DPad-Ring.png"; sourceTree = "<group>"; };
 		D8DAD000000000000000003 /* Stick.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Stick.png; path = Resources/Stick.png; sourceTree = "<group>"; };
 		D8DAD000000000000000004 /* StickShadow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = StickShadow.png; path = Resources/StickShadow.png; sourceTree = "<group>"; };
@@ -89,6 +109,13 @@
 				Info.plist,
 			);
 			target = D89F41302EB7FC3B00D66A14 /* RockYou */;
+		};
+		D8AA01082F1C000100000001 /* Exceptions for "RockYou Watch Widgets" folder in "RockYou Watch Widgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D8AA01012F1C000100000001 /* RockYou Watch Widgets */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -129,6 +156,14 @@
 		D8AA000C2EC4A00100000001 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Shared;
+			sourceTree = "<group>";
+		};
+		D8AA01072F1C000100000001 /* RockYou Watch Widgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D8AA01082F1C000100000001 /* Exceptions for "RockYou Watch Widgets" folder in "RockYou Watch Widgets" target */,
+			);
+			path = "RockYou Watch Widgets";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -176,6 +211,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D8AA01032F1C000100000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -198,6 +240,7 @@
 				D89F41452EB7FC3D00D66A14 /* RockYouTests */,
 				D89F414F2EB7FC3D00D66A14 /* RockYouUITests */,
 				D81AB0EA2EC2C06400DA3A6E /* RockYou Watch App */,
+				D8AA01072F1C000100000001 /* RockYou Watch Widgets */,
 				D81AB0F82EC2C06600DA3A6E /* RockYou Watch AppTests */,
 				D81AB1022EC2C06600DA3A6E /* RockYou Watch AppUITests */,
 				D89F41322EB7FC3B00D66A14 /* Products */,
@@ -212,6 +255,7 @@
 				D89F41422EB7FC3D00D66A14 /* RockYouTests.xctest */,
 				D89F414C2EB7FC3D00D66A14 /* RockYouUITests.xctest */,
 				D81AB0E92EC2C06400DA3A6E /* RockYou Watch App.app */,
+				D8AA01002F1C000100000001 /* RockYou Watch Widgets.appex */,
 				D81AB0F52EC2C06600DA3A6E /* RockYou Watch AppTests.xctest */,
 				D81AB0FF2EC2C06600DA3A6E /* RockYou Watch AppUITests.xctest */,
 			);
@@ -228,10 +272,12 @@
 				D81AB0E52EC2C06400DA3A6E /* Sources */,
 				D81AB0E62EC2C06400DA3A6E /* Frameworks */,
 				D81AB0E72EC2C06400DA3A6E /* Resources */,
+				D8AA01052F1C000100000001 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D8AA010D2F1C000100000001 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				D81AB0EA2EC2C06400DA3A6E /* RockYou Watch App */,
@@ -361,6 +407,29 @@
 			productReference = D89F414C2EB7FC3D00D66A14 /* RockYouUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		D8AA01012F1C000100000001 /* RockYou Watch Widgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D8AA01092F1C000100000001 /* Build configuration list for PBXNativeTarget "RockYou Watch Widgets" */;
+			buildPhases = (
+				D8AA01022F1C000100000001 /* Sources */,
+				D8AA01032F1C000100000001 /* Frameworks */,
+				D8AA01042F1C000100000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D8AA000C2EC4A00100000001 /* Shared */,
+				D8AA01072F1C000100000001 /* RockYou Watch Widgets */,
+			);
+			name = "RockYou Watch Widgets";
+			packageProductDependencies = (
+			);
+			productName = "RockYou Watch Widgets";
+			productReference = D8AA01002F1C000100000001 /* RockYou Watch Widgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -393,6 +462,9 @@
 						CreatedOnToolsVersion = 26.0.1;
 						TestTargetID = D89F41302EB7FC3B00D66A14;
 					};
+					D8AA01012F1C000100000001 = {
+						CreatedOnToolsVersion = 26.1;
+					};
 				};
 			};
 			buildConfigurationList = D89F412C2EB7FC3B00D66A14 /* Build configuration list for PBXProject "RockYou" */;
@@ -413,6 +485,7 @@
 				D89F41412EB7FC3D00D66A14 /* RockYouTests */,
 				D89F414B2EB7FC3D00D66A14 /* RockYouUITests */,
 				D81AB0E82EC2C06400DA3A6E /* RockYou Watch App */,
+				D8AA01012F1C000100000001 /* RockYou Watch Widgets */,
 				D81AB0F42EC2C06600DA3A6E /* RockYou Watch AppTests */,
 				D81AB0FE2EC2C06600DA3A6E /* RockYou Watch AppUITests */,
 			);
@@ -469,6 +542,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D8AA01042F1C000100000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -514,6 +594,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D8AA01022F1C000100000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -542,6 +629,11 @@
 			target = D81AB0E82EC2C06400DA3A6E /* RockYou Watch App */;
 			targetProxy = D89F41622EB7FC3D00D66A14 /* PBXContainerItemProxy */;
 		};
+		D8AA010D2F1C000100000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D8AA01012F1C000100000001 /* RockYou Watch Widgets */;
+			targetProxy = D8AA010C2F1C000100000001 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -550,6 +642,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "RockYou Watch App/RockYou Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = TEAMID;
@@ -634,6 +727,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "RockYou Watch App/RockYou Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = TEAMID;
@@ -1256,6 +1350,179 @@
 			};
 			name = Release;
 		};
+		D8AA010A2F1C000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "RockYou Watch Widgets/RockYou Watch Widgets.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=watchos*]" = (
+					"Shared/*+iOS.swift",
+					"Shared/Platform/*+iOS.swift",
+					"Shared/UI/*+iOS.swift",
+					"Shared/UI/Platform/*+iOS.swift",
+					"Shared/Services/*+iOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+iOS+macOS.swift",
+					"Shared/Platform/*+iOS+macOS.swift",
+					"Shared/UI/*+iOS+macOS.swift",
+					"Shared/UI/Platform/*+iOS+macOS.swift",
+					"Shared/Services/*+iOS+macOS.swift",
+					"Shared/UI/*.swift",
+					"Shared/UI/Platform/*.swift",
+					"Shared/UI/SwiftUI/*.swift",
+					"Shared/UI/Platform/AppStripViewInit+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonLegacy+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonPreview+nonWatch.swift",
+					"Shared/UI/Platform/SafePowerButtonPlatform+nonWatch.swift",
+					Shared/UI/Platform/TVSelectorListPlatform.swift,
+					Shared/NetworkInfo.swift,
+					Shared/AppBranding.swift,
+					Shared/AppCacheManager.swift,
+					"Shared/AppCacheManagerPlatform+watchOS.swift",
+					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+watchOS.swift",
+					"Shared/UI/Styles+nonWatch.swift",
+				);
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=watchsimulator*]" = (
+					"Shared/*+iOS.swift",
+					"Shared/Platform/*+iOS.swift",
+					"Shared/UI/*+iOS.swift",
+					"Shared/UI/Platform/*+iOS.swift",
+					"Shared/Services/*+iOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+iOS+macOS.swift",
+					"Shared/Platform/*+iOS+macOS.swift",
+					"Shared/UI/*+iOS+macOS.swift",
+					"Shared/UI/Platform/*+iOS+macOS.swift",
+					"Shared/Services/*+iOS+macOS.swift",
+					"Shared/UI/*.swift",
+					"Shared/UI/Platform/*.swift",
+					"Shared/UI/SwiftUI/*.swift",
+					"Shared/UI/Platform/AppStripViewInit+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonLegacy+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonPreview+nonWatch.swift",
+					"Shared/UI/Platform/SafePowerButtonPlatform+nonWatch.swift",
+					Shared/UI/Platform/TVSelectorListPlatform.swift,
+					Shared/NetworkInfo.swift,
+					Shared/AppBranding.swift,
+					Shared/AppCacheManager.swift,
+					"Shared/AppCacheManagerPlatform+watchOS.swift",
+					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+watchOS.swift",
+					"Shared/UI/Styles+nonWatch.swift",
+				);
+				INFOPLIST_FILE = "RockYou Watch Widgets/Info.plist";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYou.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		D8AA010B2F1C000100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "RockYou Watch Widgets/RockYou Watch Widgets.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TEAMID;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=watchos*]" = (
+					"Shared/*+iOS.swift",
+					"Shared/Platform/*+iOS.swift",
+					"Shared/UI/*+iOS.swift",
+					"Shared/UI/Platform/*+iOS.swift",
+					"Shared/Services/*+iOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+iOS+macOS.swift",
+					"Shared/Platform/*+iOS+macOS.swift",
+					"Shared/UI/*+iOS+macOS.swift",
+					"Shared/UI/Platform/*+iOS+macOS.swift",
+					"Shared/Services/*+iOS+macOS.swift",
+					"Shared/UI/*.swift",
+					"Shared/UI/Platform/*.swift",
+					"Shared/UI/SwiftUI/*.swift",
+					"Shared/UI/Platform/AppStripViewInit+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonLegacy+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonPreview+nonWatch.swift",
+					"Shared/UI/Platform/SafePowerButtonPlatform+nonWatch.swift",
+					Shared/UI/Platform/TVSelectorListPlatform.swift,
+					Shared/NetworkInfo.swift,
+					Shared/AppBranding.swift,
+					Shared/AppCacheManager.swift,
+					"Shared/AppCacheManagerPlatform+watchOS.swift",
+					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+watchOS.swift",
+					"Shared/UI/Styles+nonWatch.swift",
+				);
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=watchsimulator*]" = (
+					"Shared/*+iOS.swift",
+					"Shared/Platform/*+iOS.swift",
+					"Shared/UI/*+iOS.swift",
+					"Shared/UI/Platform/*+iOS.swift",
+					"Shared/Services/*+iOS.swift",
+					"Shared/*+macOS.swift",
+					"Shared/Platform/*+macOS.swift",
+					"Shared/UI/*+macOS.swift",
+					"Shared/UI/Platform/*+macOS.swift",
+					"Shared/Services/*+macOS.swift",
+					"Shared/*+iOS+macOS.swift",
+					"Shared/Platform/*+iOS+macOS.swift",
+					"Shared/UI/*+iOS+macOS.swift",
+					"Shared/UI/Platform/*+iOS+macOS.swift",
+					"Shared/Services/*+iOS+macOS.swift",
+					"Shared/UI/*.swift",
+					"Shared/UI/Platform/*.swift",
+					"Shared/UI/SwiftUI/*.swift",
+					"Shared/UI/Platform/AppStripViewInit+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonLegacy+nonWatch.swift",
+					"Shared/UI/Platform/RemoteButtonPreview+nonWatch.swift",
+					"Shared/UI/Platform/SafePowerButtonPlatform+nonWatch.swift",
+					Shared/UI/Platform/TVSelectorListPlatform.swift,
+					Shared/NetworkInfo.swift,
+					Shared/AppBranding.swift,
+					Shared/AppCacheManager.swift,
+					"Shared/AppCacheManagerPlatform+watchOS.swift",
+					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+nonWatch.swift",
+					"Shared/DeviceSelectionProvider+watchOS.swift",
+					"Shared/UI/Styles+nonWatch.swift",
+				);
+				INFOPLIST_FILE = "RockYou Watch Widgets/Info.plist";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYou.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1318,6 +1585,15 @@
 			buildConfigurations = (
 				D89F415E2EB7FC3D00D66A14 /* Debug */,
 				D89F415F2EB7FC3D00D66A14 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D8AA01092F1C000100000001 /* Build configuration list for PBXNativeTarget "RockYou Watch Widgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D8AA010A2F1C000100000001 /* Debug */,
+				D8AA010B2F1C000100000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

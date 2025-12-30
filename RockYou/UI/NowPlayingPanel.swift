@@ -133,9 +133,9 @@ extension InfoTopPanel {
     HStack(alignment: .top, spacing: 16) {
       // Device icon (no status dot)
       if device.isTV {
-        RokuTVIcon(size: 48, powerMode: state.powerMode)
+        RokuTVIcon(size: 48, screenColor: state.powerMode.statusColor)
       } else {
-        StreamingDeviceIcon(size: 48, powerMode: state.powerMode)
+        StreamingDeviceIcon(size: 48, bodyColor: state.powerMode.statusColor)
       }
 
       VStack(alignment: .leading, spacing: 6) {

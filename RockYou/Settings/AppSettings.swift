@@ -86,6 +86,16 @@ final class AppSettings {
     }
   }
 
+  var watchConnectivitySettings: WCSyncedSettings {
+    WCSyncedSettings(
+      watchPowerDelay: watchPowerDelay ?? 0.0,
+      watchHomeDelay: watchHomeDelay ?? 0.0,
+      watchAppLaunchDelay: watchAppLaunchDelay ?? 0.0,
+      watchLaunchScreen: watchLaunchScreen.rawValue,
+      watchAlwaysLaunchToMedia: watchAlwaysLaunchToMedia
+    )
+  }
+
   // MARK: - Private Helpers
 
   func syncNow() {
@@ -149,17 +159,7 @@ final class AppSettings {
   }
 
   private func syncToWatch() {
-    let settings: [String: Any] = [
-      "watchPowerDelay": watchPowerDelay ?? 0.0,
-      "phonePowerDelay": phonePowerDelay ?? 0.0,
-      "watchHomeDelay": watchHomeDelay ?? 0.0,
-      "phoneHomeDelay": phoneHomeDelay ?? 0.0,
-        "watchAppLaunchDelay": watchAppLaunchDelay ?? 0.0,
-        "phoneAppLaunchDelay": phoneAppLaunchDelay ?? 0.0,
-      "watchLaunchScreen": watchLaunchScreen.rawValue,
-      "watchAlwaysLaunchToMedia": watchAlwaysLaunchToMedia
-    ]
-    AppSettingsPlatform.syncToWatch(settings: settings)
+    AppSettingsPlatform.syncToWatch()
   }
 
   private init() {

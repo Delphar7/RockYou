@@ -43,36 +43,15 @@ final class WatchAppSettings {
     set { UserDefaults.standard.set(newValue, forKey: "watchAlwaysLaunchToMedia") }
   }
 
-  func applySyncedSettings(_ settings: [String: Any]) {
-    if let value = settings["watchPowerDelay"] {
-      watchPowerDelay = parseDelay(value)
-    }
-    if let value = settings["watchHomeDelay"] {
-      watchHomeDelay = parseDelay(value)
-    }
-    if let value = settings["watchAppLaunchDelay"] {
-      watchAppLaunchDelay = parseDelay(value)
-    }
+  func applySyncedSettings(_ settings: WCSyncedSettings) {
+    watchPowerDelay = settings.watchPowerDelay <= 0 ? nil : settings.watchPowerDelay
+    watchHomeDelay = settings.watchHomeDelay <= 0 ? nil : settings.watchHomeDelay
+    watchAppLaunchDelay = settings.watchAppLaunchDelay <= 0 ? nil : settings.watchAppLaunchDelay
 
-    if let raw = settings["watchLaunchScreen"] as? String,
-       let screen = LaunchScreen(rawValue: raw) {
+    if let screen = LaunchScreen(rawValue: settings.watchLaunchScreen) {
       watchLaunchScreen = screen
     }
-
-    if let always = settings["watchAlwaysLaunchToMedia"] as? Bool {
-      watchAlwaysLaunchToMedia = always
-    }
-  }
-
-  private func parseDelay(_ value: Any) -> TimeInterval? {
-    if let doubleValue = value as? Double {
-      return doubleValue <= 0 ? nil : doubleValue
-    }
-    if let numberValue = value as? NSNumber {
-      let doubleValue = numberValue.doubleValue
-      return doubleValue <= 0 ? nil : doubleValue
-    }
-    return nil
+    watchAlwaysLaunchToMedia = settings.watchAlwaysLaunchToMedia
   }
 
   private func loadDelay(key: String) -> TimeInterval? {

@@ -5,7 +5,7 @@
 //  Device power state - shared between Phone and Watch.
 //
 
-import SwiftUI
+import Foundation
 
 /// Roku device power state
 public enum PowerMode: String, Codable, Sendable {
@@ -47,17 +47,4 @@ public enum PowerMode: String, Codable, Sendable {
     }
   }
 
-  /// Status dot color for UI
-  public var statusColor: Color {
-    switch self {
-    case .on:
-      return powerButtonDarkGreen
-    case .ready:
-      return .orange
-    case .off, .displayOff:
-      return .red
-    case .unknown:
-      return .orange
-    }
-  }
 }

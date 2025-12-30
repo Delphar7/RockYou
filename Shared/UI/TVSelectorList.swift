@@ -185,9 +185,9 @@ public struct TVSelectorRow: View {
   private var deviceIcon: some View {
     switch item.deviceType {
     case .tv:
-      RokuTVIcon(size: iconSize, powerMode: powerMode)
+      RokuTVIcon(size: iconSize, screenColor: powerMode.statusColor)
     case .streamingDevice:
-      StreamingDeviceIcon(size: iconSize, powerMode: powerMode)
+      StreamingDeviceIcon(size: iconSize, bodyColor: powerMode.statusColor)
     }
   }
 

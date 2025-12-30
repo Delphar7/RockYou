@@ -9,6 +9,9 @@ struct ContentViewHost: View {
     ContentViewCore(onPlatformAction: { _ in triggerHapticTap() })
       // Observational touch tracker (no sensors) for optional UI animations.
       .background(UserInteractionObserver())
+      .onAppear {
+        UIApplication.shared.isIdleTimerDisabled = true
+      }
       .environment(\.glowAnimationLastUserInteractionAt, interactionTracker.lastInteractionAt)
       .alert(
         watchManager.configurationIssue?.title ?? "Configuration Issue",

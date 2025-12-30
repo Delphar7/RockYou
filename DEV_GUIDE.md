@@ -12,6 +12,17 @@ This is the practical guide for **building**, **debugging**, and **shipping** Ro
   - Mac (Designed for iPad / Mac Catalyst is not used here)
   - Watch simulator pairs as needed
 
+### Watch widgets / complications (Smart Stack)
+
+RockYou ships a watch WidgetKit extension target:
+
+- **Target/Scheme**: `RockYou Watch Widgets`
+- **What it provides**: accessory widgets usable as both **watch face complications** and **Smart Stack widgets**
+
+Notes:
+- The widget reads state from `WatchSurfaceSnapshotStore` (App Group `group.com.jtr.RockYou`). If the App Group capability isn't enabled for your dev team, the widget will show placeholders.
+- The watch app triggers updates via `WidgetCenter.shared.reloadAllTimelines()` when new snapshots arrive.
+
 ### CLI (repeatable / CI / agent builds)
 
 Important: when piping `xcodebuild` output, use `pipefail` so failures propagate.

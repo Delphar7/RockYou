@@ -15,6 +15,7 @@ import Combine
 import CoreGraphics
 
 import WatchConnectivity
+import WidgetKit
 
 // MARK: - Connectivity Manager
 
@@ -29,6 +30,14 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
   @Published private(set) var devices: [DeviceInfo] = []
   @Published private(set) var selectedDeviceId: String?  // Stable device ID (serial)
   @Published private(set) var apps: [RokuApp] = []  // Apps for selected device (cached by AppCacheManager)
+
+  /// Watch-owned: last active device on watch (used by complication/widget targeting).
+  private(set) var lastActiveDeviceId: String? {
+    get { WatchSurfaceSnapshotStore.lastActiveDeviceId }
+    set {
+      WatchSurfaceSnapshotStore.lastActiveDeviceId = newValue
+    }
+  }
 
   // MARK: - Computed
 
@@ -121,32 +130,30 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
       return
     }
 
-    var message: [String: Any] = ["type": "keypress", "deviceId": deviceId, "key": action.ecpKey]
-    if let idx = selectedDeviceIdx {
-      // Backward-compatible with older iPhone builds
-      message["device"] = idx
-    }
-    sendToPhone(message)
+    sendToPhone(.keypress(deviceId: deviceId, deviceIdx: selectedDeviceIdx, key: action.ecpKey))
   }
 
   /// Request device list from iPhone
   func requestDevices() {
     DispatchQueue.main.async { self.isScanning = true }
-    sendToPhone(["type": "requestDevices"])
+    sendToPhone(.requestDevices) { [weak self] reply in
+      self?.handleHandshakeReply(reply)
+    }
   }
 
   /// Handshake - called on startup when phone becomes reachable
   func performHandshake() {
     DispatchQueue.main.async { self.isScanning = true }
-    sendToPhone(["type": "handshake"]) { [weak self] response in
-      self?.handleDeviceList(response)
+    sendToPhone(.handshake) { [weak self] reply in
+      guard let self else { return }
+      self.handleHandshakeReply(reply)
     }
 
     // Retry after 2 seconds if we still don't have devices
     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
       if self?.devices.isEmpty == true && self?.isPhoneReachable == true {
-        self?.sendToPhone(["type": "handshake"]) { [weak self] response in
-          self?.handleDeviceList(response)
+        self?.sendToPhone(.handshake) { [weak self] reply in
+          self?.handleHandshakeReply(reply)
         }
       }
     }
@@ -155,6 +162,7 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
   /// Select a device by its stable ID (serial number)
   func selectDevice(id: String) {
     selectedDeviceId = id
+    lastActiveDeviceId = id
 
     // Load cached apps immediately while waiting for fresh ones
     let cachedApps = AppCacheManager.shared.apps(for: id)
@@ -183,17 +191,9 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
     appRequestRetryTask?.cancel()
 
     Log.debug("Watch", "📲 Requesting apps for device: \(deviceId)")
-    sendToPhone(["type": "requestApps", "deviceId": deviceId]) { [weak self] response in
-      // Reply received - cancel retry
-      self?.appRequestRetryTask?.cancel()
-
-      if let apps = response["apps"] as? [[String: Any]] {
-        Log.debug("Watch", "✅ Got \(apps.count) apps in reply")
-        Task { @MainActor in
-          self?.handleAppList(response)
-        }
-      } else if let error = response["error"] as? String {
-        Log.error("Watch", "requestApps error: \(error)")
+    sendToPhone(.requestApps(deviceId: deviceId)) { reply in
+      if case .error(let msg) = reply {
+        Log.error("Watch", "requestApps error: \(msg)")
       }
     }
 
@@ -215,12 +215,7 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
     guard let deviceId = selectedDeviceId else { return }
     let idx = selectedDeviceIdx ?? "?"
     Log.noisy("Watch", "launchApp appId=\(appId) deviceId=\(deviceId) deviceIdx=\(idx)")
-    var message: [String: Any] = ["type": "launchApp", "deviceId": deviceId, "appId": appId]
-    if let idx = selectedDeviceIdx {
-      // Backward-compatible with older iPhone builds
-      message["device"] = idx
-    }
-    sendToPhone(message)
+    sendToPhone(.launchApp(deviceId: deviceId, deviceIdx: selectedDeviceIdx, appId: appId))
   }
 
   /// Request an app icon from iPhone
@@ -228,24 +223,23 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
   func requestIcon(appId: String) {
     guard let deviceId = selectedDeviceId else { return }
     let hash = AppCacheManager.shared.iconHash(for: appId, deviceId: deviceId)
-    sendToPhone(["type": "requestIcon", "deviceId": deviceId, "appId": appId, "hash": hash])
+    sendToPhone(.requestIcon(WCIconRequest(deviceId: deviceId, appId: appId, hash: hash)))
   }
 
   /// Request all icons for current device, sending current hashes (in display order)
   @MainActor
   func requestIconsWithHashes(appIds: [String]) {
     guard let deviceId = selectedDeviceId else { return }
-    // Preserve order by sending array of [appId, hash] pairs
-    let orderedHashes = appIds.map { appId in
-      [appId, AppCacheManager.shared.iconHash(for: appId, deviceId: deviceId)]
+    let ordered = appIds.map { appId in
+      WCIconHash(appId: appId, hash: AppCacheManager.shared.iconHash(for: appId, deviceId: deviceId))
     }
     Log.debug("Watch", "📤 Requesting icons with hashes for \(appIds.count) apps (ordered)")
-    sendToPhone(["type": "requestIconsBatch", "deviceId": deviceId, "orderedHashes": orderedHashes])
+    sendToPhone(.requestIconsBatch(WCIconsBatchRequest(deviceId: deviceId, ordered: ordered)))
   }
 
   // MARK: - Message Sending
 
-  private func sendToPhone(_ message: [String: Any], replyHandler: (([String: Any]) -> Void)? = nil) {
+  private func sendToPhone(_ request: WCRequest, replyHandler: ((WCReply) -> Void)? = nil) {
     guard let session = session else {
       Log.warn("Watch", "No session")
       return
@@ -255,136 +249,111 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
       return
     }
 
-    let msgType = message["type"] as? String ?? "?"
-    Log.debug("Watch", "📤 Sending: \(msgType)")
+    do {
+      let payload = try WCWireCodec.encode(.request(request))
+      Log.debug("Watch", "📤 Sending: \(String(describing: request))")
 
-    if let handler = replyHandler {
-      session.sendMessage(message, replyHandler: handler) { error in
-        Log.error("Watch", "Send error: \(error.localizedDescription)")
+      if let handler = replyHandler {
+        session.sendMessageData(payload, replyHandler: { data in
+          do {
+            let msg = try WCWireCodec.decode(data)
+            guard case .reply(let reply) = msg else {
+              handler(.error("unexpected reply"))
+              return
+            }
+            handler(reply)
+          } catch {
+            handler(.error("decode failed"))
+          }
+        }) { error in
+          Log.error("Watch", "Send error: \(error.localizedDescription)")
+        }
+      } else {
+        session.sendMessageData(payload, replyHandler: nil) { error in
+          Log.error("Watch", "Send error: \(error.localizedDescription)")
+        }
       }
-    } else {
-      session.sendMessage(message, replyHandler: nil) { error in
-        Log.error("Watch", "Send error: \(error.localizedDescription)")
-      }
+    } catch {
+      Log.error("Watch", "Failed to encode WC request: \(error.localizedDescription)")
     }
   }
 
   // MARK: - Response Handling
-
-  private func handleDeviceList(_ data: [String: Any]) {
-    guard let deviceDicts = data["devices"] as? [[String: Any]] else {
-      DispatchQueue.main.async { self.isScanning = false }
-      return
+  private func handleHandshakeReply(_ reply: WCReply) {
+    guard case .handshake(let payload) = reply else { return }
+    applyDevices(payload.devices)
+    Task { @MainActor in
+      WatchAppSettings.shared.applySyncedSettings(payload.settings)
     }
+  }
 
-    let newDevices: [DeviceInfo] = deviceDicts.compactMap { dict in
-      guard let idx = dict["idx"] as? String,
-            let id = dict["id"] as? String,
-            let name = dict["name"] as? String,
-            let ip = dict["ip"] as? String,
-            let deviceType = dict["deviceType"] as? String
-      else { return nil }
-      let location = dict["location"] as? String
-      let isTV = (deviceType == "tv")
-      return DeviceInfo(
-        id: id,
-        name: name,
-        location: location,
-        ipAddress: ip,
-        isTV: isTV,
-        idx: idx
-      )
-    }
-
+  private func applyDevices(_ devices: [DeviceInfo]) {
     DispatchQueue.main.async {
       self.isScanning = false
-      self.devices = newDevices
-      // Auto-select first TV if present; otherwise first device.
+      self.devices = devices
+
       if self.selectedDeviceId == nil {
-        if let firstTV = self.tvs.first {
+        if let last = self.lastActiveDeviceId, devices.contains(where: { $0.id == last }) {
+          self.selectedDeviceId = last
+        } else if let firstTV = self.tvs.first {
           self.selectedDeviceId = firstTV.id
-        } else if let first = self.devices.first {
+        } else if let first = devices.first {
           self.selectedDeviceId = first.id
         }
       }
+
       self.saveCache()
     }
+  }
 
-    if let settings = data["settings"] as? [String: Any] {
+  private func handleDeviceListEvent(_ event: WCDeviceListEvent) {
+    applyDevices(event.devices)
+    if let settings = event.settings {
       Task { @MainActor in
         WatchAppSettings.shared.applySyncedSettings(settings)
       }
     }
   }
 
-  private func handleAppList(_ data: [String: Any]) {
-    guard let appDicts = data["apps"] as? [[String: Any]],
-          let deviceId = data["deviceId"] as? String else {
-      Log.warn("Watch", "handleAppList: missing apps or deviceId in data")
-      return
-    }
+  private func handleAppListEvent(_ event: WCAppListEvent) {
+    let deviceId = event.deviceId
+    let apps = event.apps
+    let mruDict = event.mru
 
-    Log.debug("Watch", "📱 Received \(appDicts.count) apps for device: \(deviceId)")
+    Log.debug("Watch", "📱 Received \(apps.count) apps for device: \(deviceId)")
 
-    // Only update if this is for our selected device
     guard deviceId == selectedDeviceId else {
-      Log.warn("Watch", "handleAppList: deviceId mismatch (got \(deviceId), selected \(selectedDeviceId ?? "nil"))")
+      Log.warn(
+        "Watch",
+        "handleAppList: deviceId mismatch (got \(deviceId), selected \(selectedDeviceId ?? "nil"))"
+      )
       return
     }
-
-    let newApps: [RokuApp] = appDicts.compactMap { dict in
-      guard let id = dict["id"] as? String,
-            let name = dict["name"] as? String
-      else { return nil }
-      let type = dict["type"] as? String
-      return RokuApp(id: id, name: name, type: type, version: nil, deviceId: deviceId)
-    }
-
-    Log.debug("Watch", "✅ Parsed \(newApps.count) apps")
-    DispatchQueue.main.async {
-      self.apps = newApps
-      AppCacheManager.shared.setApps(newApps, for: deviceId)
-
-      // Apply MRU if included (shared code - same structure)
-      if let mruDict = data["mru"] as? [String: TimeInterval] {
-        let mruMap: [String: Date] = mruDict.mapValues { Date(timeIntervalSince1970: $0) }
-        AppCacheManager.shared.setMRU(mruMap, for: deviceId)
-        Log.debug("Watch", "✅ Applied MRU data for \(mruMap.count) apps")
-      }
-
-      // Trigger batch icon sync with hashes
-      self.requestIconsWithHashes(appIds: newApps.map(\.id))
-    }
-  }
-
-  /// Handle MRU update from iPhone (when CloudKit syncs MRU changes)
-  private func handleMRUUpdate(_ data: [String: Any]) {
-    guard let deviceId = data["deviceId"] as? String,
-      let mruDict = data["mru"] as? [String: TimeInterval]
-    else {
-      Log.warn("Watch", "handleMRUUpdate: missing deviceId or mru in data")
-      return
-    }
-
-    // Only update if this is for our selected device
-    guard deviceId == selectedDeviceId else {
-      return
-    }
-
-    Log.debug("Watch", "📊 Received MRU update for device: \(deviceId) (\(mruDict.count) apps)")
 
     DispatchQueue.main.async {
-      // Convert TimeInterval dict to Date dict (shared code - same structure)
+      self.appRequestRetryTask?.cancel()
+      self.apps = apps
+      AppCacheManager.shared.setApps(apps, for: deviceId)
+
       let mruMap: [String: Date] = mruDict.mapValues { Date(timeIntervalSince1970: $0) }
       AppCacheManager.shared.setMRU(mruMap, for: deviceId)
-      Log.debug("Watch", "✅ Applied MRU update - UI will re-sort automatically")
+
+      self.requestIconsWithHashes(appIds: apps.map(\.id))
     }
   }
 
-  /// Handle device state update from iPhone
-  private func handleDeviceState(_ data: [String: Any]) {
+  private func handleMRUUpdate(deviceId: String, mru: [String: TimeInterval]) {
+    guard deviceId == selectedDeviceId else { return }
+    Log.debug("Watch", "📊 Received MRU update for device: \(deviceId) (\(mru.count) apps)")
     DispatchQueue.main.async {
-      DeviceStateManager.shared.updateFromMessage(data)
+      let mruMap: [String: Date] = mru.mapValues { Date(timeIntervalSince1970: $0) }
+      AppCacheManager.shared.setMRU(mruMap, for: deviceId)
+    }
+  }
+
+  private func handleDeviceStateEvent(deviceId: String, state: DeviceState) {
+    DispatchQueue.main.async {
+      DeviceStateManager.shared.updateState(state, for: deviceId)
     }
   }
 
@@ -485,26 +454,24 @@ extension ConnectivityManager: WCSessionDelegate {
     }
   }
 
-  // Receive dictionary messages from iPhone
-  func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-    guard let type = message["type"] as? String else { return }
-
-    switch type {
-    case "deviceList":
-      handleDeviceList(message)
-    case "appList":
-      handleAppList(message)
-    case "deviceState":
-        handleDeviceState(message)
-      case "mruUpdate":
-        handleMRUUpdate(message)
-    default:
-      break
-    }
-  }
-
-  // Receive binary data from iPhone (used for icons)
+  // Receive binary data from iPhone (typed messages + icons)
   func session(_ session: WCSession, didReceiveMessageData messageData: Data) {
+    if WCWireCodec.isLikelyJSONMessage(messageData),
+       let msg = try? WCWireCodec.decode(messageData),
+       case .event(let event) = msg {
+      switch event {
+      case .deviceList(let evt):
+        handleDeviceListEvent(evt)
+      case .appList(let evt):
+        handleAppListEvent(evt)
+      case .deviceState(let deviceId, let state):
+        handleDeviceStateEvent(deviceId: deviceId, state: state)
+      case .mruUpdate(let deviceId, let mru):
+        handleMRUUpdate(deviceId: deviceId, mru: mru)
+      }
+      return
+    }
+
     handleIconData(messageData)
   }
 
@@ -514,21 +481,36 @@ extension ConnectivityManager: WCSessionDelegate {
   }
 
   private func handleApplicationContext(_ context: [String: Any]) {
-    if let devicesData = context["devices"] as? Data,
-       let decoded = try? JSONDecoder().decode([DeviceInfo].self, from: devicesData) {
-      DispatchQueue.main.async {
-        self.devices = decoded
-        if self.selectedDeviceId == nil, let first = self.tvs.first {
+    guard
+      let data = context[WCApplicationContext.key] as? Data,
+      let decoded = try? JSONDecoder().decode(WCApplicationContext.self, from: data)
+    else { return }
+
+    let snapshot = decoded.snapshot
+
+    DispatchQueue.main.async {
+      self.devices = snapshot.devices
+
+      for (deviceId, state) in snapshot.deviceStates {
+        DeviceStateManager.shared.updateState(state, for: deviceId)
+      }
+
+      WatchSurfaceSnapshotStore.saveSnapshot(snapshot)
+
+      if self.selectedDeviceId == nil {
+        if let last = self.lastActiveDeviceId, snapshot.devices.contains(where: { $0.id == last }) {
+          self.selectedDeviceId = last
+        } else if let first = snapshot.devices.first {
           self.selectedDeviceId = first.id
         }
-        self.saveCache()
       }
+
+      self.saveCache()
+      WidgetCenter.shared.reloadAllTimelines()
     }
 
-    if let settings = context["settings"] as? [String: Any] {
-      Task { @MainActor in
-        WatchAppSettings.shared.applySyncedSettings(settings)
-      }
+    Task { @MainActor in
+      WatchAppSettings.shared.applySyncedSettings(decoded.settings)
     }
   }
 }

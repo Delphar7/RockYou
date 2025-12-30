@@ -363,8 +363,10 @@
       guard let coordinator = coordinator else { return }
       guard dragSamples.count >= 2 else { return }
 
-      let first = dragSamples.first!
-      let last = dragSamples.last!
+      guard let first = dragSamples.first, let last = dragSamples.last else {
+        dragSamples.removeAll(keepingCapacity: true)
+        return
+      }
       let dt = max(0.001, last.t - first.t)
 
       let mouseDelta: CGFloat
@@ -393,7 +395,9 @@
         self?.stepInertia()
       }
       // Ensure it continues during tracking.
-      RunLoop.main.add(inertiaTimer!, forMode: .common)
+      if let inertiaTimer {
+        RunLoop.main.add(inertiaTimer, forMode: .common)
+      }
       dragSamples.removeAll(keepingCapacity: true)
     }
 

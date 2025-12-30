@@ -96,13 +96,4 @@ public final class DeviceStateManager {
     state.activeApp = appId
     updateState(state, for: deviceId)
   }
-
-  // MARK: - Message Parsing (for WatchConnectivity)
-
-  /// Update state from dictionary message (used by Watch receiving from iPhone)
-  public func updateFromMessage(_ dict: [String: Any]) {
-    guard let deviceId = dict["deviceId"] as? String,
-          let stateDict = dict["state"] as? [String: Any] else { return }
-    updateState(DeviceState(from: stateDict), for: deviceId)
-  }
 }

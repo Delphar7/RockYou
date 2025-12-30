@@ -6,8 +6,8 @@
 
 import CommonCrypto
 import Foundation
-import os.lock
 import Network
+import os.lock
 
 // MARK: - Notification Types
 // Note: Device state is now managed by shared DeviceStateManager
@@ -15,7 +15,8 @@ import Network
 enum RokuNotification: Sendable {
   case powerModeChanged(String)
   case volumeChanged(Int, muted: Bool)
-  case mediaPlayerStateChanged(String, appId: String?, position: Int?, duration: Int?, title: String?)
+  case mediaPlayerStateChanged(
+    String, appId: String?, position: Int?, duration: Int?, title: String?)
   case other(String, [String: String])
 }
 
@@ -318,21 +319,25 @@ actor RokuWebSocketClient {
       {"request":"request-events","request-id":"\(requestId)","param-events":"\(Self.eventSubscriptions)"}
       """
 
-    // Send subscription request
-    try await sendWebSocketMessage(subscribeJSON, to: conn)
-
-    // Wait for acknowledgment (with timeout)
-    let response = try await waitForResponse(requestId: requestId, timeout: 5.0)
+    // Send subscription request and wait for acknowledgment (with timeout)
+    let response = try await sendRequestWithTimeout(
+      subscribeJSON, to: conn, requestId: requestId, timeout: 5)
 
     // 200 = OK, 202 = Accepted (busy but will process)
     guard response.status == "200" || response.status == "202" else {
-      Log.warn("RokuWS", "⚠️ Event subscription failed: status=\(response.status), msg=\(response.statusMsg ?? "none")")
+      Log.warn(
+        "RokuWS",
+        "⚠️ Event subscription failed: status=\(response.status), msg=\(response.statusMsg ?? "none")"
+      )
       Log.warn("RokuWS", "⚠️ Attempted to subscribe to: \(Self.eventSubscriptions)")
       // Don't throw - subscription failure shouldn't prevent usage
       return
     }
 
-    Log.info("RokuWS", "✅ Event subscription acknowledged: status=\(response.status), events=\(Self.eventSubscriptions)")
+    Log.info(
+      "RokuWS",
+      "✅ Event subscription acknowledged: status=\(response.status), events=\(Self.eventSubscriptions)"
+    )
   }
 
   // MARK: - WebSocket I/O
@@ -395,7 +400,25 @@ actor RokuWebSocketClient {
 
   private func handleReceivedData(_ data: Data) async {
     guard let json = String(data: data, encoding: .utf8) else { return }
-    Log.noisy("RokuWS", "⬅️ \(json.prefix(40))...\(json.suffix(10))")
+
+    // Logging note:
+    // Many ECP2 responses include a `"content-data"` field which is base64-encoded. When we print
+    // `json.prefix/suffix`, we end up effectively dumping the *base64 string* head/tail, which is
+    // not what we want when debugging actual payload bytes. Prefer logging the decoded head/tail.
+    if json.contains("\"content-data\""),
+      let response = try? JSONDecoder().decode(ECPResponseMsg.self, from: data),
+      let decoded = response.decodedContentData
+    {
+      let head = Self.hexPrefix(decoded, maxBytes: 12)
+      let tail = Self.hexSuffix(decoded, maxBytes: 12)
+      let contentType = response.contentType ?? ""
+      Log.noisy(
+        "RokuWS",
+        "⬅️ resp=\(response.response) id=\(response.responseId) status=\(response.status) type=\(contentType) content(decoded)=\(decoded.count)B head=\(head) tail=\(tail)"
+      )
+    } else {
+      Log.noisy("RokuWS", "⬅️ \(json.prefix(40))...\(json.suffix(10))")
+    }
 
     // Try to parse as response (has "response-id")
     if json.contains("\"response-id\"") {
@@ -421,7 +444,8 @@ actor RokuWebSocketClient {
         Log.info("RokuWS", "📩 Parsed notification: \(String(describing: notification))")
         // Dispatch to handler
         if let handler = onNotification {
-          Log.info("RokuWS", "🔄 Calling notification handler for: \(String(describing: notification))")
+          Log.info(
+            "RokuWS", "🔄 Calling notification handler for: \(String(describing: notification))")
           await MainActor.run {
             handler(notification)
           }
@@ -433,6 +457,18 @@ actor RokuWebSocketClient {
       }
       return
     }
+  }
+
+  private static func hexPrefix(_ data: Data, maxBytes: Int) -> String {
+    Self.hexBytes(data.prefix(maxBytes))
+  }
+
+  private static func hexSuffix(_ data: Data, maxBytes: Int) -> String {
+    Self.hexBytes(data.suffix(maxBytes))
+  }
+
+  private static func hexBytes(_ bytes: Data.SubSequence) -> String {
+    bytes.map { String(format: "%02x", $0) }.joined()
   }
 
   private func parseNotification(json: String, data: Data) -> RokuNotification? {
@@ -514,10 +550,14 @@ actor RokuWebSocketClient {
         title = String(json[titleStart.upperBound..<titleEnd.lowerBound])
       }
 
-      Log.info("RokuWS", "📱 Extracted from media-player-state: app=\(appId ?? "nil"), state=\(state ?? "nil"), pos=\(position?.description ?? "nil"), dur=\(duration?.description ?? "nil"), title=\(title ?? "nil")")
+      Log.info(
+        "RokuWS",
+        "📱 Extracted from media-player-state: app=\(appId ?? "nil"), state=\(state ?? "nil"), pos=\(position?.description ?? "nil"), dur=\(duration?.description ?? "nil"), title=\(title ?? "nil")"
+      )
 
       // Return with state, app ID, position, duration, and title
-      return .mediaPlayerStateChanged(state ?? "unknown", appId: appId, position: position, duration: duration, title: title)
+      return .mediaPlayerStateChanged(
+        state ?? "unknown", appId: appId, position: position, duration: duration, title: title)
 
     default:
       // Log unknown notification types with full JSON for analysis
@@ -526,31 +566,6 @@ actor RokuWebSocketClient {
     }
 
     return nil
-  }
-
-  // MARK: - Response Waiting
-
-  private func waitForResponse(requestId: String, timeout: TimeInterval) async throws
-    -> ECPResponseMsg
-  {
-    try await withThrowingTaskGroup(of: ECPResponseMsg.self) { group in
-      group.addTask {
-        try await withCheckedThrowingContinuation { continuation in
-          Task {
-            await self.registerPendingResponse(id: requestId, continuation: continuation)
-          }
-        }
-      }
-
-      group.addTask {
-        try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-        throw ECPError.timeout
-      }
-
-      let result = try await group.next()!
-      group.cancelAll()
-      return result
-    }
   }
 
   // MARK: - Commands
@@ -576,32 +591,8 @@ actor RokuWebSocketClient {
       {"request":"key-press","param-key":"\(key)","request-id":"\(requestId)"}
       """
 
-    // Send and wait for response with timeout
-    let response = try await withThrowingTaskGroup(of: ECPResponseMsg.self) { group in
-      group.addTask {
-        try await withCheckedThrowingContinuation { continuation in
-          Task {
-            await self.registerPendingResponse(id: requestId, continuation: continuation)
-
-            do {
-              try await self.sendWebSocketMessage(keypressJSON, to: conn)
-            } catch {
-              await self.removePendingResponse(id: requestId)
-              continuation.resume(throwing: error)
-            }
-          }
-        }
-      }
-
-      group.addTask {
-        try await Task.sleep(nanoseconds: 5_000_000_000)  // 5 second timeout
-        throw ECPError.timeout
-      }
-
-      let result = try await group.next()!
-      group.cancelAll()
-      return result
-    }
+    let response = try await sendRequestWithTimeout(
+      keypressJSON, to: conn, requestId: requestId, timeout: 5)
 
     // 200 = OK, 202 = Accepted (busy but will process)
     DebugBuild.run {
@@ -630,34 +621,12 @@ actor RokuWebSocketClient {
 
     Log.debug("RokuWS", "📡 Querying apps via WebSocket...")
 
-    let response = try await withThrowingTaskGroup(of: ECPResponseMsg.self) { group in
-      group.addTask {
-        try await withCheckedThrowingContinuation { continuation in
-          Task {
-            await self.registerPendingResponse(id: requestId, continuation: continuation)
-
-            do {
-              try await self.sendWebSocketMessage(queryJSON, to: conn)
-            } catch {
-              await self.removePendingResponse(id: requestId)
-              continuation.resume(throwing: error)
-            }
-          }
-        }
-      }
-
-      group.addTask {
-        try await Task.sleep(nanoseconds: 10_000_000_000)  // 10 second timeout for queries
-        throw ECPError.timeout
-      }
-
-      let result = try await group.next()!
-      group.cancelAll()
-      return result
-    }
+    let response = try await sendRequestWithTimeout(
+      queryJSON, to: conn, requestId: requestId, timeout: 10)
 
     guard response.isSuccess else {
-      Log.error("RokuWS", "query-apps failed: \(response.status) - \(response.statusMsg ?? "unknown")")
+      Log.error(
+        "RokuWS", "query-apps failed: \(response.status) - \(response.statusMsg ?? "unknown")")
       throw ECPError.sendFailed("query-apps failed: \(response.status)")
     }
 
@@ -678,31 +647,8 @@ actor RokuWebSocketClient {
       {"request":"query-icon","request-id":"\(requestId)","param-channel-id":"\(appId)"}
       """
 
-    let response = try await withThrowingTaskGroup(of: ECPResponseMsg.self) { group in
-      group.addTask {
-        try await withCheckedThrowingContinuation { continuation in
-          Task {
-            await self.registerPendingResponse(id: requestId, continuation: continuation)
-
-            do {
-              try await self.sendWebSocketMessage(queryJSON, to: conn)
-            } catch {
-              await self.removePendingResponse(id: requestId)
-              continuation.resume(throwing: error)
-            }
-          }
-        }
-      }
-
-      group.addTask {
-        try await Task.sleep(nanoseconds: 10_000_000_000)
-        throw ECPError.timeout
-      }
-
-      let result = try await group.next()!
-      group.cancelAll()
-      return result
-    }
+    let response = try await sendRequestWithTimeout(
+      queryJSON, to: conn, requestId: requestId, timeout: 10)
 
     guard response.isSuccess else {
       return nil
@@ -724,31 +670,8 @@ actor RokuWebSocketClient {
       {"request":"launch","request-id":"\(requestId)","param-channel-id":"\(appId)"}
       """
 
-    let response = try await withThrowingTaskGroup(of: ECPResponseMsg.self) { group in
-      group.addTask {
-        try await withCheckedThrowingContinuation { continuation in
-          Task {
-            await self.registerPendingResponse(id: requestId, continuation: continuation)
-
-            do {
-              try await self.sendWebSocketMessage(launchJSON, to: conn)
-            } catch {
-              await self.removePendingResponse(id: requestId)
-              continuation.resume(throwing: error)
-            }
-          }
-        }
-      }
-
-      group.addTask {
-        try await Task.sleep(nanoseconds: 5_000_000_000)
-        throw ECPError.timeout
-      }
-
-      let result = try await group.next()!
-      group.cancelAll()
-      return result
-    }
+    let response = try await sendRequestWithTimeout(
+      launchJSON, to: conn, requestId: requestId, timeout: 5)
 
     guard response.isSuccess else {
       throw ECPError.sendFailed("launch failed: \(response.status)")
@@ -797,7 +720,8 @@ actor RokuWebSocketClient {
       {"request":"set-textedit-text","request-id":"\(requestId)","param-textedit-id":"\(texteditId)","param-text":"\(escapedText)"}
       """
 
-    let response = try await sendRequestWithTimeout(json, to: conn, requestId: requestId, timeout: 5)
+    let response = try await sendRequestWithTimeout(
+      json, to: conn, requestId: requestId, timeout: 5)
     guard response.isSuccess else {
       throw ECPError.sendFailed("set-textedit-text failed: \(response.status)")
     }
@@ -826,7 +750,8 @@ actor RokuWebSocketClient {
         """
     }
 
-    let response = try await sendRequestWithTimeout(json, to: conn, requestId: requestId, timeout: 5)
+    let response = try await sendRequestWithTimeout(
+      json, to: conn, requestId: requestId, timeout: 5)
     guard response.isSuccess else {
       throw ECPError.sendFailed("set-audio-output failed: \(response.status)")
     }
@@ -850,7 +775,8 @@ actor RokuWebSocketClient {
       {"request":"send-voice-events","request-id":"\(requestId)","param-session-id":"\(sessionId)","param-events":"\(events)"}
       """
 
-    let response = try await sendRequestWithTimeout(json, to: conn, requestId: requestId, timeout: 10)
+    let response = try await sendRequestWithTimeout(
+      json, to: conn, requestId: requestId, timeout: 10)
     guard response.isSuccess else {
       throw ECPError.sendFailed("send-voice-events failed: \(response.status)")
     }
@@ -867,14 +793,16 @@ actor RokuWebSocketClient {
     // Extract request-id from the JSON if present, or generate one
     let requestId: String
     if let data = json.data(using: .utf8),
-       let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-       let id = parsed["request-id"] as? String {
+      let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let id = parsed["request-id"] as? String
+    {
       requestId = id
     } else {
       requestId = "explorer-\(Int.random(in: 1000...9999))"
     }
 
-    let response = try await sendRequestWithTimeout(json, to: conn, requestId: requestId, timeout: 10)
+    let response = try await sendRequestWithTimeout(
+      json, to: conn, requestId: requestId, timeout: 10)
     return response.decodedContentData
   }
 
@@ -890,8 +818,9 @@ actor RokuWebSocketClient {
     // Extract request-id to match responses
     let requestId: String
     if let data = json.data(using: .utf8),
-       let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-       let id = parsed["request-id"] as? String {
+      let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let id = parsed["request-id"] as? String
+    {
       requestId = id
     } else {
       requestId = ""
@@ -930,7 +859,8 @@ actor RokuWebSocketClient {
       {"request":"\(request)","request-id":"\(requestId)"}
       """
 
-    let response = try await sendRequestWithTimeout(json, to: conn, requestId: requestId, timeout: 10)
+    let response = try await sendRequestWithTimeout(
+      json, to: conn, requestId: requestId, timeout: 10)
 
     guard response.isSuccess else {
       throw ECPError.sendFailed("\(request) failed: \(response.status)")
@@ -950,14 +880,17 @@ actor RokuWebSocketClient {
       .replacingOccurrences(of: "\t", with: "\\t")
   }
 
-  private func unverifiedRequestJSON(request: String, requestId: String, params: [String: String]) -> String {
+  private func unverifiedRequestJSON(request: String, requestId: String, params: [String: String])
+    -> String
+  {
     if params.isEmpty {
       return """
         {"request":"\(request)","request-id":"\(requestId)"}
         """
     }
 
-    let paramJSON = params
+    let paramJSON =
+      params
       .sorted(by: { $0.key < $1.key })
       .map { key, value in
         "\"\(jsonEscaped(key))\":\"\(jsonEscaped(value))\""
@@ -986,7 +919,9 @@ actor RokuWebSocketClient {
   }
 
   /// Best-guess ECP-2 mapping for ECP-1 POST /install/<channel-id>
-  func UnverifiedInstall(channelId: String, contentId: String? = nil, mediaType: String? = nil) async throws {
+  func UnverifiedInstall(channelId: String, contentId: String? = nil, mediaType: String? = nil)
+    async throws
+  {
     var params: [String: String] = ["param-channel-id": channelId]
     if let contentId, !contentId.isEmpty { params["param-contentid"] = contentId }
     if let mediaType, !mediaType.isEmpty { params["param-mediatype"] = mediaType }
@@ -1055,7 +990,8 @@ actor RokuWebSocketClient {
   }
 
   func UnverifiedDeveloperQueryGraphicsFrameRate() async throws -> Data? {
-    let response = try await sendUnverifiedRequest(request: "query-graphics-frame-rate", timeout: 10)
+    let response = try await sendUnverifiedRequest(
+      request: "query-graphics-frame-rate", timeout: 10)
     guard response.isSuccess else { return nil }
     return response.decodedContentData
   }
@@ -1070,7 +1006,8 @@ actor RokuWebSocketClient {
     var params: [String: String] = [:]
     if let channelId, !channelId.isEmpty { params["param-channel-id"] = channelId }
 
-    let response = try await sendUnverifiedRequest(request: "fwbeacons-track", params: params, timeout: 5)
+    let response = try await sendUnverifiedRequest(
+      request: "fwbeacons-track", params: params, timeout: 5)
     guard response.isSuccess else {
       throw ECPError.sendFailed("fwbeacons-track failed: \(response.status)")
     }
@@ -1111,11 +1048,14 @@ actor RokuWebSocketClient {
     return response.decodedContentData
   }
 
-  func UnverifiedDeveloperQueryChanPerfForChannel(channelId: String, durationSeconds: Int? = nil) async throws -> Data? {
+  func UnverifiedDeveloperQueryChanPerfForChannel(channelId: String, durationSeconds: Int? = nil)
+    async throws -> Data?
+  {
     var params: [String: String] = ["param-channel-id": channelId]
     if let durationSeconds { params["param-duration-seconds"] = String(durationSeconds) }
 
-    let response = try await sendUnverifiedRequest(request: "query-chanperf-channel", params: params, timeout: 10)
+    let response = try await sendUnverifiedRequest(
+      request: "query-chanperf-channel", params: params, timeout: 10)
     guard response.isSuccess else { return nil }
     return response.decodedContentData
   }
@@ -1131,7 +1071,8 @@ actor RokuWebSocketClient {
     if let sections, !sections.isEmpty { params["param-sections"] = sections }
     if let escaped { params["param-escaped"] = escaped ? "true" : "false" }
 
-    let response = try await sendUnverifiedRequest(request: "query-registry", params: params, timeout: 10)
+    let response = try await sendUnverifiedRequest(
+      request: "query-registry", params: params, timeout: 10)
     guard response.isSuccess else { return nil }
     return response.decodedContentData
   }
@@ -1183,7 +1124,10 @@ actor RokuWebSocketClient {
         throw ECPError.timeout
       }
 
-      let result = try await group.next()!
+      guard let result = try await group.next() else {
+        group.cancelAll()
+        throw ECPError.connectionFailed("Internal error: no task completed")
+      }
       group.cancelAll()
       return result
     }
@@ -1201,9 +1145,6 @@ actor RokuWebSocketClient {
     }
   }
 
-  nonisolated var isFailed: Bool {
-    false  // Simplified - actual state check not needed for external use
-  }
 }
 
 // MARK: - State Helper

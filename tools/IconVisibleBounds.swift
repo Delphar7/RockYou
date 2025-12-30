@@ -132,7 +132,10 @@ let greenDomT = args.greenDomThresh
 let greenMin = args.greenMin
 
 data.withUnsafeBytes { rawBuf in
-  let p = rawBuf.bindMemory(to: UInt8.self).baseAddress!
+  guard let p = rawBuf.bindMemory(to: UInt8.self).baseAddress else {
+    fputs("Unexpected nil pixel buffer\n", stderr)
+    exit(1)
+  }
   for y in 0..<h {
     for x in 0..<w {
       let idx = y * bytesPerRow + x * bytesPerPixel

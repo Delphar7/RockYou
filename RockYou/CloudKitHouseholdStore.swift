@@ -1028,15 +1028,8 @@ final class CloudKitHouseholdStore {
 
   private func persistActiveHouseholdHintFromAcceptedShare(metadata: CKShare.Metadata) async {
     // Persist to local defaults.
-    let zoneID: CKRecordZone.ID
-    if #available(iOS 16.0, macOS 13.0, watchOS 9.0, *) {
-      // Prefer the non-deprecated hierarchical root record ID.
-      guard let id = metadata.hierarchicalRootRecordID else { return }
-      zoneID = id.zoneID
-    } else {
-      // Deprecated on newer OSes, but still present for older ones.
-      zoneID = metadata.rootRecordID.zoneID
-    }
+    guard let id = metadata.hierarchicalRootRecordID else { return }
+    let zoneID = id.zoneID
     guard !zoneID.zoneName.isEmpty else { return }
 
     saveActiveHouseholdSharedZoneHint(zoneID: zoneID)

@@ -77,6 +77,10 @@ struct ContentView: View {
     }
     .ignoresSafeArea(edges: [.top, .bottom])
     .background(Color.black)
+    .onOpenURL { url in
+      guard let link = DeepLink(url: url) else { return }
+      handleDeepLink(link)
+    }
     .overlay {
       TooltipOverlayView()
       SweepOverlayView()
@@ -124,6 +128,31 @@ struct ContentView: View {
     }
     .onChange(of: currentPage) { _, newValue in
       UserDefaults.standard.set(newValue.rawValue, forKey: "lastWatchRemotePage")
+    }
+  }
+
+  @MainActor
+  private func handleDeepLink(_ link: DeepLink) {
+    switch link {
+    case .selectDevice(let deviceId, let page):
+      if connectivity.devices.contains(where: { $0.id == deviceId }) {
+        connectivity.selectDevice(id: deviceId)
+      }
+      if let page {
+        switch page.lowercased() {
+        case "quick", "quickactions":
+          slideDirection = .backward
+          currentPage = .quickActions
+        case "nav":
+          slideDirection = .forward
+          currentPage = .nav
+        case "media":
+          slideDirection = .forward
+          currentPage = .media
+        default:
+          break
+        }
+      }
     }
   }
 

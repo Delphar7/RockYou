@@ -26,12 +26,31 @@ struct ContentViewCore: View {
         .padding(.vertical, 4)
     }
     .preferredColorScheme(.dark)
+    .onOpenURL { url in
+      guard let link = DeepLink(url: url) else { return }
+      handleDeepLink(link)
+    }
     .alert("Device Access Restricted", isPresented: $showingLimitedModeAlert) {
       Button("OK", role: .cancel) {}
     } message: {
       Text(
         "'\(limitedModeDeviceName)' has mobile app control restricted.\n\nTo enable:\nSettings → System → Advanced system settings → Control by mobile apps → Default or Permissive"
       )
+    }
+  }
+
+  @MainActor
+  private func handleDeepLink(_ link: DeepLink) {
+    switch link {
+    case .selectDevice(let deviceId, _):
+      let discovery = RokuDiscoveryService.shared
+      if discovery.tvs.contains(where: { $0.id == deviceId }) {
+        PairingStore.shared.select(.tv(id: deviceId))
+      } else if discovery.streamingDevices.contains(where: { $0.id == deviceId }) {
+        PairingStore.shared.select(.streamer(id: deviceId))
+      } else {
+        Log.warn("DeepLink", "Unknown deviceId=\(deviceId)")
+      }
     }
   }
 
