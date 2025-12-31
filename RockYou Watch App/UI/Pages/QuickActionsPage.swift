@@ -23,50 +23,69 @@ struct QuickActionsPage: View {
   @State private var settings = WatchAppSettings.shared
 
   var body: some View {
-    VStack(spacing: 10) {
-      // Row 1: Pause + Power
-      HStack(spacing: 12) {
-        RemoteButton("pause.fill", label: "Pause") { onAction(.playPause) }
-        SafePowerButton(
-          onPower: { onAction(.power) },
-          style: .labeled,
-          safetyDelay: settings.watchPowerDelay
-        )
-        .disabledForUnavailableHardwareControls(isAvailable: hardwareControlsAvailable)
-      }
+    GeometryReader { geo in
+      let metrics = WatchLayoutMetrics(size: geo.size)
+      let rowH = metrics.quickActionsButtonHeight
 
-      // Row 2: Back + Home
-      HStack(spacing: 12) {
-        RemoteButton("chevron.left", label: "Back") { onAction(.back) }
-        if let homeDelay = settings.watchHomeDelay, homeDelay > 0 {
-          RemoteButton("house.fill", label: "Home") { }
-            .sweepable(
-              icon: "house.fill",
-              color: .indigo,
-              delay: homeDelay,
-              tooltip: "Hold to go home",
-              onSweepComplete: { onAction(.home) }
+      VStack(spacing: metrics.quickActionsRowSpacing) {
+        Spacer(minLength: 0)
+
+        // Button cluster (centered vertically)
+        VStack(spacing: metrics.quickActionsRowSpacing) {
+          // Row 1: Pause + Power
+          HStack(spacing: metrics.buttonRowSpacing) {
+            labeledButton(icon: "pause.fill", label: "Pause", height: rowH) { onAction(.playPause) }
+            SafePowerButton(
+              onPower: { onAction(.power) },
+              style: .custom(height: rowH, showLabel: true),
+              safetyDelay: settings.watchPowerDelay
             )
-        } else {
-          RemoteButton("house.fill", label: "Home") { onAction(.home) }
+            .disabledForUnavailableHardwareControls(isAvailable: hardwareControlsAvailable)
+          }
+
+          // Row 2: Back + Home
+          HStack(spacing: metrics.buttonRowSpacing) {
+            labeledButton(icon: "chevron.left", label: "Back", height: rowH) { onAction(.back) }
+            if let homeDelay = settings.watchHomeDelay, homeDelay > 0 {
+              labeledButton(icon: "house.fill", label: "Home", height: rowH) { }
+                .sweepable(
+                  icon: "house.fill",
+                  color: .indigo,
+                  delay: homeDelay,
+                  tooltip: "Hold to go home",
+                  onSweepComplete: { onAction(.home) }
+                )
+            } else {
+              labeledButton(icon: "house.fill", label: "Home", height: rowH) { onAction(.home) }
+            }
+          }
+
+          // Row 3: Mute + Apps
+          HStack(spacing: metrics.buttonRowSpacing) {
+            labeledButton(icon: "speaker.slash.fill", label: "Mute", height: rowH) { onAction(.volumeMute) }
+              .disabledForUnavailableHardwareControls(isAvailable: hardwareControlsAvailable)
+            labeledButton(icon: "square.grid.2x2.fill", label: "Apps", height: rowH) { onAppsPressed() }
+          }
         }
-      }
 
-      // Row 3: Mute + Apps
-      HStack(spacing: 12) {
-        RemoteButton("speaker.slash.fill", label: "Mute") { onAction(.volumeMute) }
-          .disabledForUnavailableHardwareControls(isAvailable: hardwareControlsAvailable)
-        RemoteButton("square.grid.2x2.fill", label: "Apps") { onAppsPressed() }
-      }
+        Spacer(minLength: 0)
 
-      Spacer(minLength: 0)
-        .frame(maxHeight: 2)
-
-      PageIndicator(pageCount: pageCount, currentPage: currentPage, onPageTap: onPageTap)
+        // Leave a slight breathing gap above the dots (helps small watches feel less cramped).
+        PageIndicator(
+          pageCount: pageCount,
+          currentPage: currentPage,
+          onPageTap: onPageTap,
+          dotSize: metrics.pageIndicatorDotSize,
+          spacing: metrics.pageIndicatorDotSpacing
+        )
+        .padding(.top, 2)
         .padding(.bottom, 2)
+      }
+      .padding(.horizontal, metrics.pageHorizontalPadding)
+      .padding(.top, metrics.quickActionsTopPadding)
+      .padding(.bottom, 2)
+      .frame(width: geo.size.width, height: geo.size.height)
     }
-    .padding(.horizontal, 8)
-    .padding(.top, 12)
     .contentShape(Rectangle())
     .focusable()
     .digitalCrownRotation($crownValue, from: 0, through: 100, sensitivity: .medium, isContinuous: true, isHapticFeedbackEnabled: true)
@@ -82,6 +101,48 @@ struct QuickActionsPage: View {
           if value.translation.width < -50 { onSwipeLeft() }
           if value.translation.width > 50 { onSwipeRight() }
         }
+    )
+  }
+
+  private func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat {
+    max(lo, min(hi, v))
+  }
+
+  private func labeledButton(icon: String, label: String, height: CGFloat, action: @escaping () -> Void) -> some View {
+    let style = RemoteButtonStyle.custom(
+      width: nil,
+      height: height,
+      isCircle: false,
+      iconSize: height * 0.40,
+      cornerRadius: 10
+    )
+
+    let seed: UInt64 = "\(icon)|\(label)|watch-qa".stableHash64
+
+    let base =
+      VStack(spacing: 2) {
+        Image(systemName: icon)
+          .font(.system(size: height * 0.40, weight: .semibold))
+        Text(label)
+          .font(.system(size: AppFontSize.small, weight: .medium))
+      }
+      .foregroundStyle(.white)
+      .frame(maxWidth: .infinity)
+      .frame(height: height)
+
+    let decorated = RemoteButtonPlatform.decorateContent(
+      base: base,
+      style: style,
+      baseColor: nil,
+      buttonShape: AnyShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    )
+
+    return RemoteButtonPlatform.makeBody(
+      action: action,
+      content: decorated,
+      style: style,
+      baseColor: nil,
+      materialSeed: seed
     )
   }
 }

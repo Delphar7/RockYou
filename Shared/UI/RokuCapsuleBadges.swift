@@ -8,9 +8,15 @@
 import SwiftUI
 
 /// Standard purple capsule label used for paired-device pills.
-/// Optionally includes a streaming-device power icon on the leading edge.
+/// Optionally includes a device power icon on the leading edge.
 struct RokuPurpleCapsuleLabel: View {
   let text: String
+
+  // New: general "leading device" support (preferred).
+  var leadingDeviceType: RokuDeviceType? = nil
+  var leadingPowerMode: PowerMode = .unknown
+
+  // Legacy: streamer-only support (kept for existing call sites).
   var showStreamerPowerIcon: Bool = false
   var streamerPowerMode: PowerMode = .unknown
 
@@ -30,9 +36,17 @@ struct RokuPurpleCapsuleLabel: View {
   var verticalPadding: CGFloat = 4
 
   var body: some View {
+    let effectiveType: RokuDeviceType? = leadingDeviceType ?? (showStreamerPowerIcon ? .streamingDevice : nil)
+    let effectivePower: PowerMode = (leadingDeviceType != nil) ? leadingPowerMode : streamerPowerMode
+
     HStack(spacing: 3) {
-      if showStreamerPowerIcon {
-        StreamingDeviceIcon(size: badgeIconBaseSize * badgeIconScale, bodyColor: streamerPowerMode.statusColor)
+      if let t = effectiveType {
+        switch t {
+        case .tv:
+          RokuTVIcon(size: badgeIconBaseSize * badgeIconScale, screenColor: effectivePower.statusColor)
+        case .streamingDevice:
+          StreamingDeviceIcon(size: badgeIconBaseSize * badgeIconScale, bodyColor: effectivePower.statusColor)
+        }
       }
       Text(text)
         .foregroundStyle(.white)

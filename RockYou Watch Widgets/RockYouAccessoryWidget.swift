@@ -1,6 +1,12 @@
 import SwiftUI
 import WidgetKit
 
+private let rockYouPurple = Color(
+  red: 108.0 / 255.0,
+  green: 64.0 / 255.0,
+  blue: 159.0 / 255.0
+)
+
 private struct RockYouEntry: TimelineEntry {
   let date: Date
   let target: WatchComplicationTarget?
@@ -190,6 +196,7 @@ private struct RockYouAccessoryWidgetView: View {
         Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
       }
       Spacer(minLength: 0)
+      rightSideIcon
     }
 
     return Group {
@@ -198,6 +205,78 @@ private struct RockYouAccessoryWidgetView: View {
       } else {
         content
       }
+    }
+  }
+
+  @ViewBuilder
+  private var rightSideIcon: some View {
+    switch entry.target?.iconHint {
+    case let .channel(appId: appId):
+      let deviceId = entry.target?.deviceId ?? ""
+      if let image = WidgetAppIconDiskCache.iconImage(appId: appId, deviceId: deviceId) {
+        WidgetIconTile(image: image, size: 24, cornerRadius: 6)
+      } else {
+        RockYouMarkTile(size: 24)
+      }
+
+    case .rokuDevice, .none:
+      RockYouMarkTile(size: 24)
+    }
+  }
+}
+
+private enum WidgetAppIconDiskCache {
+  static func iconImage(appId: String, deviceId: String) -> Image? {
+    guard !appId.isEmpty, !deviceId.isEmpty else { return nil }
+    guard let appSupport = FileManager.default.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first else { return nil }
+
+    let iconDir = appSupport.appendingPathComponent("AppIcons", isDirectory: true)
+    let app = RokuApp(id: appId, name: "", type: nil, version: nil)
+    let fileURL = iconDir.appendingPathComponent(app.iconFilename(for: deviceId))
+
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+    return PlatformSwiftUIImage.contentsOfFile(fileURL.path)
+  }
+}
+
+private struct WidgetIconTile: View {
+  let image: Image
+  let size: CGFloat
+  let cornerRadius: CGFloat
+
+  var body: some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    image
+      .resizable()
+      .aspectRatio(contentMode: .fill)
+      .frame(width: size, height: size)
+      .clipShape(shape)
+      .overlay {
+        shape.stroke(Color.white.opacity(0.20), lineWidth: 1)
+      }
+  }
+}
+
+private struct RockYouMarkTile: View {
+  let size: CGFloat
+
+  var body: some View {
+    let cornerRadius: CGFloat = 6
+    ZStack {
+      RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        .fill(rockYouPurple)
+      Text("R")
+        .font(.system(size: size * 0.62, weight: .heavy, design: .rounded))
+        .foregroundStyle(.white)
+        .padding(.top, size * 0.02) // optically center the glyph
+    }
+    .frame(width: size, height: size)
+    .overlay {
+      RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        .stroke(Color.white.opacity(0.25), lineWidth: 1)
     }
   }
 }

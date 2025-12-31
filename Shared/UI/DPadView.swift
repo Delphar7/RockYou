@@ -84,13 +84,10 @@ struct DPadView: View {
   }
 
   private func okButtonView(size: CGFloat) -> some View {
-    // Image has a lot of dead space.
-    let adjustedSize = size.scaled(by: 1.27)
     return ZStack {
-      okButton(size: adjustedSize)
+      okButton(size: size)
     }
     .frame(width: size, height: size)
-    .offset(x: 0, y: size * 0.05)
   }
 
   // MARK: - OK Button

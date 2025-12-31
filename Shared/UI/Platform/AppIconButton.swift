@@ -21,15 +21,8 @@ struct AppIconButton: View {
 
   @ObservedObject private var cache = AppCacheManager.shared
 
-  /// Check if this is a TV input (HDMI, AV, Tuner) rather than an app
-  private var isInput: Bool {
-    if let type = appType, type == "tvin" {
-      return true
-    }
-    let lower = appName.lowercased()
-    return lower.contains("hdmi") || lower.contains("tuner") || lower.contains("antenna")
-      || lower.hasPrefix("av") || lower.contains(" av")
-  }
+  /// Check if this is a TV input (HDMI, AV, Tuner) rather than an app.
+  private var isInput: Bool { AppIconClassifier.isInput(appId: appId, appType: appType) }
 
   var body: some View {
     // Reference iconVersion to trigger re-render when icons load
@@ -39,7 +32,7 @@ struct AppIconButton: View {
     // Off = no sweepable, just tap-to-launch.
     if launchDelay == nil {
       Button(action: action) {
-        AppIconVisual(
+        AppStripAppIconTile(
           appId: appId,
           appName: appName,
           appType: appType,
@@ -52,7 +45,7 @@ struct AppIconButton: View {
       .buttonStyle(.plain)
     } else {
       Button(action: {}) {
-        AppIconVisual(
+        AppStripAppIconTile(
           appId: appId,
           appName: appName,
           appType: appType,
@@ -65,7 +58,7 @@ struct AppIconButton: View {
       .buttonStyle(.plain)
       .sweepable(
         icon: {
-          AppIconVisual.sweepOverlayIcon(
+          AppIconWithLabel.sweepOverlayIcon(
             appId: appId,
             appName: appName,
             appType: appType,

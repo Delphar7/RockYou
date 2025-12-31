@@ -159,19 +159,72 @@ enum MaterialButtonEffect {
     return (start: start, end: end)
   }
 
-  // MARK: - Metrics
+  // MARK: - Adjustable knobs
+  //
+  // The goal is to tune the feel/appearance by adjusting a *small* set of meaningful knobs.
+  // Everything else is derived “implementation math” so we don't end up with 30 unrelated constants.
 
-  struct Metrics: Sendable {
-    let lipWidth: CGFloat
-    /// Subtle "step" fill for the lip ring (helps it read as geometry, not just an edge highlight).
-    let lipRidgeOpacity: CGFloat
-    let lipRidgeDarkening: CGFloat
+  struct Knobs: Sendable {
+    /// The visual "height" of the button (how much wall shows when unpressed).
+    ///
+    /// This drives:
+    /// - wall thickness (`liftHeight`)
+    /// - press travel (`pressDepth`)
+    /// - lift shadow size/offset
+    var buttonHeight: CGFloat = 8
+
+    /// Press travel relative to `buttonHeight`.
+    /// Default preserves the old feel: 5 / 6.
+    var pressDepthRatio: CGFloat = 5.0 / 6.0
+
+    /// Controls press animation pacing.
+    /// Default preserves old `.snappy(duration: 0.12)`.
+    var animationDuration: CGFloat = 0.12
+
+    /// Depth contrast: how dark the button's vertical sides read.
+    var sideDarkening: CGFloat = 0.16
+
+    /// Extra darkening applied specifically to wall-only layers (thickness + lift shadow).
+    var wallExtraDarkening: CGFloat = 0.05
+
+    /// Lighting overlay intensity (highlight/shade across the face).
+    var lightingStrength: CGFloat = 0.40
+
+    /// Texture amount for the plastic overlay.
+    var textureOpacity: CGFloat = 0.22
+    var textureBlendMode: BlendMode = .softLight
+
+    // MARK: Height policy
+    /// Optional absolute cap on effective wall height (in points).
+    /// Useful for tower-testing without letting values explode.
+    ///
+    /// Default: cap to 3× the standard height (6 → 12). This makes `buttonHeight` useful for
+    /// tower-testing by simply changing the one knob, without needing extra configuration.
+    var maxEffectiveHeight: CGFloat? = 18
+
+    /// If true, the effective wall height is also clamped as a fraction of the control size.
+    /// This prevents tiny controls becoming skyscrapers in normal UI.
+    ///
+    /// Default: disabled (Tower-B behavior). It's better for testing and makes `buttonHeight`
+    /// changes show up even when the control is relatively small.
+    var usesMinSideHeightClamp: Bool = false
+
+    /// Maximum wall height as a fraction of `minSide` when `usesMinSideHeightClamp` is enabled.
+    var maxHeightFractionOfMinSide: CGFloat = 0.14
+
+    static let standard = Knobs()
+  }
+
+  // MARK: - Implementation details (derived material metrics)
+
+  private struct MaterialMetrics: Sendable {
+    // Geometry
     let pressDepth: CGFloat
     let liftHeight: CGFloat
-    let sideDarkening: CGFloat
-    /// Extra darkening applied to the *wall* layers (base thickness + lift shadow).
-    /// This should not affect the face shading.
-    let wallExtraDarkening: CGFloat
+
+    // Face / lip rendering
+    let lipRidgeOpacity: CGFloat
+    let lipRidgeDarkening: CGFloat
     let bottomEdgeHighlightOpacity: CGFloat
     let highlightBrightness: CGFloat
     let lipHighlightOpacityTop: CGFloat
@@ -181,12 +234,16 @@ enum MaterialButtonEffect {
     let liftTintOpacityTop: CGFloat
     let liftTintOpacityBottom: CGFloat
 
-    // Depth / lift shadow (unpressed)
+    // Depth contrast
+    let sideDarkening: CGFloat
+    let wallExtraDarkening: CGFloat
+
+    // Lift shadow (unpressed)
     let liftShadowOpacity: CGFloat
     let liftShadowBlur: CGFloat
     let liftShadowOffsetY: CGFloat
 
-    // Depth / lift shadow (pressed)
+    // Lift shadow (pressed)
     let pressedLiftShadowOpacity: CGFloat
     let pressedLiftShadowBlur: CGFloat
     let pressedLiftShadowOffsetY: CGFloat
@@ -196,34 +253,58 @@ enum MaterialButtonEffect {
     let textureOpacity: CGFloat
     let textureBlendMode: BlendMode
 
-    static let standard = Metrics(
-      lipWidth: 2.0,
-      // Make the lip read a touch more like geometry (step) and less like a faint highlight.
-      lipRidgeOpacity: 0.18,
-      lipRidgeDarkening: 0.09,
-      pressDepth: 5,
-      liftHeight: 6,
-      sideDarkening: 0.16,
-      wallExtraDarkening: 0.05,
-      bottomEdgeHighlightOpacity: 0.2,
-      highlightBrightness: 0.10,
-      lipHighlightOpacityTop: 0.9,
-      lipHighlightOpacityBottom: 0.8,
-      lipShadowOpacityTop: 0.07,
-      lipShadowOpacityBottom: 0.30,
-      liftTintOpacityTop: 0.0,
-      liftTintOpacityBottom: 0.35,
-      liftShadowOpacity: 0.18,
-      liftShadowBlur: 10,
-      liftShadowOffsetY: 6,
-      pressedLiftShadowOpacity: 0.08,
-      pressedLiftShadowBlur: 5,
-      pressedLiftShadowOffsetY: 2,
-      // Tuned to better match the D-pad *lit-side* look while keeping the shadow side from getting crushed.
-      lightingStrength: 0.40,
-      textureOpacity: 0.22,
-      textureBlendMode: .softLight,
-    )
+    // Animation
+    let animationDuration: CGFloat
+    let maxEffectiveHeight: CGFloat?
+    let usesMinSideHeightClamp: Bool
+    let maxHeightFractionOfMinSide: CGFloat
+
+    init(knobs: Knobs) {
+      let h = max(0, knobs.buttonHeight)
+      self.liftHeight = h
+      self.pressDepth = max(0, min(h, h * knobs.pressDepthRatio))
+
+      // These are the “good” tuned constants from the old Metrics. Keep them as implementation details.
+      self.lipRidgeOpacity = 0.18
+      self.lipRidgeDarkening = 0.09
+      self.bottomEdgeHighlightOpacity = 0.2
+      self.highlightBrightness = 0.10
+      self.lipHighlightOpacityTop = 0.9
+      self.lipHighlightOpacityBottom = 0.8
+      self.lipShadowOpacityTop = 0.07
+      self.lipShadowOpacityBottom = 0.30
+      self.liftTintOpacityTop = 0.0
+      self.liftTintOpacityBottom = 0.35
+
+      self.sideDarkening = knobs.sideDarkening
+      self.wallExtraDarkening = knobs.wallExtraDarkening
+
+      // Lift shadow: scale blur/offset with height; preserve old feel at h=6.
+      self.liftShadowOpacity = 0.18
+      self.liftShadowBlur = max(0, h * (10.0 / 6.0))
+      self.liftShadowOffsetY = h * (6.0 / 6.0)
+
+      // Pressed shadow: proportionally derived from unpressed; preserves old feel at h=6.
+      self.pressedLiftShadowOpacity = self.liftShadowOpacity * (0.08 / 0.18)
+      self.pressedLiftShadowBlur = self.liftShadowBlur * (5.0 / 10.0)
+      self.pressedLiftShadowOffsetY = self.liftShadowOffsetY * (2.0 / 6.0)
+
+      self.lightingStrength = knobs.lightingStrength
+      self.textureOpacity = knobs.textureOpacity
+      self.textureBlendMode = knobs.textureBlendMode
+
+      self.animationDuration = knobs.animationDuration
+      self.maxEffectiveHeight = knobs.maxEffectiveHeight
+      self.usesMinSideHeightClamp = knobs.usesMinSideHeightClamp
+      self.maxHeightFractionOfMinSide = knobs.maxHeightFractionOfMinSide
+    }
+
+    func liftShadow(isPressed: Bool) -> (opacity: CGFloat, blur: CGFloat, offsetY: CGFloat) {
+      if isPressed {
+        return (pressedLiftShadowOpacity, pressedLiftShadowBlur, pressedLiftShadowOffsetY)
+      }
+      return (liftShadowOpacity, liftShadowBlur, liftShadowOffsetY)
+    }
   }
 
   // MARK: - Public API
@@ -240,14 +321,14 @@ enum MaterialButtonEffect {
     isPressed: Bool,
     seed: UInt64,
     cornerRadius: CGFloat = 14,
-    metrics: Metrics = .standard
+    knobs: Knobs = .standard
   ) -> some View {
     chrome(
       shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
       baseColor: baseColor,
       isPressed: isPressed,
       seed: seed,
-      metrics: metrics
+      knobs: knobs
     )
   }
 
@@ -256,14 +337,14 @@ enum MaterialButtonEffect {
     baseColor: Color,
     isPressed: Bool,
     seed: UInt64,
-    metrics: Metrics = .standard
+    knobs: Knobs = .standard
   ) -> some View {
     chrome(
       shape: Circle(),
       baseColor: baseColor,
       isPressed: isPressed,
       seed: seed,
-      metrics: metrics
+      knobs: knobs
     )
   }
 
@@ -272,14 +353,14 @@ enum MaterialButtonEffect {
     baseColor: Color,
     isPressed: Bool,
     seed: UInt64,
-    metrics: Metrics = .standard
+    knobs: Knobs = .standard
   ) -> some View {
     chrome(
       shape: Capsule(),
       baseColor: baseColor,
       isPressed: isPressed,
       seed: seed,
-      metrics: metrics
+      knobs: knobs
     )
   }
 
@@ -288,7 +369,7 @@ enum MaterialButtonEffect {
     baseColor: Color,
     isPressed: Bool,
     seed: UInt64,
-    metrics: Metrics = .standard,
+    knobs: Knobs = .standard,
     @ViewBuilder content: @escaping () -> Content
   ) -> some View {
     chromeWithContent(
@@ -296,96 +377,156 @@ enum MaterialButtonEffect {
       baseColor: baseColor,
       isPressed: isPressed,
       seed: seed,
-      metrics: metrics,
+      knobs: knobs,
       content: content
     )
   }
 
   // MARK: - Implementation
 
+  private static func effectiveLiftHeight(metrics: MaterialMetrics, minSide: CGFloat) -> CGFloat {
+    // Keep the overall "height" driven by the knob, but apply caps so tuning stays sane.
+    // Note: We default to a size-based clamp to avoid tiny controls turning into skyscrapers.
+    let minSideCap: CGFloat =
+      metrics.usesMinSideHeightClamp
+      ? max(3, minSide * metrics.maxHeightFractionOfMinSide) : .greatestFiniteMagnitude
+    let absCap: CGFloat = metrics.maxEffectiveHeight ?? .greatestFiniteMagnitude
+    return min(metrics.liftHeight, minSideCap, absCap)
+  }
+
+  private static func wallBrightnessBoost(minSide: CGFloat) -> CGFloat {
+    // Scale brightness boost up for small buttons (they read darker against the black background).
+    let wallBoostT = max(
+      0,
+      min(
+        1,
+        (wallBrightnessBoostReferenceSize - minSide)
+          / (wallBrightnessBoostReferenceSize  - wallBrightnessBoostMinSize)
+      )
+    )
+    return min(
+      wallBrightnessBoostMax,
+      wallBrightnessBoostBase
+        + (wallBrightnessBoostSmallExtra * wallBoostT)
+    )
+  }
+
+  private static func wallFill<S: InsettableShape>(
+    shape: S,
+    baseColor: Color,
+    useClamp: Bool,
+    clampedWallColor: Color,
+    metrics: MaterialMetrics,
+    wallBrightnessBoost: CGFloat
+  ) -> some View {
+    Group {
+      if useClamp {
+        shape.fill(clampedWallColor)
+      } else {
+        // Original wall rendering: derive wall from baseColor via view modifiers.
+        // Keeps the “good” `rokuPurple` walls identical to the pre-clamp look.
+        shape
+          .fill(baseColor)
+          .brightness(-Double(metrics.sideDarkening + metrics.wallExtraDarkening))
+          .saturation(wallSaturationScale)
+          .hueRotation(.degrees(wallHueRotationDegrees))
+          .brightness(Double(wallBrightnessBoost))
+      }
+    }
+  }
+
+  private struct Derived: Sendable {
+    let size: CGSize
+    let minSide: CGFloat
+    let lipWidth: CGFloat
+    let liftHeight: CGFloat
+    let pressDepth: CGFloat
+    let faceOffsetY: CGFloat
+    let visibleLift: CGFloat
+    let liftShadow: (opacity: CGFloat, blur: CGFloat, offsetY: CGFloat)
+    let wallBrightnessBoost: CGFloat
+    let lightingStrength: CGFloat
+    let lightStart: UnitPoint
+    let lightEnd: UnitPoint
+    let useClamp: Bool
+    let clampedWallColor: Color
+
+    init(geo: GeometryProxy, baseColor: Color, isPressed: Bool, metrics: MaterialMetrics) {
+      let size = geo.size
+      self.size = size
+      self.minSide = min(size.width, size.height)
+
+      // Lip thickness should read like a machining detail tied to control size,
+      // not to the button "height" (wall thickness).
+      //
+      // Target: ≈2.0 for current primary buttons.
+      let referenceMinSide: CGFloat = 86
+      let rawLip = (minSide / referenceMinSide) * 2.0
+      self.lipWidth = max(1.5, min(2.6, rawLip))
+
+      self.liftHeight = MaterialButtonEffect.effectiveLiftHeight(metrics: metrics, minSide: minSide)
+      self.pressDepth = min(metrics.pressDepth, liftHeight)
+      self.faceOffsetY = isPressed ? pressDepth : 0
+      self.visibleLift = max(0, liftHeight - faceOffsetY)
+
+      self.liftShadow = metrics.liftShadow(isPressed: isPressed)
+      self.wallBrightnessBoost = MaterialButtonEffect.wallBrightnessBoost(minSide: minSide)
+
+      self.lightingStrength = metrics.lightingStrength
+      let (start, end) = MaterialButtonEffect.lightingStartEnd
+      self.lightStart = start
+      self.lightEnd = end
+
+      self.useClamp = MaterialButtonEffect.shouldUseWallClamp(
+        baseColor: baseColor, wallExtraDrop: metrics.wallExtraDarkening)
+      self.clampedWallColor = MaterialButtonEffect.wallColorClamped(
+        baseColor: baseColor,
+        wallBoost: wallBrightnessBoost,
+        wallExtraDrop: metrics.wallExtraDarkening
+      )
+    }
+  }
+
   private static func chromeWithContent<S: InsettableShape, Content: View>(
     shape: S,
     baseColor: Color,
     isPressed: Bool,
     seed: UInt64,
-    metrics: Metrics,
+    knobs: Knobs,
     @ViewBuilder content: @escaping () -> Content
   ) -> some View {
-    GeometryReader { geo in
-      let size = geo.size
-      let minSide = min(size.width, size.height)
-      let liftHeight = min(metrics.liftHeight, max(3, minSide * 0.14))
-      let pressDepth = min(metrics.pressDepth, liftHeight)
-      let faceOffsetY = isPressed ? pressDepth : 0
-      let visibleLift = max(0, liftHeight - faceOffsetY)
-
-      let liftOpacity = isPressed ? metrics.pressedLiftShadowOpacity : metrics.liftShadowOpacity
-      let liftBlur = isPressed ? metrics.pressedLiftShadowBlur : metrics.liftShadowBlur
-      let liftOffsetY = isPressed ? metrics.pressedLiftShadowOffsetY : metrics.liftShadowOffsetY
-
-      let wallMask = wallMask(shape: shape, wallOffsetY: visibleLift)
-      // Scale brightness boost up for small buttons (they read darker against the black background).
-      let wallBoostT = max(
-        0,
-        min(
-          1,
-          (wallBrightnessBoostReferenceSize - minSide)
-            / (wallBrightnessBoostReferenceSize - wallBrightnessBoostMinSize)
-        )
-      )
-      let wallBrightnessBoost = min(
-        wallBrightnessBoostMax,
-        wallBrightnessBoostBase
-          + (wallBrightnessBoostSmallExtra * wallBoostT)
-      )
-
-      let lightingStrength = metrics.lightingStrength
+    let metrics = MaterialMetrics(knobs: knobs)
+    return GeometryReader { geo in
+      let derived = Derived(geo: geo, baseColor: baseColor, isPressed: isPressed, metrics: metrics)
+      let wallMask = wallMask(shape: shape, wallOffsetY: derived.visibleLift)
 
       ZStack {
         // Wall layers (never hit-test).
         ZStack {
-          let useClamp = shouldUseWallClamp(
-            baseColor: baseColor, wallExtraDrop: metrics.wallExtraDarkening)
-          let clampedWallColor = wallColorClamped(
-            baseColor: baseColor,
-            wallBoost: wallBrightnessBoost,
-            wallExtraDrop: metrics.wallExtraDarkening
-          )
-
           // Base thickness: darker "vertical side" that peeks out below the face.
-          Group {
-            if useClamp {
-              shape.fill(clampedWallColor)
-            } else {
-              // Original wall rendering: derive wall from baseColor via view modifiers.
-              // Keeps the “good” `rokuPurple` walls identical to the pre-clamp look.
-              shape
-                .fill(baseColor)
-                .brightness(-Double(metrics.sideDarkening + metrics.wallExtraDarkening))
-                .saturation(wallSaturationScale)
-                .hueRotation(.degrees(wallHueRotationDegrees))
-                .brightness(Double(wallBrightnessBoost))
-            }
-          }
-          .offset(x: 0, y: visibleLift)
+          wallFill(
+            shape: shape,
+            baseColor: baseColor,
+            useClamp: derived.useClamp,
+            clampedWallColor: derived.clampedWallColor,
+            metrics: metrics,
+            wallBrightnessBoost: derived.wallBrightnessBoost
+          )
+          .offset(x: 0, y: derived.visibleLift)
           .mask(wallMask)
 
           // Depth / lift "shadow": should be a darker shade of the button color (not black-on-background).
-          Group {
-            if useClamp {
-              shape.fill(clampedWallColor)
-            } else {
-              shape
-                .fill(baseColor)
-                .brightness(-Double(metrics.sideDarkening + metrics.wallExtraDarkening))
-                .saturation(wallSaturationScale)
-                .hueRotation(.degrees(wallHueRotationDegrees))
-                .brightness(Double(wallBrightnessBoost))
-            }
-          }
-          .opacity(liftOpacity)
-          .blur(radius: liftBlur)
-          .offset(x: 0, y: liftOffsetY + visibleLift)
+          wallFill(
+            shape: shape,
+            baseColor: baseColor,
+            useClamp: derived.useClamp,
+            clampedWallColor: derived.clampedWallColor,
+            metrics: metrics,
+            wallBrightnessBoost: derived.wallBrightnessBoost
+          )
+          .opacity(derived.liftShadow.opacity)
+          .blur(radius: derived.liftShadow.blur)
+          .offset(x: 0, y: derived.liftShadow.offsetY + derived.visibleLift)
           .mask(
             // Weight the lift tint toward the bottom.
             LinearGradient(
@@ -409,25 +550,24 @@ enum MaterialButtonEffect {
 
           // Lighting gradient: subtle shading + highlight (closer to the pre-rendered D-pad).
           // We keep the darkening term *much* smaller than the highlight so the base doesn't get crushed.
-          let (lightStart, lightEnd) = lightingStartEnd
           shape
             .fill(
               LinearGradient(
                 colors: [
                   // Keep the shade term smaller than highlight so increasing `lightingStrength` mostly
                   // pushes the lit-side (NE) rather than darkening the whole face.
-                  Color.black.opacity(lightingStrength * lightingShadeFactor),  // subtle shade on SW
-                  Color.white.opacity(lightingStrength),  // brighter on NE
+                  Color.black.opacity(derived.lightingStrength * lightingShadeFactor),  // subtle shade on SW
+                  Color.white.opacity(derived.lightingStrength),  // brighter on NE
                 ],
-                startPoint: lightStart,
-                endPoint: lightEnd
+                startPoint: derived.lightStart,
+                endPoint: derived.lightEnd
               )
             )
             .blendMode(.overlay)
             .opacity(lightingOverlayOpacity)
 
           // Texture: cookie-cutter crop from the 1k source, no scaling.
-          textureOverlay(size: size, seed: seed)
+          textureOverlay(size: derived.size, seed: seed)
             .blendMode(metrics.textureBlendMode)
             .opacity(metrics.textureOpacity)
             .mask(shape)
@@ -458,8 +598,8 @@ enum MaterialButtonEffect {
                     Color.white.opacity(0.75),
                     Color.white.opacity(1.0),
                   ],
-                  startPoint: lightStart,
-                  endPoint: lightEnd
+                  startPoint: derived.lightStart,
+                  endPoint: derived.lightEnd
                 )
                 .blendMode(.multiply)
               }
@@ -476,7 +616,7 @@ enum MaterialButtonEffect {
             .brightness(-Double(metrics.lipRidgeDarkening))
             .opacity(metrics.lipRidgeOpacity)
             .mask(
-              lipRingMask(shape: shape, inset: metrics.lipWidth * 2)
+              lipRingMask(shape: shape, inset: derived.lipWidth * 2)
                 .mask(
                   // This is a *darkening* layer: apply it more strongly toward the bottom/front,
                   // so the bottom lip doesn't read brighter just because it's next to a darker face region.
@@ -497,21 +637,21 @@ enum MaterialButtonEffect {
             .fill(
               LinearGradient(
                 colors: [
-                  Color.black.opacity(lightingStrength * lightingShadeFactor),
-                  Color.white.opacity(lightingStrength),
+                  Color.black.opacity(derived.lightingStrength * lightingShadeFactor),
+                  Color.white.opacity(derived.lightingStrength),
                 ],
-                startPoint: lightStart,
-                endPoint: lightEnd
+                startPoint: derived.lightStart,
+                endPoint: derived.lightEnd
               )
             )
             .blendMode(.overlay)
             .opacity(lipSurfaceLightingOpacity)
-            .mask(lipRingMask(shape: shape, inset: metrics.lipWidth * 2))
+            .mask(lipRingMask(shape: shape, inset: derived.lipWidth * 2))
 
-          textureOverlay(size: size, seed: seed)
+          textureOverlay(size: derived.size, seed: seed)
             .blendMode(metrics.textureBlendMode)
             .opacity(metrics.textureOpacity * lipSurfaceTextureOpacityScale)
-            .mask(lipRingMask(shape: shape, inset: metrics.lipWidth * 2))
+            .mask(lipRingMask(shape: shape, inset: derived.lipWidth * 2))
 
           // Bottom lip "step band": should sit between the face and the wall.
           // Slightly more shadowed than the face, but not as dark as the wall.
@@ -520,7 +660,7 @@ enum MaterialButtonEffect {
             .brightness(-Double(metrics.sideDarkening * 0.55))
             .opacity(0.34)
             .mask(
-              lipRingMask(shape: shape, inset: metrics.lipWidth * 1.4)
+              lipRingMask(shape: shape, inset: derived.lipWidth * 1.4)
                 .mask(
                   LinearGradient(
                     colors: [
@@ -538,7 +678,7 @@ enum MaterialButtonEffect {
           // Make it respond to the same SW→NE lighting direction (so it doesn't vanish on the "back" side).
           let lipHighlightScale = lipOuterHighlightScale(baseColor: baseColor)
           shape
-            .strokeBorder(baseColor, lineWidth: metrics.lipWidth)
+            .strokeBorder(baseColor, lineWidth: derived.lipWidth)
             .brightness(Double(metrics.highlightBrightness * lipHighlightScale))
             .mask(
               // Combine diagonal SW→NE lighting with a vertical bias (top/back brighter).
@@ -549,8 +689,8 @@ enum MaterialButtonEffect {
                     Color.white.opacity(metrics.lipHighlightOpacityBottom * lipHighlightScale),
                     Color.white.opacity(metrics.lipHighlightOpacityTop * lipHighlightScale),
                   ],
-                  startPoint: lightStart,
-                  endPoint: lightEnd
+                  startPoint: derived.lightStart,
+                  endPoint: derived.lightEnd
                 )
 
                 LinearGradient(
@@ -568,8 +708,8 @@ enum MaterialButtonEffect {
 
           // Inner shadow ring (slightly stronger on the SW/darker side).
           shape
-            .inset(by: metrics.lipWidth)
-            .strokeBorder(baseColor, lineWidth: metrics.lipWidth)
+            .inset(by: derived.lipWidth)
+            .strokeBorder(baseColor, lineWidth: derived.lipWidth)
             .brightness(-Double(metrics.sideDarkening * 0.78))
             .mask(
               // Combine diagonal SW→NE with vertical bias (bottom/front more shadow).
@@ -580,8 +720,8 @@ enum MaterialButtonEffect {
                     Color.white.opacity(metrics.lipShadowOpacityBottom),
                     Color.white.opacity(metrics.lipShadowOpacityTop),
                   ],
-                  startPoint: lightStart,
-                  endPoint: lightEnd
+                  startPoint: derived.lightStart,
+                  endPoint: derived.lightEnd
                 )
 
                 LinearGradient(
@@ -599,12 +739,12 @@ enum MaterialButtonEffect {
 
           // Content (glyph/text) should slide with the face so it never "floats" on press.
           content()
-            .frame(width: size.width, height: size.height, alignment: .center)
+            .frame(width: derived.size.width, height: derived.size.height, alignment: .center)
         }
-        .offset(x: 0, y: faceOffsetY)
+        .offset(x: 0, y: derived.faceOffsetY)
       }
-      .frame(width: size.width, height: size.height)
-      .animation(.snappy(duration: 0.12), value: isPressed)
+      .frame(width: derived.size.width, height: derived.size.height)
+      .animation(.snappy(duration: metrics.animationDuration), value: isPressed)
     }
   }
 
@@ -613,14 +753,14 @@ enum MaterialButtonEffect {
     baseColor: Color,
     isPressed: Bool,
     seed: UInt64,
-    metrics: Metrics
+    knobs: Knobs
   ) -> some View {
     chromeWithContent(
       shape: shape,
       baseColor: baseColor,
       isPressed: isPressed,
       seed: seed,
-      metrics: metrics
+      knobs: knobs
     ) {
       // No content: background-only chrome.
       EmptyView()
@@ -666,7 +806,7 @@ enum MaterialButtonEffect {
     let baseColor: Color
     let seed: UInt64
     var cornerRadius: CGFloat = 14
-    var metrics: Metrics = .standard
+    var knobs: Knobs = .standard
 
     func makeBody(configuration: Configuration) -> some View {
       let pressed = configuration.isPressed && isEnabled
@@ -691,7 +831,7 @@ enum MaterialButtonEffect {
             baseColor: baseColor,
             isPressed: pressed,
             seed: seed,
-            metrics: metrics
+            knobs: knobs
           ) {
             configuration.label
           }
@@ -707,7 +847,7 @@ enum MaterialButtonEffect {
 
     let baseColor: Color
     let seed: UInt64
-    var metrics: Metrics = .standard
+    var knobs: Knobs = .standard
 
     func makeBody(configuration: Configuration) -> some View {
       let pressed = configuration.isPressed && isEnabled
@@ -722,7 +862,7 @@ enum MaterialButtonEffect {
             baseColor: baseColor,
             isPressed: pressed,
             seed: seed,
-            metrics: metrics
+            knobs: knobs
           ) {
             configuration.label
           }
@@ -736,7 +876,7 @@ enum MaterialButtonEffect {
 
     let baseColor: Color
     let seed: UInt64
-    var metrics: Metrics = .standard
+    var knobs: Knobs = .standard
 
     func makeBody(configuration: Configuration) -> some View {
       let pressed = configuration.isPressed && isEnabled
@@ -750,7 +890,7 @@ enum MaterialButtonEffect {
             baseColor: baseColor,
             isPressed: pressed,
             seed: seed,
-            metrics: metrics
+            knobs: knobs
           ) {
             configuration.label
           }
@@ -842,6 +982,16 @@ enum MaterialButtonEffect {
 // MARK: - Previews
 
 #Preview("MaterialButtonEffect playground") {
+  let towerHeight: CGFloat = 24
+  let towerCap: CGFloat = 12  // 2x the standard height (6 → 12)
+  let towerKnobs: MaterialButtonEffect.Knobs = {
+    var k = MaterialButtonEffect.Knobs.standard
+    k.buttonHeight = towerHeight
+    k.maxEffectiveHeight = towerCap
+    k.usesMinSideHeightClamp = false  // tower-testing: ignore control-size clamp (may overdraw)
+    return k
+  }()
+
   ScrollView {
     VStack(alignment: .leading, spacing: 18) {
       Text("MaterialButtonEffect playground")
@@ -885,6 +1035,24 @@ enum MaterialButtonEffect {
             title: "After (pressed)", systemName: "gearshape", seed: 3, style: .material,
             pressed: true)
         }
+      }
+
+      Divider().overlay(Color.white.opacity(0.12))
+
+      Group {
+        Text("Tower testing")
+          .font(.headline)
+          .foregroundStyle(.white.opacity(0.9))
+
+        HStack(spacing: 18) {
+          previewRoundedLabeled(
+            title: "Base", systemName: "bolt.fill", seed: 21, style: .material, pressed: false)
+          previewRoundedLabeled(
+            title: "Tower", systemName: "bolt.fill", seed: 21, style: .material, pressed: false,
+            knobs: towerKnobs
+          )
+        }
+        .padding(.bottom, 20)  // give room for tall walls to show below the control frame
       }
 
       Divider().overlay(Color.white.opacity(0.12))
@@ -939,6 +1107,8 @@ private func previewRoundedLabeled(
   seed: UInt64,
   style: PreviewStyle,
   pressed: Bool = false
+  ,
+  knobs: MaterialButtonEffect.Knobs = .standard
 ) -> some View {
   VStack(spacing: 6) {
     Text(title)
@@ -959,7 +1129,8 @@ private func previewRoundedLabeled(
           MaterialButtonEffect.roundedRect(
             baseColor: previewPurple,
             isPressed: pressed,
-            seed: seed
+            seed: seed,
+            knobs: knobs
           )
         }
       }
@@ -978,6 +1149,8 @@ private func previewCircleLabeled(
   seed: UInt64,
   style: PreviewStyle,
   pressed: Bool = false
+  ,
+  knobs: MaterialButtonEffect.Knobs = .standard
 ) -> some View {
   VStack(spacing: 6) {
     Text(title)
@@ -995,7 +1168,8 @@ private func previewCircleLabeled(
           MaterialButtonEffect.circle(
             baseColor: previewPurple,
             isPressed: pressed,
-            seed: seed
+            seed: seed,
+            knobs: knobs
           )
         }
       }

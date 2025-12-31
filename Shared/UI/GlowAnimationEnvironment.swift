@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Glow animation gating (shared)
 //
-// AppIconVisual uses these environment values to decide whether to run periodic glow animations.
+// AppIconWithLabel uses these environment values to decide whether to run periodic glow animations.
 // - On watchOS: keep defaults (disabled).
 // - On iOS: gate on scenePhase + user interaction timestamp.
 // - On macOS: gate on window focus (controlActiveState) and scenePhase.

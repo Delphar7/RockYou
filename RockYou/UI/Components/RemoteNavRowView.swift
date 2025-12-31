@@ -7,12 +7,20 @@ struct RemoteNavRowView: View {
   let onAction: (RemoteAction) -> Void
 
   var body: some View {
-    HStack(spacing: 32 * scaleFactor) {
-      TopKeyButton(systemName: "chevron.left", width: 72 * scaleFactor, height: 54 * scaleFactor) { onAction(.back) }
+    HStack(spacing: RemoteCoreButtonMetrics.topKeyHorizontalPadding * scaleFactor) {
+      TopKeyButton(
+        systemName: "chevron.left",
+        width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
+        height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
+      ) { onAction(.back) }
 
       if let phoneHomeDelay, phoneHomeDelay > 0 {
-        TopKeyButton(systemName: "house.fill", width: 72 * scaleFactor, height: 54 * scaleFactor) { }
-          .sweepable(
+        TopKeyButton(
+          systemName: "house.fill",
+          width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
+          height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
+        ) {}
+        .sweepable(
             icon: "house.fill",
             color: .indigo,
             delay: phoneHomeDelay,
@@ -20,11 +28,19 @@ struct RemoteNavRowView: View {
             onSweepComplete: { onAction(.home) }
           )
       } else {
-        TopKeyButton(systemName: "house.fill", width: 72 * scaleFactor, height: 54 * scaleFactor) { onAction(.home) }
+        TopKeyButton(
+          systemName: "house.fill",
+          width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
+          height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
+        ) { onAction(.home) }
       }
 
-      TopKeyButton(systemName: "gearshape.fill", width: 72 * scaleFactor, height: 54 * scaleFactor) { showingConfigure = true }
+      TopKeyButton(
+        systemName: "gearshape.fill",
+        width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
+        height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
+      ) { showingConfigure = true }
     }
-    .padding(.top, 6 * scaleFactor)
+    .padding(.top, 0)
   }
 }

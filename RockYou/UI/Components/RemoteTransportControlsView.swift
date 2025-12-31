@@ -5,11 +5,23 @@ struct RemoteTransportControlsView: View {
   let onAction: (RemoteAction) -> Void
 
   var body: some View {
-    HStack(spacing: 29 * scaleFactor) {
-      CircleKeyButton(systemName: "backward.fill", size: 72 * scaleFactor, baseColor: rokuDarkPurple) { onAction(.rewind) }
-      CircleKeyButton(systemName: "playpause.fill", size: 84 * scaleFactor, baseColor: rokuDarkPurple) { onAction(.playPause) }
-      CircleKeyButton(systemName: "forward.fill", size: 72 * scaleFactor, baseColor: rokuDarkPurple) { onAction(.forward) }
+    HStack(spacing: RemoteCoreButtonMetrics.circleKeyHorizontalSpacing * scaleFactor) {
+      CircleKeyButton(
+        systemName: "backward.fill",
+        size: RemoteCoreButtonMetrics.circleKeySize * scaleFactor,
+        baseColor: rokuDarkPurple
+      ) { onAction(.rewind) }
+      CircleKeyButton(
+        systemName: "playpause.fill",
+        size: RemoteCoreButtonMetrics.circleKeyLargeSize * scaleFactor,
+        baseColor: rokuDarkPurple
+      ) { onAction(.playPause) }
+      CircleKeyButton(
+        systemName: "forward.fill",
+        size: RemoteCoreButtonMetrics.circleKeySize * scaleFactor,
+        baseColor: rokuDarkPurple
+      ) { onAction(.forward) }
     }
-    .padding(.top, 8 * scaleFactor)
+    .padding(.top, RemoteCoreButtonMetrics.circleKeyVerticalPadding * scaleFactor)
   }
 }

@@ -202,30 +202,43 @@ extension InfoTopPanel {
   @ViewBuilder
   func nowPlayingSection(deviceId: String, state: DeviceState, appCache: AppCacheManager) -> some View {
     VStack(alignment: .leading, spacing: 16) {
-      Text("Now Playing")
-        .font(.headline)
-        .foregroundStyle(.secondary)
-
       if let activeAppId = state.activeApp,
          let app = appCache.apps(for: deviceId).first(where: { $0.id == activeAppId }) {
         // Active app with icon
-        HStack(spacing: 16) {
-          // App icon
-          if let iconImage = appCache.iconImage(for: activeAppId, deviceId: deviceId) {
-            iconImage
-              .resizable()
-              .aspectRatio(contentMode: .fit)
-              .frame(width: 80, height: 80)
-              .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-          } else {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-              .fill(Color.gray.opacity(AppOpacity.standard))
-              .frame(width: 80, height: 80)
-              .overlay(
-                Image(systemName: "app.fill")
-                  .font(.system(size: AppFontSize.iconSmall))
-                  .foregroundStyle(.secondary)
-              )
+        VStack(alignment: .leading, spacing: 12) {
+          // App icon (use the same input-centering treatment as AppStrip)
+          let isInputIcon = AppIconClassifier.isInput(appId: activeAppId, appType: app.type)
+          let treatment: AppIconTreatment = {
+            if isInputIcon {
+              // The app name is shown elsewhere in this panel (outside the icon),
+              // so center the *real* input panel and avoid the baked-in bottom strip reading as a "divider line".
+              return .inputCenterByPanel()
+            }
+            // In this info panel we prefer to see the whole icon rather than cropping to fill a square tile.
+            return .normalFit
+          }()
+
+          let iconCornerRadius: CGFloat = 12
+          // Use a consistent 4×3 tile here so icon rendering matches the AppStrip geometry.
+          let iconSize = CGSize(width: 120, height: 90)
+
+          HStack(spacing: 16) {
+            Spacer()
+            AppIcon(
+              image: appCache.iconImage(for: activeAppId, deviceId: deviceId),
+              size: iconSize,
+              cornerRadius: iconCornerRadius,
+              treatment: treatment
+            ) {
+              RoundedRectangle(cornerRadius: iconCornerRadius, style: .continuous)
+                .fill(Color.gray.opacity(AppOpacity.standard))
+                .overlay(
+                  Image(systemName: "app.fill")
+                    .font(.system(size: AppFontSize.iconSmall))
+                    .foregroundStyle(.secondary)
+                )
+            }
+            Spacer()
           }
 
           VStack(alignment: .leading, spacing: 8) {
@@ -292,15 +305,21 @@ extension InfoTopPanel {
         }
       } else {
         // No active app
-        HStack(spacing: 16) {
-          RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(Color.gray.opacity(AppOpacity.medium))
-            .frame(width: 80, height: 80)
-            .overlay(
-              Image(systemName: "tv")
-                .font(.system(size: AppFontSize.iconSmall))
-                .foregroundStyle(.tertiary)
-            )
+        VStack(alignment: .leading, spacing: 12) {
+          HStack(spacing: 16) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+              .fill(Color.gray.opacity(AppOpacity.medium))
+              .frame(width: 120, height: 90)
+              .overlay(
+                Image(systemName: "tv")
+                  .font(.system(size: AppFontSize.iconSmall))
+                  .foregroundStyle(.tertiary)
+              )
+
+            Text("Now Playing")
+              .font(.headline)
+              .foregroundStyle(.secondary)
+          }
 
           Text("Home Screen")
             .font(.title3)
@@ -341,13 +360,15 @@ extension InfoBottomPanel {
 
         // Volume
         HStack(spacing: 12) {
-          Image(systemName: state.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-            .foregroundStyle(state.muted ? .orange : .white.opacity(0.8))
+          let isMutedLike = state.muted || state.volume == 0
+
+          Image(systemName: isMutedLike ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            .foregroundStyle(isMutedLike ? .yellow : .white.opacity(0.8))
             .frame(width: 24)
 
-          if state.muted {
+          if isMutedLike {
             Text("Muted")
-              .foregroundStyle(.orange)
+              .foregroundStyle(.yellow)
           } else {
             Text("Volume: \(state.volume)%")
               .foregroundStyle(.white.opacity(AppOpacity.nearlyOpaque))

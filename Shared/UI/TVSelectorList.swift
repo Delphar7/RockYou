@@ -16,6 +16,7 @@ public struct TVSelectorItem: Identifiable {
   public let deviceType: RokuDeviceType
   public let primaryName: String
   public let secondaryName: String?  // Location name (shown underneath on all platforms)
+  public let linkedDeviceId: String?    // Paired device id (used for correct power/icon on right)
   public let linkedDeviceName: String?  // Paired device name (shown on right for iOS/macOS)
 
   public init(
@@ -24,6 +25,7 @@ public struct TVSelectorItem: Identifiable {
     deviceType: RokuDeviceType,
     primaryName: String,
     secondaryName: String? = nil,
+    linkedDeviceId: String? = nil,
     linkedDeviceName: String? = nil
   ) {
     self.id = id
@@ -31,6 +33,7 @@ public struct TVSelectorItem: Identifiable {
     self.deviceType = deviceType
     self.primaryName = primaryName
     self.secondaryName = secondaryName
+    self.linkedDeviceId = linkedDeviceId
     self.linkedDeviceName = linkedDeviceName
   }
 }
@@ -109,67 +112,62 @@ public struct TVSelectorRow: View {
   public var body: some View {
     Button(action: onSelect) {
       let base =
-        VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: iconSpacing) {
-          // Device icon
+        HStack(alignment: .center, spacing: iconSpacing) {
+          // Device icon (centers naturally against the VStack's total height).
           deviceIcon
             .frame(width: iconSize)
+            .offset(x: TVSelectorListPlatform.rowIconXOffset)
 
-          // Primary name
-          Text(item.primaryName)
-            .font(.system(size: primaryFontSize, weight: isSelected ? .semibold : .medium))
-            .foregroundStyle(.white)
-            .lineLimit(1)
+          VStack(alignment: .leading, spacing: TVSelectorListPlatform.rowTextLineSpacing) {
+            HStack(spacing: 0) {
+              // Primary name
+              Text(item.primaryName)
+                .font(.system(size: primaryFontSize, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .padding(.top, 1)
 
-          Spacer()
-            .overlay(
-              Group {
-                if item.linkedDeviceName != nil {
-                  Rectangle()
-                    .fill(.white.opacity(AppOpacity.secondary))
-                    .frame(height: 1)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, -iconSpacing * 0.60)  // Extend into the spacing gaps
-                }
-              },
-              alignment: .center
-            ).offset(y: 1)
+              Spacer(minLength: iconSpacing)
+                .overlay(
+                  Group {
+                    if item.linkedDeviceName != nil {
+                      Rectangle()
+                        .fill(.white.opacity(AppOpacity.secondary))
+                        .frame(height: 1)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, -iconSpacing * 0.60)  // Extend into the spacing gaps
+                    }
+                  },
+                  alignment: .center
+                )
+                .offset(y: 1)
 
-          // Linked device name (paired device) - shown in capsule on right
-          if let linkedName = item.linkedDeviceName {
-            RokuPurpleCapsuleLabel(
-              text: linkedName,
-              showStreamerPowerIcon: item.deviceType == .streamingDevice,
-              streamerPowerMode: powerMode,
-              leadingPadding: 8,
-              trailingPadding: 8,
-              verticalPadding: 4
-            )
-            .font(.system(size: secondaryFontSize, weight: .medium))
-          }
+              // Linked device name (paired device) - shown in capsule on right
+              if let linkedName = item.linkedDeviceName {
+                RokuPurpleCapsuleLabel(
+                  text: linkedName,
+                  // Show the *paired* device's glyph + power state (not the primary device).
+                  leadingDeviceType: .tv,
+                  leadingPowerMode: linkedPowerMode,
+                  leadingPadding: 8,
+                  trailingPadding: 8,
+                  verticalPadding: 4
+                )
+                .font(.system(size: secondaryFontSize, weight: .medium))
+              }
+            }
 
-          // Checkmark
-          if isSelected {
-            Image(systemName: "checkmark")
-              .font(.system(size: checkmarkSize, weight: .semibold))
-              .foregroundStyle(Color.white.opacity(AppOpacity.secondary))
-          }
-        }
-
-        // Secondary name (location) - shown underneath on all platforms
-        if let location = item.secondaryName {
-          HStack(spacing: iconSpacing) {
-            Spacer().frame(width: iconSize + iconSpacing)
-            Text(location)
-              .font(.system(size: secondaryFontSize))
-              .foregroundStyle(.white.opacity(AppOpacity.secondary))
-              .lineLimit(1)
-            Spacer()
+            // Secondary name (location) - shown underneath on all platforms
+            if let location = item.secondaryName {
+              Text(location)
+                .font(.system(size: secondaryFontSize))
+                .foregroundStyle(.white.opacity(AppOpacity.secondary))
+                .lineLimit(1)
+            }
           }
         }
-      }
 
-      TVSelectorListPlatform.rowChrome(base)
+      TVSelectorListPlatform.rowChrome(base, isSelected: isSelected)
     }
     .buttonStyle(.plain)
   }
@@ -178,7 +176,13 @@ public struct TVSelectorRow: View {
 
   /// Get power mode from DeviceStateManager
   private var powerMode: PowerMode {
+    // `id` is the primary (left) device id for state/icon.
     DeviceStateManager.shared.state(for: item.id).powerMode
+  }
+
+  private var linkedPowerMode: PowerMode {
+    guard let id = item.linkedDeviceId else { return .unknown }
+    return DeviceStateManager.shared.state(for: id).powerMode
   }
 
   @ViewBuilder
@@ -197,5 +201,4 @@ public struct TVSelectorRow: View {
   private let iconSpacing: CGFloat = TVSelectorListPlatform.rowIconSpacing
   private let primaryFontSize: CGFloat = TVSelectorListPlatform.rowPrimaryFontSize
   private let secondaryFontSize: CGFloat = TVSelectorListPlatform.rowSecondaryFontSize
-  private let checkmarkSize: CGFloat = TVSelectorListPlatform.rowCheckmarkSize
 }

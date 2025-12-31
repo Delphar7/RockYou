@@ -27,72 +27,85 @@ struct NavPage: View {
   @State private var isAppStripInteracting: Bool = false
 
   var body: some View {
-    VStack(spacing: 6) {
-      // Top row: Back, Home, Power
-      HStack(spacing: 12) {
-        RemoteButton("chevron.left") { onAction(.back) }
-        if let homeDelay = settings.watchHomeDelay, homeDelay > 0 {
-          RemoteButton("house.fill") { }
-            .sweepable(
-              icon: "house.fill",
-              color: .indigo,
-              delay: homeDelay,
-              tooltip: "Hold to go home",
-              onSweepComplete: { onAction(.home) }
-            )
-        } else {
-          RemoteButton("house.fill") { onAction(.home) }
-        }
-        SafePowerButton(onPower: { onAction(.power) }, safetyDelay: settings.watchPowerDelay)
-      }
+    GeometryReader { geo in
+      let metrics = WatchLayoutMetrics(size: geo.size)
 
-      Spacer(minLength: 0)
-
-      // D-Pad - hero element
-      DPadView(
-        onDirection: { onAction($0) },
-        onOK: { onAction(.ok) },
-        size: 80
-      )
-
-      Spacer(minLength: 0).frame(height: 14)
-
-      // App strip at bottom
-      if let deviceId = deviceId {
-        AppStripView(
-          apps: apps,
-          deviceId: deviceId,
-          onLaunch: { app in
-            onLaunchApp(app)
-          },
-          // Labels are off here, so give the strip a bit more room (≈ +15% vs prior).
-          sizing: .percent(17),
-          showLabels: false,
-          appLaunchDelay: settings.watchAppLaunchDelay
-        )
-        .background(
-          GeometryReader { geo in
-            Color.clear
-              .preference(
-                key: AppStripFramePreferenceKey.self,
-                value: geo.frame(in: .named(NavPageCoordinateSpace.name))
+      VStack(spacing: metrics.pageTopPadding) {
+        // Top row: Back, Home, Power
+        HStack(spacing: metrics.topRowSpacing) {
+          RemoteButton("chevron.left") { onAction(.back) }
+          if let homeDelay = settings.watchHomeDelay, homeDelay > 0 {
+            RemoteButton("house.fill") {}
+              .sweepable(
+                icon: "house.fill",
+                color: .indigo,
+                delay: homeDelay,
+                tooltip: "Hold to go home",
+                onSweepComplete: { onAction(.home) }
               )
+          } else {
+            RemoteButton("house.fill") { onAction(.home) }
           }
-        )
-        // Reclaim bottom padding so the taller strip grows "down" instead of stealing space from the D-pad.
-        .padding(.bottom, 0)
-      } else {
-        Text("No Apps Loaded...")
-          .font(.system(size: AppFontSize.small))
-          .foregroundStyle(.secondary)
-          .frame(height: 42)
-      }
+          SafePowerButton(onPower: { onAction(.power) }, safetyDelay: settings.watchPowerDelay)
+        }
 
-      PageIndicator(pageCount: pageCount, currentPage: currentPage, onPageTap: onPageTap)
-        .padding(.vertical, 2)
+        Spacer(minLength: 0)
+
+        // D-Pad - hero element
+        DPadView(
+          onDirection: { onAction($0) },
+          onOK: { onAction(.ok) },
+          size: metrics.navDPadSize
+        )
+
+        Spacer(minLength: 0).frame(height: metrics.navBetweenDPadAndStrip)
+
+        // App strip at bottom
+        if let deviceId = deviceId {
+          AppStripView(
+            apps: apps,
+            deviceId: deviceId,
+            onLaunch: { app in
+              onLaunchApp(app)
+            },
+            // Use fixed sizing so the strip respects the *page area's* height (percent sizing is screen-based).
+            sizing: .fixed(iconWidth: nil, iconHeight: metrics.navAppStripIconHeight),
+            showLabels: false,
+            appLaunchDelay: settings.watchAppLaunchDelay
+          )
+          .background(
+            GeometryReader { g in
+              Color.clear
+                .preference(
+                  key: AppStripFramePreferenceKey.self,
+                  value: g.frame(in: .named(NavPageCoordinateSpace.name))
+                )
+            }
+          )
+          // The strip can measure slightly taller than its visible content; reclaim a bit of vertical space
+          // on small watches so the page indicator stays fully visible.
+          .padding(.top, metrics.isSmallWatch ? -6 : -10)
+          .padding(.bottom, 0)
+        } else {
+          Text("No Apps Loaded...")
+            .font(.system(size: AppFontSize.small))
+            .foregroundStyle(.secondary)
+            .frame(height: 42)
+        }
+
+        PageIndicator(
+          pageCount: pageCount,
+          currentPage: currentPage,
+          onPageTap: onPageTap,
+          dotSize: metrics.pageIndicatorDotSize,
+          spacing: metrics.pageIndicatorDotSpacing
+        )
+        .padding(.vertical, 0)
+      }
+      .padding(.horizontal, metrics.pageHorizontalPadding)
+      .padding(.top, metrics.pageTopPadding)
+      .frame(width: geo.size.width, height: geo.size.height)
     }
-    .padding(.horizontal, 8)
-    .padding(.top, 4)
     .contentShape(Rectangle())
     .focusable()
     .coordinateSpace(name: NavPageCoordinateSpace.name)

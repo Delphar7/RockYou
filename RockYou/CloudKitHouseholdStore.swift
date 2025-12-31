@@ -217,6 +217,15 @@ final class CloudKitHouseholdStore {
       rootRecord = try await container.privateCloudDatabase.save(newRoot)
     }
 
+    // If a share already exists for the root record, reuse it.
+    // (This is especially important in production where a household may already be shared.)
+    if let existingRef = rootRecord.share {
+      let existing = try await container.privateCloudDatabase.record(for: existingRef.recordID)
+      if let existingShare = existing as? CKShare {
+        return existingShare
+      }
+    }
+
     let share = CKShare(rootRecord: rootRecord)
     share[CKShare.SystemFieldKey.title] = "RockYou Household" as CKRecordValue
     share.publicPermission = .none
@@ -224,11 +233,27 @@ final class CloudKitHouseholdStore {
     let op = CKModifyRecordsOperation(recordsToSave: [rootRecord, share], recordIDsToDelete: nil)
     op.isAtomic = true
 
-    _ = try await withCheckedThrowingContinuation { cont in
+    // Capture the server-returned share (this is the one most likely to have `url` populated,
+    // and CloudKit may reuse an existing share rather than persisting the newly-created recordID).
+    let lock = NSLock()
+    var serverShare: CKShare?
+
+    op.perRecordSaveBlock = { _, result in
+      if case .success(let record) = result, let saved = record as? CKShare {
+        lock.lock()
+        serverShare = saved
+        lock.unlock()
+      }
+    }
+
+    let savedShare: CKShare? = try await withCheckedThrowingContinuation { cont in
       op.modifyRecordsResultBlock = { result in
         switch result {
         case .success:
-          cont.resume(returning: ())
+          lock.lock()
+          let s = serverShare
+          lock.unlock()
+          cont.resume(returning: s)
         case .failure(let error):
           cont.resume(throwing: error)
         }
@@ -236,13 +261,21 @@ final class CloudKitHouseholdStore {
       self.container.privateCloudDatabase.add(op)
     }
 
-    // Important: the locally-created `CKShare` often does not have a `url` populated even after
-    // a successful save. Fetch the share record back from the server to obtain the canonical URL.
-    let fetched = try await container.privateCloudDatabase.record(for: share.recordID)
-    if let fetchedShare = fetched as? CKShare {
-      return fetchedShare
+    if let savedShare { return savedShare }
+
+    // Fallback: refetch root to see if CloudKit associated an existing share.
+    do {
+      let refreshedRoot = try await container.privateCloudDatabase.record(for: rootID)
+      if let existingRef = refreshedRoot.share {
+        let existing = try await container.privateCloudDatabase.record(for: existingRef.recordID)
+        if let existingShare = existing as? CKShare { return existingShare }
+      }
+    } catch {
+      Log.warn(
+        "CloudKit", "Failed to refetch root/share after share save: \(error.localizedDescription)")
     }
-    // Fallback (should be rare): return the in-memory share.
+
+    // Last resort: return the in-memory share.
     return share
   }
 
@@ -561,43 +594,36 @@ final class CloudKitHouseholdStore {
         await destructiveResetLegacyAndNewZones()
       }
 
-      if PlatformSecurityPolicy.supportsEndToEndEncryptedAPIs {
-        // Provisioning requires Manatee/PCS blob. Without it (common on Simulator), schema bootstrap cannot run.
-        do {
-          try await ensureZoneAndRootExistInPrivateDB()
-          cloudAccessState = .ready(schemaVersion: Schema.expectedSchemaVersion)
-          return true
-        } catch {
-          if isLikelyCloudSchemaNotDeployed(error) {
-            let message =
-              "iCloud sync is unavailable because the CloudKit schema is not deployed to production yet. "
-              + "Deploy the schema in the CloudKit Dashboard (Development → Production), then try again."
-            Log.warn("CloudKit", "Bootstrap blocked: \(message) (\(error.localizedDescription))")
-            cloudAccessState = .blocked(foundSchemaVersion: nil, message: message)
-            return false
-          }
-          if isLikelyCloudAccountUnavailable(error) {
-            let message = cloudAccountUnavailableMessage(for: error)
-            Log.warn("CloudKit", "Bootstrap blocked: \(message)")
-            cloudAccessState = .blocked(foundSchemaVersion: nil, message: message)
-            return false
-          }
-          // Transient error → retry later
-          Log.warn("CloudKit", "Bootstrap failed (will retry later): \(error.localizedDescription)")
-          cloudAccessState = .unknown
-          scheduleSchemaProbeRetry()
+      // Attempt provisioning on all platforms. On Simulator this may fail due to missing
+      // end-to-end encrypted key material (PCS/Manatee / user key sync), but we prefer to try
+      // rather than pre-blocking, so simulators that *do* have iCloud configured can still work.
+      do {
+        try await ensureZoneAndRootExistInPrivateDB()
+        cloudAccessState = .ready(schemaVersion: Schema.expectedSchemaVersion)
+        return true
+      } catch {
+        if isLikelyCloudSchemaNotDeployed(error) {
+          let message =
+            "iCloud sync is unavailable because the CloudKit schema is not deployed to production yet. "
+            + "Deploy the schema in the CloudKit Dashboard (Development → Production), then try again."
+          Log.warn("CloudKit", "Bootstrap blocked: \(message) (\(error.localizedDescription))")
+          cloudAccessState = .blocked(foundSchemaVersion: nil, message: message)
           return false
         }
-      } else {
-        // Simulator: can't provision (requires end-to-end encryption material), use local storage only.
-        Log.info(
-          "CloudKit",
-          "Simulator: cannot provision schema (requires end-to-end encrypted iCloud material: PCS/Manatee); using local storage only"
-        )
-        cloudAccessState = .blocked(
-          foundSchemaVersion: nil,
-          message: PlatformSecurityPolicy.endToEndEncryptedAPIsUnavailableReason
-        )
+        if isLikelyCloudAccountUnavailable(error) {
+          let message = cloudAccountUnavailableMessage(for: error)
+          if PlatformSecurityPolicy.isSimulator {
+            Log.debug("CloudKit", "Bootstrap blocked (simulator): \(message)")
+          } else {
+            Log.error("CloudKit", "Bootstrap blocked: \(message)")
+          }
+          cloudAccessState = .blocked(foundSchemaVersion: nil, message: message)
+          return false
+        }
+        // Transient error → retry later
+        Log.warn("CloudKit", "Bootstrap failed (will retry later): \(error.localizedDescription)")
+        cloudAccessState = .unknown
+        scheduleSchemaProbeRetry()
         return false
       }
     }
@@ -893,6 +919,8 @@ final class CloudKitHouseholdStore {
       || msg.contains("pcs blob")
       || msg.contains("couldn't create new pcs blob")
       || msg.contains("could not create new pcs blob")
+      || msg.contains("user key sync")
+      || msg.contains("failed user key sync")
     {
       return true
     }
@@ -913,8 +941,9 @@ final class CloudKitHouseholdStore {
     return
       "iCloud sync is unavailable for the current account/device (\(msg)). "
       + "If you’re on Simulator, sign into iCloud in the Simulator Settings app. "
-      + "If the error mentions “Manatee”, enable iCloud Keychain (Settings → Apple Account → iCloud → Passwords & Keychain). "
-      + "If it mentions “PCS blob”, iCloud Keychain / end-to-end encryption material isn’t available (common on Simulator). "
+      + "If the error mentions “Manatee”, enable iCloud Keychain (Settings → Apple Account → iCloud → Passwords & Keychain)."
+      + "If it mentions “PCS blob”, iCloud Keychain / end-to-end encryption material isn’t available (common on Simulator)."
+      + "If it mentions “user key sync”, iCloud Keychain may still be syncing; leave the device on Wi‑Fi/power for a bit, or toggle Passwords & Keychain off/on."
       + "If this is a managed/restricted Apple ID, CloudKit may be disabled."
   }
 

@@ -70,8 +70,8 @@ enum RemoteButtonStyle {
     case .rectLabeled: return 18
     case .circle: return 16
     case .iosRect: return 22
-    case .iosCircle(let size): return size * 0.36
-    case .custom(_, _, _, let size, _): return size ?? 14
+    case .iosCircle(let size): return size * 0.35
+    case .custom(_, _, _, let size, _): return (size ?? 11.5) * 1.3
     }
   }
 

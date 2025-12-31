@@ -9,8 +9,82 @@ RUNALL_LOG_ARCHIVE_DIR="$DERIVED_DATA_BASE/Logs/BuildRunall"
 RESET_SIM=0
 LINT_ONLY=0
 LAUNCH_CONSOLE=0
+NO_LOG=0
 
 mkdir -p "$DERIVED_DATA_BASE" "$RUNALL_LOG_ARCHIVE_DIR"
+
+# MARK: - Global watchexec wrapper (must be first)
+#
+# Usage:
+#   ./BuildRunAll.sh --watchexec <rest of command line>
+#
+# This wrapper MUST be first to avoid ambiguity with other flags and to prevent recursion.
+if [ "${1:-}" = "--watchexec" ]; then
+    shift
+    if [ $# -eq 0 ]; then
+        echo "❌ --watchexec requires a command, e.g.:"
+        echo "  $0 --watchexec run-all-tmux"
+        exit 1
+    fi
+
+    # Fail fast for tmux-only commands so we don't start a long-running watchexec just to
+    # immediately error on each restart.
+    for arg in "$@"; do
+        case "$arg" in
+            run-all-tmux)
+                if [ -z "${TMUX:-}" ]; then
+                    echo "❌ Not in tmux. Run run-all-tmux from inside a tmux session."
+                    exit 1
+                fi
+                ;;
+        esac
+    done
+
+    # Compute a best-effort minimal watch set based on requested targets/commands.
+    # (We intentionally ignore flags like --16e/--16pro/--console/--ResetSim here.)
+    wants_phone=0
+    wants_watch=0
+    wants_ipad=0
+    wants_mac=0
+
+    for arg in "$@"; do
+        case "$arg" in
+            iphone|phone|run-phone|run-iphone) wants_phone=1 ;;
+            watch|run-watch) wants_watch=1 ;;
+            ipad|run-ipad) wants_ipad=1 ;;
+            mac|run-mac) wants_mac=1 ;;
+            run-all|run-all-tmux|both) wants_phone=1; wants_watch=1 ;;
+        esac
+    done
+
+    # If we couldn't infer anything (e.g. --lint with no explicit targets),
+    # fall back to watching the main source dirs.
+    if [ "$wants_phone" -eq 0 ] && [ "$wants_watch" -eq 0 ] && [ "$wants_ipad" -eq 0 ] && [ "$wants_mac" -eq 0 ]; then
+        wants_phone=1
+        wants_watch=1
+        wants_ipad=1
+        wants_mac=1
+    fi
+
+    WATCH_ARGS=()
+    add_watch() { WATCH_ARGS+=("-w" "$1"); }
+
+    add_watch "$PROJECT_DIR/BuildRunAll.sh"
+    add_watch "$PROJECT_DIR/RockYou.xcodeproj"
+    add_watch "$PROJECT_DIR/Shared"
+
+    if [ "$wants_watch" -eq 1 ]; then
+        add_watch "$PROJECT_DIR/RockYou Watch App"
+        add_watch "$PROJECT_DIR/RockYou Watch Widgets"
+    fi
+    if [ "$wants_phone" -eq 1 ] || [ "$wants_ipad" -eq 1 ] || [ "$wants_mac" -eq 1 ]; then
+        add_watch "$PROJECT_DIR/RockYou"
+        add_watch "$PROJECT_DIR/Resources"
+    fi
+
+    cd "$PROJECT_DIR" || exit 1
+    exec watchexec -d "5 s" "${WATCH_ARGS[@]}" -r ./BuildRunAll.sh "$@"
+fi
 
 # DerivedData / Build outputs
 #
@@ -121,6 +195,75 @@ objroot_for() {
     echo "$derived_data_root/Intermediates.$(host_arch)-$platform_tag"
 }
 
+log_file_for_target() {
+    case "$1" in
+        phone|iphone) echo "$PROJECT_DIR/iphone.log" ;;
+        watch) echo "$PROJECT_DIR/watch.log" ;;
+        ipad) echo "$PROJECT_DIR/ipad.log" ;;
+        mac) echo "$PROJECT_DIR/mac.log" ;;
+        *) echo "" ;;
+    esac
+}
+
+archive_log_for_target() {
+    local target="$1"
+    local log_path
+    log_path="$(log_file_for_target "$target")"
+    if [ -n "$log_path" ]; then
+        archive_existing_log_file "$log_path"
+    fi
+}
+
+run_with_target_log() {
+    local target="$1"
+    shift
+    local log_path
+    log_path="$(log_file_for_target "$target")"
+    if [ -z "$log_path" ]; then
+        "$@"
+        return $?
+    fi
+    if [ "$NO_LOG" -eq 1 ]; then
+        "$@"
+        return $?
+    fi
+    archive_existing_log_file "$log_path"
+    "$@" 2>&1 | tee "$log_path"
+}
+
+run_target_full() {
+    local target="$1"
+    case "$target" in
+        phone)
+            open -g -a Simulator
+            build_target phone || return 1
+            echo "📱 Launching iPhone..."
+            launch_sim_console "$IPHONE_SIM" com.jtr.RockYou
+            ;;
+        watch)
+            open -g -a Simulator
+            build_target watch || return 1
+            echo "⌚ Launching Watch..."
+            launch_sim_console "$WATCH_SIM" com.jtr.RockYou.watchkitapp
+            ;;
+        ipad)
+            open -g -a Simulator
+            build_target ipad || return 1
+            echo "📱 Launching iPad..."
+            launch_sim_console "$IPAD_SIM" com.jtr.RockYou
+            ;;
+        mac)
+            build_target mac || return 1
+            echo "🖥️  Launching Mac..."
+            run_mac
+            ;;
+        *)
+            echo "❌ Unknown target: $target"
+            return 1
+            ;;
+    esac
+}
+
 launch_sim_console() {
     local sim_id=$1
     local bundle_id=$2
@@ -132,7 +275,7 @@ launch_sim_console() {
         return 0
     fi
 
-    # When stdout is piped (e.g. run-all uses `... | tee phone.log`), `simctl launch --console-pty`
+    # When stdout is piped (e.g. run-all uses `... | tee iphone.log`), `simctl launch --console-pty`
     # can detach/terminate early because it isn't attached to a real TTY. Wrap it in `script` to
     # force a pseudo-tty so logs stay connected and the process doesn't get torn down.
     if [ -t 1 ]; then
@@ -143,9 +286,26 @@ launch_sim_console() {
     fi
 }
 
-# jtr iPhone 16 Pro (iOS 26.2) + jtr Apple Watch Series 10 46mm (watchOS 26.2)
-IPHONE_SIM="C6E07BE6-0979-4E4A-9C78-EE2793F7B924"
-WATCH_SIM="ECBF3DBB-F8F9-44B9-B210-90154331C997"
+# Simulator profiles (paired phone+watch sets)
+#
+# Note: CoreSimulator pairing is 1:1 (one iPhone ↔ one Watch). To keep a stable "big" and "small"
+# watch workflow, we maintain two paired simulator sets and choose between them with flags.
+#
+# --16pro (legacy default): jtr iPhone 16 Pro + jtr Apple Watch Series 10 46mm
+IPHONE_SIM_16PRO="C6E07BE6-0979-4E4A-9C78-EE2793F7B924"
+WATCH_SIM_16PRO="ECBF3DBB-F8F9-44B9-B210-90154331C997"
+#
+# --16e (new default): jtr iPhone 16e (small) + jtr Apple Watch SE 40mm (small)
+IPHONE_SIM_16E="34420C9D-76EB-48CB-9E67-BE7EB8E4B53E"
+WATCH_SIM_16E="B0A241D6-35D9-4347-9497-52538C59485E"
+
+# Default simulator profile (can be overridden via flags).
+SIM_PROFILE="16e"
+SIM_PROFILE_FLAG="--16e"
+
+# Active sims (resolved from SIM_PROFILE).
+IPHONE_SIM="$IPHONE_SIM_16E"
+WATCH_SIM="$WATCH_SIM_16E"
 
 # jtr iPad Pro 11-inch (iOS 17.5)
 IPAD_SIM="09F5F302-5F25-4111-B766-B3E5C9072E45"
@@ -165,28 +325,69 @@ boot_if_needed() {
     fi
 }
 
-# Option: --ResetSim (terminate + uninstall before install)
-while [[ "${1:-}" == "--ResetSim" || "${1:-}" == "--reset-sim" ]]; do
-    RESET_SIM=1
-    shift
-done
-
-# Option: --lint (build only; no install/launch)
-while [[ "${1:-}" == "--lint" ]]; do
-    LINT_ONLY=1
-    shift
-done
-
-# Option: --console (launch and keep streaming console output; blocks until app exits / Ctrl-C)
-while [[ "${1:-}" == "--console" ]]; do
-    LAUNCH_CONSOLE=1
-    shift
+# Options (must come before targets/commands)
+while [[ "${1:-}" == --* ]]; do
+    case "${1:-}" in
+        --watchexec)
+            echo "❌ --watchexec must be the first argument."
+            exit 1
+            ;;
+        --no-log|--no-logs|--nolog)
+            NO_LOG=1
+            shift
+            ;;
+        --ResetSim|--reset-sim)
+            RESET_SIM=1
+            shift
+            ;;
+        --lint)
+            LINT_ONLY=1
+            shift
+            ;;
+        --console)
+            LAUNCH_CONSOLE=1
+            shift
+            ;;
+        --16pro)
+            SIM_PROFILE="16pro"
+            SIM_PROFILE_FLAG="--16pro"
+            IPHONE_SIM="$IPHONE_SIM_16PRO"
+            WATCH_SIM="$WATCH_SIM_16PRO"
+            shift
+            ;;
+        --16e)
+            SIM_PROFILE="16e"
+            SIM_PROFILE_FLAG="--16e"
+            IPHONE_SIM="$IPHONE_SIM_16E"
+            WATCH_SIM="$WATCH_SIM_16E"
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            # Unknown option; stop parsing so normal validation can handle it.
+            break
+            ;;
+    esac
 done
 
 # If lint mode is requested with no targets, default to all targets.
 if [ "$LINT_ONLY" -eq 1 ] && [ $# -eq 0 ]; then
-    set -- phone ipad watch mac
+    set -- iphone ipad watch mac
 fi
+
+# Normalize "iphone" → "phone" internally so the rest of the script only handles one iOS target token.
+NORMALIZED_ARGS=()
+for arg in "$@"; do
+    if [ "$arg" = "iphone" ]; then
+        NORMALIZED_ARGS+=("phone")
+    else
+        NORMALIZED_ARGS+=("$arg")
+    fi
+done
+set -- "${NORMALIZED_ARGS[@]}"
 
 maybe_reset_app() {
     local sim_id=$1
@@ -285,9 +486,7 @@ run_mac() {
     local mac_bin="$(build_products_root_for macos)/Debug/RockYou.app/Contents/MacOS/RockYou"
     pkill -f "$mac_bin" 2>/dev/null || true
     sleep 0.5
-    local mac_log="$PROJECT_DIR/mac.log"
-    archive_existing_log_file "$mac_log"
-    "$mac_bin" 2>&1 | tee "$mac_log"
+    "$mac_bin"
     # Tail the system log for our app
     #log stream --predicate 'subsystem == "com.jtr.RockYou" OR process == "RockYou"' --style compact
 }
@@ -349,7 +548,7 @@ lint_target() {
 # Check if target is valid
 is_valid_target() {
     case "$1" in
-        phone|watch|ipad|mac) return 0 ;;
+        phone|iphone|watch|ipad|mac) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -359,18 +558,24 @@ if [ $# -eq 0 ]; then
     echo "Usage: $0 <target> [target...]"
     echo ""
     echo "Options:"
+    echo "  --watchexec - Must be first. Re-run this command on changes via watchexec."
+    echo "  --16e       - Use jtr iPhone 16e (small) + Watch SE 40mm (small) (default)"
+    echo "  --16pro     - Use jtr iPhone 16 Pro + Watch Series 10 46mm"
     echo "  --ResetSim  - Terminate+uninstall before install (slower; fixes some sim launch flakiness)"
     echo "  --lint      - Build only (no install/launch). If no targets given, builds phone+ipad+watch+mac."
     echo "  --console   - Keep streaming simulator console output (blocks; useful in tmux panes)"
+    echo "  --no-log    - Disable tee-to-log (intended for tmux mode where tmux pipe-pane handles logs)"
     echo ""
     echo "Targets (can combine multiple):"
-    echo "  phone      - iPhone app"
+    echo "  iphone     - iPhone app (alias: phone)"
+    echo "  phone      - iPhone app (alias: iphone)"
     echo "  watch      - Watch app"
     echo "  ipad       - iPad app"
     echo "  mac        - Mac app"
     echo ""
     echo "Special commands:"
-    echo "  run-all    - Build and run phone+watch in tmux (phone in pane 1, watch in pane 0)"
+    echo "  run-all    - Build and run phone+watch (no tmux required)"
+    echo "  run-all-tmux - Build and run phone+watch in tmux (console streaming)"
     echo "  both       - Alias for 'phone watch'"
     echo "  run-phone  - Just launch iPhone (skip build)"
     echo "  run-watch  - Just launch Watch (skip build)"
@@ -385,7 +590,7 @@ if [ $# -eq 0 ]; then
     echo "  $0 phone watch mac    # Build and run all three"
     echo "  $0 --lint             # Build-only lint pass for phone+ipad+watch+mac"
     echo ""
-    echo "Logs: phone.log, watch.log (when using run-all)"
+    echo "Logs: iphone.log, watch.log, ipad.log, mac.log"
     exit 1
 fi
 
@@ -396,43 +601,104 @@ case "$1" in
             echo "❌ --lint is not compatible with run-all"
             exit 1
         fi
-        # Ensure we're in tmux
+        # Simple semantics: build + launch phone and watch. No tmux required.
+        exec "$0" "$SIM_PROFILE_FLAG" phone watch
+        ;;
+
+    run-all-tmux)
+        if [ "$LINT_ONLY" -eq 1 ]; then
+            echo "❌ --lint is not compatible with run-all-tmux"
+            exit 1
+        fi
         if [ -z "$TMUX" ]; then
-            echo "❌ Not in tmux. Run this from inside a tmux session."
+            echo "❌ Not in tmux. Run run-all-tmux from inside a tmux session."
             exit 1
         fi
 
-        # Check pane 1 exists
-        if ! tmux list-panes -F '#{pane_index}' | grep -q '^1$'; then
-            echo "❌ Pane 1 doesn't exist. Split your tmux window first (Ctrl-b %)"
-            exit 1
+        RUNALL_WIN="RockYou-runall"
+        # Keep a stable window/pane layout across reruns (especially under watchexec).
+        #
+        # Important:
+        # - tmux can auto-rename windows based on the running command; if that happens, we still
+        #   want to find and re-use the existing runall window (instead of creating a new one).
+        # - A build failure exits the pane command. Without remain-on-exit, tmux may destroy panes
+        #   (and eventually the whole window). We explicitly keep panes/windows around.
+
+        RUNALL_WIN_TGT=""
+        if tmux list-windows -F '#{window_name}' | grep -qx "$RUNALL_WIN"; then
+            RUNALL_WIN_TGT="$RUNALL_WIN"
+        else
+            # Best-effort recovery: if tmux auto-renamed the window, locate it by our pane titles.
+            RUNALL_WIN_TGT="$(tmux list-panes -a -F '#{window_id} #{pane_title}' | awk '$2 == "runall-watch-pane" || $2 == "runall-phone-pane" { print $1; exit }')"
+            if [ -n "$RUNALL_WIN_TGT" ]; then
+                tmux rename-window -t "$RUNALL_WIN_TGT" "$RUNALL_WIN" 2>/dev/null || true
+            else
+                tmux new-window -d -n "$RUNALL_WIN"
+                RUNALL_WIN_TGT="$RUNALL_WIN"
+            fi
         fi
 
-        echo "🚀 Starting both apps..."
+        # Ensure this window never auto-renames and never disappears when the build command exits.
+        tmux set-option -t "$RUNALL_WIN_TGT" automatic-rename off 2>/dev/null || true
+        tmux set-option -t "$RUNALL_WIN_TGT" allow-rename off 2>/dev/null || true
+        tmux set-option -t "$RUNALL_WIN_TGT" remain-on-exit on 2>/dev/null || true
+        tmux set-option -t "$RUNALL_WIN_TGT" monitor-activity on 2>/dev/null || true
 
-        # Boot simulators first
+        # Ensure exactly 2 panes (0 and 1) in that window.
+        PANE_COUNT="$(tmux list-panes -t "$RUNALL_WIN_TGT" | wc -l | tr -d ' ')"
+        if [ "$PANE_COUNT" -lt 2 ]; then
+            tmux split-window -t "$RUNALL_WIN_TGT" -h
+        elif [ "$PANE_COUNT" -gt 2 ]; then
+            # Trim any extra panes (keep 0 and 1).
+            tmux list-panes -t "$RUNALL_WIN_TGT" -F '#{pane_index} #{pane_id}' \
+              | awk '$1 >= 2 { print $2 }' \
+              | while read -r pane_id; do
+                    tmux kill-pane -t "$pane_id" 2>/dev/null || true
+                done
+        fi
+
+        # Normalize layout and name the panes for clarity.
+        tmux select-layout -t "$RUNALL_WIN_TGT" even-horizontal
+        tmux select-pane -t "${RUNALL_WIN_TGT}.0" -T "runall-watch-pane"
+        tmux select-pane -t "${RUNALL_WIN_TGT}.1" -T "runall-phone-pane"
+
+        WATCH_PANE="${RUNALL_WIN_TGT}.0"
+        PHONE_PANE="${RUNALL_WIN_TGT}.1"
+
+        echo "🚀 Starting both apps in tmux window '$RUNALL_WIN'..."
+
         boot_if_needed "$IPHONE_SIM" "iPhone"
         boot_if_needed "$WATCH_SIM" "Watch"
         open -g -a Simulator
 
-        # Kill any running process in pane 1
-        tmux send-keys -t ".1" C-c
-        sleep 1
+        # Ensure pane output stays *TTY* (no shell piping), while still capturing logs to files.
+        # This avoids `simctl launch --console-pty` flakiness and keeps interactive output readable.
+        WATCH_LOG="$PROJECT_DIR/watch.log"
+        PHONE_LOG="$PROJECT_DIR/iphone.log"
+        archive_existing_log_file "$WATCH_LOG"
+        archive_existing_log_file "$PHONE_LOG"
+        : >"$WATCH_LOG"
+        : >"$PHONE_LOG"
 
-        # Archive existing logs before overwriting them via tee
-        archive_existing_log_file "$PROJECT_DIR/phone.log"
-        archive_existing_log_file "$PROJECT_DIR/watch.log"
+        # Replace any existing commands in-place (no pane accumulation).
+        tmux respawn-pane -k -t "$WATCH_PANE" \
+          "$PROJECT_DIR/BuildRunAll.sh $SIM_PROFILE_FLAG --no-log --console watch"
+        tmux respawn-pane -k -t "$PHONE_PANE" \
+          "$PROJECT_DIR/BuildRunAll.sh $SIM_PROFILE_FLAG --no-log --console iphone"
 
-        # Start phone in pane 1 with logging (console mode blocks in that pane, which is desired).
-        tmux send-keys -t ".1" "./BuildRunAll.sh --console phone 2>&1 | tee phone.log" Enter
+        # Reset and reattach tmux pipes on each run (especially under watchexec).
+        # Attach AFTER respawn so we also capture the very start of the build output.
+        tmux pipe-pane -t "$WATCH_PANE" 2>/dev/null || true
+        tmux pipe-pane -t "$PHONE_PANE" 2>/dev/null || true
+        # shellcheck disable=SC2086
+        tmux pipe-pane -t "$WATCH_PANE" "cat >> $(printf "%q" "$WATCH_LOG")"
+        # shellcheck disable=SC2086
+        tmux pipe-pane -t "$PHONE_PANE" "cat >> $(printf "%q" "$PHONE_LOG")"
 
-        # Wait for phone to build and start
-        sleep 4
+        # Visually activate the run-all window when we (re)launch it.
+        tmux select-window -t "$RUNALL_WIN_TGT" 2>/dev/null || true
 
-        # Start watch in the *current* pane with logging (console mode blocks in that pane).
-        echo "⌚ Starting Watch app in this pane..."
-        tmux send-keys -t "." "./BuildRunAll.sh --console watch 2>&1 | tee watch.log" Enter
-        echo "✅ run-all launched both (phone: pane 1, watch: current pane)."
+        echo "✅ run-all-tmux launched both (watch: $WATCH_PANE, phone: $PHONE_PANE)."
         exit 0
         ;;
 
@@ -442,7 +708,7 @@ case "$1" in
             exit 1
         fi
         # Alias for phone watch
-        exec "$0" phone watch
+        exec "$0" "$SIM_PROFILE_FLAG" phone watch
         ;;
 
     run-phone)
@@ -450,7 +716,14 @@ case "$1" in
             echo "❌ --lint is not compatible with run-phone"
             exit 1
         fi
-        run_ios "$IPHONE_SIM" "iPhone"
+        run_with_target_log iphone run_ios "$IPHONE_SIM" "iPhone"
+        ;;
+    run-iphone)
+        if [ "$LINT_ONLY" -eq 1 ]; then
+            echo "❌ --lint is not compatible with run-iphone"
+            exit 1
+        fi
+        run_with_target_log iphone run_ios "$IPHONE_SIM" "iPhone"
         ;;
 
     run-watch)
@@ -458,7 +731,7 @@ case "$1" in
             echo "❌ --lint is not compatible with run-watch"
             exit 1
         fi
-        run_watch
+        run_with_target_log watch run_watch
         ;;
 
     run-ipad)
@@ -468,7 +741,7 @@ case "$1" in
         fi
         boot_if_needed "$IPAD_SIM" "iPad"
         open -g -a Simulator
-        run_ios "$IPAD_SIM" "iPad"
+        run_with_target_log ipad run_ios "$IPAD_SIM" "iPad"
         ;;
 
     run-mac)
@@ -476,7 +749,7 @@ case "$1" in
             echo "❌ --lint is not compatible with run-mac"
             exit 1
         fi
-        run_mac
+        run_with_target_log mac run_mac
         ;;
 
     boot)
@@ -495,6 +768,7 @@ case "$1" in
             echo "❌ --lint is not compatible with status"
             exit 1
         fi
+        echo "📱 Active sim profile: $SIM_PROFILE ($SIM_PROFILE_FLAG)"
         echo "📊 Simulator status:"
         xcrun simctl list devices | grep -E "(${IPHONE_SIM}|${WATCH_SIM}|${IPAD_SIM})"
         echo ""
@@ -535,6 +809,18 @@ case "$1" in
             fi
         done
 
+        if [ "$LAUNCH_CONSOLE" -eq 1 ] && [ $# -gt 1 ]; then
+            echo "❌ --console is only supported for a single target."
+            echo "   Use run-all-tmux for dual-pane console streaming."
+            exit 1
+        fi
+
+        # Single target: tee the *entire* run (build+install+launch), so --console output is captured.
+        if [ $# -eq 1 ]; then
+            run_with_target_log "$1" run_target_full "$1"
+            exit $?
+        fi
+
         # Multiple targets - build all, then run all
         echo "🚀 Building ${#@} target(s): $*"
 
@@ -548,7 +834,7 @@ case "$1" in
 
         # Build and install all targets
         for target in "$@"; do
-            build_target "$target" || exit 1
+            run_with_target_log "$target" build_target "$target" || exit 1
         done
 
         echo ""
@@ -556,7 +842,7 @@ case "$1" in
         echo ""
         echo "Launching..."
 
-        # Launch all targets (mac last since it takes over terminal with log stream)
+        # Launch all targets (mac last since it takes over terminal)
         HAS_MAC=false
         for target in "$@"; do
             case "$target" in
@@ -584,7 +870,7 @@ case "$1" in
         # Mac last (takes over terminal)
         if [ "$HAS_MAC" = true ]; then
             echo "🖥️  Launching Mac..."
-            run_mac
+            run_with_target_log mac run_mac
         else
             echo ""
             echo "✅ All apps launched!"

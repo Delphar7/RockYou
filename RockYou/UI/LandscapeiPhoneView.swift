@@ -40,7 +40,7 @@ struct LandscapeiPhoneView: View {
             DPadView(
               onDirection: { onAction($0) },
               onOK: { onAction(.ok) },
-              size: 160
+              size: 200
             ).offset(y: -8)
 
             // Fixed 2pt spacer between D-Pad and right buttons

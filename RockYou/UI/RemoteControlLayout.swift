@@ -42,7 +42,7 @@ struct AppStripConfig {
         isVisible: true,
         direction: .horizontal,
         lanes: 2,
-        sizing: nil,
+        sizing: .fixed(width: 96),
         // iPhone portrait: labels off by default; wide Roku icons render their labels inside the tile.
         showLabels: false,
         padding: EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0),

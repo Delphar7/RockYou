@@ -376,7 +376,7 @@ struct AppStripView: View {
         guard let app = currentApp else { return AnyView(EmptyView()) }
       let isActive = (activeAppId == app.id)
 
-      let isInput = AppIconVisual.isInput(appId: app.id, appType: app.type)
+      let isInput = AppIconClassifier.isInput(appId: app.id, appType: app.type)
 
         let debugLabel = "slot=\(slotIndex) appId=\(app.id) name='\(app.name)'"
 
@@ -400,7 +400,7 @@ struct AppStripView: View {
         if launchDelay == nil {
           return AnyView(
             Button(action: { onLaunch(app) }) {
-              AppIconVisual(
+              AppStripAppIconTile(
                 appId: app.id,
                 appName: app.name,
                 appType: app.type,
@@ -416,7 +416,7 @@ struct AppStripView: View {
 
         return AnyView(
           Button(action: {}) {
-            AppIconVisual(
+            AppStripAppIconTile(
               appId: app.id,
               appName: app.name,
               appType: app.type,
@@ -430,7 +430,7 @@ struct AppStripView: View {
           .sweepable(
             icon: {
               let show = displayApp ?? app
-              return AppIconVisual.sweepOverlayIcon(
+              return AppIconWithLabel.sweepOverlayIcon(
                 appId: show.id,
                 appName: show.name,
                 appType: show.type,

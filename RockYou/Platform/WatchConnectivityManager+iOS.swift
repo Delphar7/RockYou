@@ -366,12 +366,20 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     var unchangedCount = 0
 
     for pair in req.ordered {
+      // If the watch fell off reachability mid-batch, stop early.
+      if session?.isReachable != true { break }
+
       let appId = pair.appId
       let watchHash = pair.hash
       if let (data, hash) = await getIconWithHash(appId: appId, deviceId: deviceId) {
         if hash != watchHash {
           sendIconDataToWatch(appId: appId, deviceId: deviceId, data: data, hash: hash)
           sentCount += 1
+
+          // WCSession can drop messages if we firehose too fast; a tiny yield helps reliability.
+          if sentCount % 4 == 0 {
+            try? await Task.sleep(nanoseconds: 20_000_000)  // 20ms
+          }
         } else {
           unchangedCount += 1
         }

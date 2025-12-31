@@ -177,6 +177,7 @@ struct TVSelectorDropdown: View {
         deviceType: .tv,
         primaryName: tv.name,
         secondaryName: secondaryLabel(location: tv.location, kind: "TV"),
+        linkedDeviceId: nil,
         linkedDeviceName: nil
       ))
     }
@@ -190,6 +191,7 @@ struct TVSelectorDropdown: View {
           deviceType: .streamingDevice,
           primaryName: streamer.name,
           secondaryName: secondaryLabel(location: streamer.location, kind: "Streamer"),
+          linkedDeviceId: pairedTV.id,
           linkedDeviceName: pairedTV.name
         ))
       }
@@ -203,6 +205,7 @@ struct TVSelectorDropdown: View {
         deviceType: .streamingDevice,
         primaryName: streamer.name,
         secondaryName: secondaryLabel(location: streamer.location, kind: "Streamer"),
+        linkedDeviceId: nil,
         linkedDeviceName: nil
       ))
     }

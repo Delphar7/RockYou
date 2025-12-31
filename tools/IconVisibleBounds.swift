@@ -4,7 +4,7 @@
 // RockYou
 //
 // Compute a rough "visible content" bounding box for an RGBA PNG.
-// Intended for tuning AppIconVisual input-icon vertical centering.
+// Intended for tuning AppIconWithLabel input-icon vertical centering.
 //
 // Usage:
 //   swift Tools/IconVisibleBounds.swift /path/to/image.png

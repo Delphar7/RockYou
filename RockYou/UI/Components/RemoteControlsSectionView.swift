@@ -6,7 +6,6 @@ struct RemoteControlsSectionView: View {
   let selectedStreamerName: String?
   let selectedDeviceId: String?
   let hardwareControlsAvailable: Bool
-  let volumeControlsOffsetY: CGFloat
   @Binding var showingConfigure: Bool
   @Binding var showingTVSelector: Bool
   let phonePowerDelay: TimeInterval?
@@ -38,35 +37,33 @@ struct RemoteControlsSectionView: View {
         onAction: onAction
       )
 
-        GeometryReader { proxy in
+      GeometryReader { proxy in
           let available = proxy.size
           let natural = controlClusterNaturalSize
           let targetW = available.width * RemoteControlsSectionPlatform.targetFraction
           let targetH = available.height * RemoteControlsSectionPlatform.targetFraction
 
-          // Choose the uniform scale that ensures the cluster fits within 80% of BOTH
-          // available width and height (never cramping either dimension).
-          let scaleW: CGFloat = (natural.width > 0) ? (targetW / natural.width) : 1.0
+        // Choose the uniform scale that ensures the cluster fits within 80% of BOTH
+        // available width and height (never cramping either dimension).
+        let scaleW: CGFloat = (natural.width > 0) ? (targetW / natural.width) : 1.0
           let scaleH: CGFloat = (natural.height > 0) ? (targetH / natural.height) : 1.0
         // Allow scaling UP or DOWN. (Previous clamp to <= 1.0 prevented any visible change
         // when the cluster was already smaller than the target.)
         let scale: CGFloat = max(0.01, min(scaleW, scaleH))
 
-          VStack {
-            Spacer(minLength: 0)
-            controlCluster
-              // Measure natural (unscaled) size.
+        VStack {
+          controlCluster
+            // Measure natural (unscaled) size.
               .background(
                 GeometryReader { inner in
                   Color.clear.preference(key: SizePreferenceKey.self, value: inner.size)
                 }
-              )
-              .scaleEffect(scale, anchor: .center)
-            Spacer(minLength: 0)
-          }
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+            )
+            .scaleEffect(scale, anchor: .center)
         }
-        .onPreferenceChange(SizePreferenceKey.self) { newSize in
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+      .onPreferenceChange(SizePreferenceKey.self) { newSize in
           // Avoid churn on zero/invalid sizes.
           if newSize != .zero, newSize != controlClusterNaturalSize {
             controlClusterNaturalSize = newSize
@@ -77,7 +74,7 @@ struct RemoteControlsSectionView: View {
   }
 
   private var controlCluster: some View {
-    VStack(spacing: 20 * scaleFactor) {
+    VStack(spacing: 10 * scaleFactor) {
       RemoteNavRowView(
         scaleFactor: scaleFactor,
         phoneHomeDelay: phoneHomeDelay,
@@ -92,7 +89,6 @@ struct RemoteControlsSectionView: View {
         hardwareControlsAvailable: hardwareControlsAvailable,
         onAction: onAction
       )
-        .offset(y: volumeControlsOffsetY)
     }
   }
 }

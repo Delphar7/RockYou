@@ -29,7 +29,7 @@
       // macOS: Always use simple button clicks - no hold-to-confirm needed
       // Drag scrolling is handled by the macOS AppStrip scroll wrapper.
       Button(action: action) {
-        AppIconVisual(
+        AppStripAppIconTile(
           appId: appId,
           appName: appName,
           appType: appType,

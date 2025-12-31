@@ -77,7 +77,7 @@ struct RemoteControlView: View {
         containerSize = newSize
       }
     }
-    // Foreground gating for AppIconVisual glow animations
+    // Foreground gating for AppIconWithLabel glow animations
     .environment(\.glowAnimationForegroundEnabled, glowAnimationForegroundEnabled)
     .contentShape(Rectangle())
     .focusable()
@@ -146,6 +146,7 @@ struct RemoteControlView: View {
         compactLayoutView()
       }
 
+      Spacer(minLength: 10)
       bottomAppStrip()
     }
   }
@@ -206,7 +207,6 @@ struct RemoteControlView: View {
       selectedStreamerName: selection.selectedStreamerName,
       selectedDeviceId: selection.selectedDeviceId,
       hardwareControlsAvailable: selection.hardwareControlsAvailable,
-      volumeControlsOffsetY: layoutMode == .portraitCompact ? -1 : 0,
       showingConfigure: $showingConfigure,
       showingTVSelector: $showingTVSelector,
       phonePowerDelay: settings.phonePowerDelay,

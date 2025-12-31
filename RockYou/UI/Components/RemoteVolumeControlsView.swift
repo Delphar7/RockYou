@@ -6,20 +6,26 @@ struct RemoteVolumeControlsView: View {
   let onAction: (RemoteAction) -> Void
 
   var body: some View {
-    HStack(spacing: 32 * scaleFactor) {
+    HStack(spacing: RemoteCoreButtonMetrics.topKeyHorizontalPadding * scaleFactor) {
       TopKeyButton(
-        systemName: "speaker.slash.fill", width: 72 * scaleFactor, height: 54 * scaleFactor
+        systemName: "speaker.slash.fill",
+        width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
+        height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
       ) { onAction(.volumeMute) }
       .disabledForUnavailableHardwareControls(isAvailable: hardwareControlsAvailable)
       TopKeyButton(
-        systemName: "speaker.minus.fill", width: 72 * scaleFactor, height: 54 * scaleFactor
+        systemName: "speaker.minus.fill",
+        width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
+        height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
       ) { onAction(.volumeDown) }
       .disabledForUnavailableHardwareControls(isAvailable: hardwareControlsAvailable)
       TopKeyButton(
-        systemName: "speaker.plus.fill", width: 72 * scaleFactor, height: 54 * scaleFactor
+        systemName: "speaker.plus.fill",
+        width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
+        height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
       ) { onAction(.volumeUp) }
       .disabledForUnavailableHardwareControls(isAvailable: hardwareControlsAvailable)
     }
-    .padding(.top, 12 * scaleFactor)
+    .padding(.vertical, RemoteCoreButtonMetrics.topKeyVerticalPadding * scaleFactor)
   }
 }

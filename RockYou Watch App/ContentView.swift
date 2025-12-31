@@ -30,6 +30,91 @@ enum RemotePage: Int, CaseIterable, Identifiable {
   }
 }
 
+// MARK: - Watch-only responsive layout metrics
+//
+// Keep this in a watch-compiled file to avoid touching shared components / project.pbxproj.
+struct WatchLayoutMetrics {
+  let size: CGSize
+
+  private var minSide: CGFloat { min(size.width, size.height) }
+  var isSmallWatch: Bool { minSide < 190 }
+
+  private func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat {
+    max(lo, min(hi, v))
+  }
+
+  // MARK: - Common paddings
+
+  var pageHorizontalPadding: CGFloat { clamp(minSide * 0.045, 6, 10) }
+  var pageTopPadding: CGFloat { clamp(minSide * 0.02, 2, 6) }
+
+  // Header should align visually with the system time. We don't have a real metric for the time,
+  // so keep it nearly flush to the top (and rely on system overlays to avoid collisions).
+  var headerTopPadding: CGFloat { isSmallWatch ? 4 : 14 }
+  var headerHorizontalPadding: CGFloat { clamp(minSide * 0.045, 6, 10) }
+
+  // MARK: - Buttons
+
+  var topRowSpacing: CGFloat { clamp(minSide * 0.07, 8, 14) }
+  var buttonRowSpacing: CGFloat { clamp(minSide * 0.06, 6, 12) }
+
+  // MARK: - DPad
+
+  var pageIndicatorDotSize: CGFloat { isSmallWatch ? 6 : 8 }
+  var pageIndicatorDotSpacing: CGFloat { isSmallWatch ? 6 : 8 }
+  private var pageIndicatorBlockHeight: CGFloat { pageIndicatorDotSize + 8 }  // includes padding budget
+
+  private var compactButtonRowHeight: CGFloat { 30 }  // RemoteButtonStyle.rect / PowerButtonStyle.compact
+
+  /// D-pad size for nav/media pages, constrained by available height so the page indicator never gets pushed off-screen.
+  var dPadSize: CGFloat {
+    // Height budget assumes:
+    // - top row (30)
+    // - bottom row (30) [Media]
+    // - page indicator block (~16)
+    // - gaps/paddings (~40)
+    let reserved =
+      compactButtonRowHeight /*top*/
+      + compactButtonRowHeight /*bottom*/
+      + pageIndicatorBlockHeight
+      + 40
+
+    let maxByHeight = max(60, size.height - reserved)
+    // Slightly larger target than before (≈ +15%).
+    return clamp(min(minSide * 0.58, maxByHeight), 68, 112)
+  }
+
+  /// Slightly larger D-pad target for Nav page specifically (user preference).
+  var navDPadSize: CGFloat { clamp(dPadSize * 1.15, 72, 118) }
+
+  /// Corner "circle" buttons on Media page.
+  var mediaCornerButtonSize: CGFloat { clamp(minSide * 0.20, 32, 40) }
+
+  /// Spacing around the D-pad block in Media page.
+  var mediaTopGap: CGFloat { clamp(minSide * 0.035, 4, 8) }
+  var mediaBottomGap: CGFloat { clamp(minSide * 0.07, 8, 16) }
+  /// Nudge the D-pad down relative to the corner buttons (without moving the corner buttons).
+  var mediaDPadYOffset: CGFloat { clamp(minSide * 0.03, 4, 10) }
+
+  /// Spacing between D-pad and app strip in Nav page.
+  var navBetweenDPadAndStrip: CGFloat { clamp(minSide * 0.03, 0, 8) }
+
+  /// App strip icon height (fixed sizing; percent sizing is screen-based and ignores header/page constraints).
+  var navAppStripIconHeight: CGFloat {
+    if isSmallWatch {
+      return clamp((minSide * 0.17) * 1.05, 18, 28)
+    }
+    // Large watches can afford a bigger strip (the old percent-based sizing was effectively larger).
+    return clamp((minSide * 0.17) * 1.18, 22, 33)
+  }
+
+  // MARK: - QuickActions (page 1)
+
+  var quickActionsRowSpacing: CGFloat { clamp(minSide * 0.05, 4, 10) }
+  var quickActionsTopPadding: CGFloat { clamp(minSide * 0.02, 2, 6) }
+  var quickActionsButtonHeight: CGFloat { isSmallWatch ? 40 : 48 }
+}
+
 // MARK: - Content View
 
 struct ContentView: View {
@@ -47,33 +132,38 @@ struct ContentView: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      if connectivity.selectedDevice != nil {
-        HStack {
-          tvSelectorHeader
-          Spacer()
-        }
-        .padding(.top, 15)
-        .padding(.horizontal, 8)
-      }
+    GeometryReader { rootGeo in
+      let metrics = WatchLayoutMetrics(size: rootGeo.size)
 
-      GeometryReader { geometry in
-        ZStack {
-          if connectivity.selectedDevice == nil {
-            if connectivity.isPhoneReachable {
-              noDeviceView
-            } else {
-              disconnectedView
-            }
-          } else {
-            pageContent
-              .id(currentPage)
-              .transition(slideTransition)
+      VStack(spacing: 0) {
+        if connectivity.selectedDevice != nil {
+          HStack {
+            tvSelectorHeader
+            Spacer()
           }
+          .padding(.top, metrics.headerTopPadding)
+          .padding(.horizontal, metrics.headerHorizontalPadding)
         }
-        .frame(width: geometry.size.width, height: geometry.size.height)
-        .animation(.easeInOut(duration: 0.25), value: currentPage)
+
+        GeometryReader { geometry in
+          ZStack {
+            if connectivity.selectedDevice == nil {
+              if connectivity.isPhoneReachable {
+                noDeviceView
+              } else {
+                disconnectedView
+              }
+            } else {
+              pageContent
+                .id(currentPage)
+                .transition(slideTransition)
+            }
+          }
+          .frame(width: geometry.size.width, height: geometry.size.height)
+          .animation(.easeInOut(duration: 0.25), value: currentPage)
+        }
       }
+      .frame(width: rootGeo.size.width, height: rootGeo.size.height, alignment: .top)
     }
     .ignoresSafeArea(edges: [.top, .bottom])
     .background(Color.black)

@@ -19,44 +19,50 @@ struct MediaPage: View {
   @State private var crownValue: Double = 50
   @State private var settings = WatchAppSettings.shared
 
-  // Tiny layout nudges to improve visual alignment on watch:
-  // - D-pad slightly higher so it doesn't crowd the bottom row.
-  // - Circle buttons slightly higher to align better with the D-pad top edge.
-  // - Bottom row slightly lower without moving the page indicator.
-  private let dPadYOffset: CGFloat = 8
-  private let circleRowTopPadding: CGFloat = 0
-
   var body: some View {
-    VStack(spacing: 4) {
-      // Top row: Back, Mute, Power
-      topRow
+    GeometryReader { geo in
+      let metrics = WatchLayoutMetrics(size: geo.size)
 
-      Spacer(minLength: 0).frame(height: 8)
+      VStack(spacing: metrics.pageTopPadding) {
+        // Top row: Back, Mute, Power
+        topRow(spacing: metrics.topRowSpacing)
 
-      // D-Pad with circle buttons at sides, aligned to top
-      ZStack(alignment: .top) {
-        DPadView(onDirection: { onAction($0) }, onOK: { onAction(.ok) }, size: 80)
-          .offset(y: dPadYOffset)
+        Spacer(minLength: 0).frame(height: metrics.mediaTopGap)
 
-        HStack {
-          circleButton(icon: "asterisk", action: .options)
-          Spacer()
-          circleButton(icon: "gobackward.15", action: .instantReplay)
+        // D-Pad with corner buttons
+        ZStack(alignment: .top) {
+          DPadView(onDirection: { onAction($0) }, onOK: { onAction(.ok) }, size: metrics.dPadSize)
+            // Keep the corner buttons pinned; only nudge the D-pad down.
+            .offset(y: metrics.mediaDPadYOffset)
+
+          HStack {
+            circleButton(icon: "asterisk", action: .options, size: metrics.mediaCornerButtonSize)
+            Spacer()
+            circleButton(
+              icon: "gobackward.15", action: .instantReplay, size: metrics.mediaCornerButtonSize)
+          }
+          .padding(.horizontal, 2)
         }
-        .padding(.top, circleRowTopPadding)
-        .padding(.horizontal, 2)
+
+        Spacer(minLength: 0).frame(height: metrics.mediaBottomGap)
+
+        // Bottom row: Rewind, Play/Pause, Forward
+        bottomRow(spacing: metrics.buttonRowSpacing)
+
+        PageIndicator(
+          pageCount: pageCount,
+          currentPage: currentPage,
+          onPageTap: onPageTap,
+          dotSize: metrics.pageIndicatorDotSize,
+          spacing: metrics.pageIndicatorDotSpacing
+        )
+        .padding(.bottom, 2)
+        .padding(.top, metrics.pageTopPadding)
       }
-
-      Spacer(minLength: 0).frame(height: 26)
-
-      // Bottom row: Rewind, Play/Pause, Forward
-      bottomRow
-
-      PageIndicator(pageCount: pageCount, currentPage: currentPage, onPageTap: onPageTap)
-        .padding(.bottom, 2).padding(.top, 6)
+      .padding(.horizontal, metrics.pageHorizontalPadding)
+      .padding(.top, metrics.pageTopPadding)
+      .frame(width: geo.size.width, height: geo.size.height)
     }
-    .padding(.horizontal, 8)
-    .padding(.top, 4)
     .contentShape(Rectangle())
     .focusable()
     .digitalCrownRotation($crownValue, from: 0, through: 100, sensitivity: .medium, isContinuous: true, isHapticFeedbackEnabled: true)
@@ -75,8 +81,8 @@ struct MediaPage: View {
     )
   }
 
-  private var topRow: some View {
-    HStack(spacing: 12) {
+  private func topRow(spacing: CGFloat) -> some View {
+    HStack(spacing: spacing) {
       RemoteButton("chevron.left") { onAction(.back) }
       RemoteButton("speaker.slash.fill") { onAction(.volumeMute) }
         .disabledForUnavailableHardwareControls(isAvailable: hardwareControlsAvailable)
@@ -85,15 +91,20 @@ struct MediaPage: View {
     }
   }
 
-  private var bottomRow: some View {
-    HStack(spacing: 12) {
+  private func bottomRow(spacing: CGFloat) -> some View {
+    HStack(spacing: spacing) {
       RemoteButton("backward.fill") { onAction(.rewind) }
       RemoteButton("playpause.fill") { onAction(.playPause) }
       RemoteButton("forward.fill") { onAction(.forward) }
     }
   }
 
-  private func circleButton(icon: String, action: RemoteAction) -> some View {
-    RemoteButton(icon: icon, action: { onAction(action) }, style: .circle)
+  private func circleButton(icon: String, action: RemoteAction, size: CGFloat) -> some View {
+    RemoteButton(
+      icon: icon,
+      action: { onAction(action) },
+      style: .custom(
+        width: size, height: size, isCircle: true, iconSize: size * 0.40, cornerRadius: nil)
+    )
   }
 }

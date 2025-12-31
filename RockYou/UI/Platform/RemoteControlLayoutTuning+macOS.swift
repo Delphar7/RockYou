@@ -1,7 +1,7 @@
 import CoreGraphics
 
 enum RemoteControlsSectionPlatform {
-  static let targetFraction: CGFloat = 0.80
+  static let targetFraction: CGFloat = 0.90
 }
 
 enum RemoteTopBarPlatform {

@@ -11,13 +11,15 @@ struct PageIndicator: View {
   let pageCount: Int
   let currentPage: Int
   var onPageTap: ((Int) -> Void)? = nil
+  var dotSize: CGFloat = 8
+  var spacing: CGFloat = 8
 
   var body: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: spacing) {
       ForEach(0..<pageCount, id: \.self) { index in
         Circle()
           .fill(index == currentPage ? Color.white : Color.white.opacity(AppOpacity.standard))
-          .frame(width: 8, height: 8)
+          .frame(width: dotSize, height: dotSize)
           .contentShape(Circle().scale(2.5))  // Larger tap target
           .onTapGesture {
             if index != currentPage {
