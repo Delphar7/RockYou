@@ -16,7 +16,7 @@ enum RemoteControlPlatform {
     }
   }
 
-  static var scaleFactor: CGFloat { 1.0 }
+  static var scaleFactor: CGFloat { 0.98 }
 
   static func glowAnimationForegroundEnabled(scenePhase: ScenePhase, windowIsActive: Bool) -> Bool {
     _ = windowIsActive

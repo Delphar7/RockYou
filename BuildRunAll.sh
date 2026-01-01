@@ -10,6 +10,10 @@ RESET_SIM=0
 LINT_ONLY=0
 LAUNCH_CONSOLE=0
 NO_LOG=0
+NO_BUILD_LOCK=0
+ALWAYS_BUILD=0
+BREAK_LOCKS=0
+STATUS_LOCKS=0
 
 mkdir -p "$DERIVED_DATA_BASE" "$RUNALL_LOG_ARCHIVE_DIR"
 
@@ -118,6 +122,152 @@ ensure_platform_dirs() {
 ensure_dir() {
     local dir=$1
     mkdir -p "$dir"
+}
+
+# MARK: - Cross-process build locks (for multi-terminal --watchexec workflows)
+#
+# Problem: `xcodebuild` cannot safely run concurrently when sharing the same -derivedDataPath.
+# In this repo, iPhone + iPad builds intentionally share `platform_tag="iossim"`, so two terminals
+# running `--watchexec phone` and `--watchexec ipad` can race and produce Xcode build DB locks.
+#
+# Solution: Use `lockf(1)` advisory file locks (fcntl) so we can safely block/wait without PID-reuse
+# false-positives (a common issue with PID-based lockfiles).
+lock_root_dir() {
+    echo "$DERIVED_DATA_BASE/Locks"
+}
+
+lock_file_for_platform_tag() {
+    local platform_tag=$1
+    echo "$(lock_root_dir)/${platform_tag}.lock"
+}
+
+list_lock_files() {
+    local dir
+    dir="$(lock_root_dir)"
+    if [ ! -d "$dir" ]; then
+        return 0
+    fi
+    find "$dir" -maxdepth 1 -type f -name "*.lock" -print | sort
+}
+
+lock_holders_pids_for_file() {
+    local lock_file=$1
+    # `lsof` is the most practical way to see who has the file open (and thus can hold the lock).
+    # If `lsof` isn't available, we fall back to "unknown".
+    if ! command -v lsof >/dev/null 2>&1; then
+        return 2
+    fi
+    lsof -t -- "$lock_file" 2>/dev/null | sort -u
+}
+
+status_locks() {
+    local any=0
+    local file
+    while IFS= read -r file; do
+        any=1
+        local base
+        base="$(basename "$file")"
+        local platform_tag="${base%.lock}"
+
+        local pids=""
+        pids="$(lock_holders_pids_for_file "$file" 2>/dev/null || true)"
+        if [ -z "$pids" ]; then
+            echo "🔓 $platform_tag (free)"
+            continue
+        fi
+
+        echo "🔒 $platform_tag (held)"
+        local pid
+        while IFS= read -r pid; do
+            if [ -z "$pid" ]; then
+                continue
+            fi
+            # Best-effort: show the command line holding the lock file open.
+            local cmdline
+            cmdline="$(ps -p "$pid" -o command= 2>/dev/null | sed 's/^[[:space:]]*//')"
+            if [ -n "$cmdline" ]; then
+                echo "  - pid $pid: $cmdline"
+            else
+                echo "  - pid $pid"
+            fi
+        done <<<"$pids"
+    done < <(list_lock_files)
+
+    if [ "$any" -eq 0 ]; then
+        echo "ℹ️  No lock files found (nothing to report)."
+    fi
+}
+
+break_locks() {
+    local dir
+    dir="$(lock_root_dir)"
+    if [ ! -d "$dir" ]; then
+        echo "ℹ️  No lock dir found; nothing to clean."
+        return 0
+    fi
+
+    local removed=0
+    local held=0
+    local file
+    while IFS= read -r file; do
+        local pids=""
+        pids="$(lock_holders_pids_for_file "$file" 2>/dev/null || true)"
+        if [ -n "$pids" ]; then
+            held=1
+            continue
+        fi
+        rm -f -- "$file" 2>/dev/null || true
+        removed=$((removed + 1))
+    done < <(list_lock_files)
+
+    if [ "$removed" -gt 0 ]; then
+        echo "🧹 Removed $removed unused lock file(s)."
+    else
+        echo "🧹 No unused lock files to remove."
+    fi
+    if [ "$held" -eq 1 ]; then
+        echo "⚠️  Some locks are currently held; fcntl locks cannot be 'broken' safely."
+        echo "   Use --status-locks to see the holding PID(s), then terminate the stuck build if needed."
+    fi
+}
+
+with_platform_lock() {
+    local platform_tag=$1
+    shift
+
+    if [ "$NO_BUILD_LOCK" -eq 1 ]; then
+        "$@"
+        return $?
+    fi
+
+    # Indicates whether we had to wait for another process to finish a build for this platform tag.
+    # Intended to let callers skip redundant rebuilds (default) while still running install/launch.
+    LOCK_WAS_CONTENDED=0
+
+    ensure_dir "$(lock_root_dir)"
+    local lock_file
+    lock_file="$(lock_file_for_platform_tag "$platform_tag")"
+
+    # bash 3.2: no dynamic file descriptors. Use a fixed fd; we never lock concurrently in-process.
+    exec 200>"$lock_file"
+
+    # Try once without waiting; if contended, print a friendly message and then block indefinitely.
+    if ! lockf -s -t 0 200 2>/dev/null; then
+        echo "⏳ Waiting for build lock: $platform_tag"
+        LOCK_WAS_CONTENDED=1
+        lockf -s 200 2>/dev/null || {
+            exec 200>&-
+            return 1
+        }
+    fi
+
+    local rc=0
+    "$@"
+    rc=$?
+
+    # Release lock by closing fd.
+    exec 200>&-
+    return $rc
 }
 
 # Timestamp intended for natural sorting (lexicographic == chronological).
@@ -336,6 +486,22 @@ while [[ "${1:-}" == --* ]]; do
             NO_LOG=1
             shift
             ;;
+        --no-lock|--no-build-lock|--nolock)
+            NO_BUILD_LOCK=1
+            shift
+            ;;
+        --always-build|--rebuild)
+            ALWAYS_BUILD=1
+            shift
+            ;;
+        --status-locks|--locks-status)
+            STATUS_LOCKS=1
+            shift
+            ;;
+        --break-locks|--locks-break)
+            BREAK_LOCKS=1
+            shift
+            ;;
         --ResetSim|--reset-sim)
             RESET_SIM=1
             shift
@@ -372,6 +538,16 @@ while [[ "${1:-}" == --* ]]; do
             ;;
     esac
 done
+
+if [ "$STATUS_LOCKS" -eq 1 ]; then
+    status_locks
+    exit 0
+fi
+
+if [ "$BREAK_LOCKS" -eq 1 ]; then
+    break_locks
+    exit 0
+fi
 
 # If lint mode is requested with no targets, default to all targets.
 if [ "$LINT_ONLY" -eq 1 ] && [ $# -eq 0 ]; then
@@ -412,6 +588,23 @@ build_ios() {
     build_products_root="$(build_products_root_for "$platform_tag")"
     local bundle_dir
     bundle_dir="$(bundle_dir_for "$platform_tag")"
+    with_platform_lock "$platform_tag" _build_ios_locked "$sim_id" "$name" "$bundle_suffix" "$derived_data_root" "$bundle_dir"
+}
+
+_build_ios_locked() {
+    local sim_id=$1
+    local name=$2
+    local bundle_suffix=$3
+    local derived_data_root=$4
+    local bundle_dir=$5
+
+    local app_path
+    app_path="$(build_products_root_for iossim)/Debug-iphonesimulator/RockYou.app"
+    if [ "${LOCK_WAS_CONTENDED:-0}" -eq 1 ] && [ "$ALWAYS_BUILD" -eq 0 ] && [ -d "$app_path" ]; then
+        echo "✅ Skipping $name build (another process already built iossim)"
+        return 0
+    fi
+
     echo "📱 Building $name app..."
     rm -rf "$bundle_dir/RockYou$bundle_suffix" "$bundle_dir/RockYou$bundle_suffix.xcresult"
     xcodebuild -scheme RockYou -configuration Debug \
@@ -419,7 +612,7 @@ build_ios() {
         -derivedDataPath "$derived_data_root" \
         -destination "platform=iOS Simulator,id=$sim_id" \
         -resultBundlePath "$bundle_dir/RockYou$bundle_suffix.xcresult" \
-        -allowProvisioningUpdates build | xcbeautify || return 1
+        -allowProvisioningUpdates build | xcbeautify
 }
 
 build_watch() {
@@ -431,14 +624,29 @@ build_watch() {
     build_products_root="$(build_products_root_for "$platform_tag")"
     local bundle_dir
     bundle_dir="$(bundle_dir_for "$platform_tag")"
+    with_platform_lock "$platform_tag" _build_watch_locked "$WATCH_SIM" "$derived_data_root" "$bundle_dir"
+}
+
+_build_watch_locked() {
+    local watch_sim_id=$1
+    local derived_data_root=$2
+    local bundle_dir=$3
+
+    local app_path
+    app_path="$(build_products_root_for watchsim)/Debug-watchsimulator/RockYou Watch App.app"
+    if [ "${LOCK_WAS_CONTENDED:-0}" -eq 1 ] && [ "$ALWAYS_BUILD" -eq 0 ] && [ -d "$app_path" ]; then
+        echo "✅ Skipping Watch build (another process already built watchsim)"
+        return 0
+    fi
+
     echo "⌚ Building Watch app..."
     rm -rf "$bundle_dir/RockYou Watch App" "$bundle_dir/RockYou Watch App.xcresult"
     xcodebuild -scheme 'RockYou Watch App' -configuration Debug \
         -project "$PROJECT" \
         -derivedDataPath "$derived_data_root" \
-        -destination "platform=watchOS Simulator,id=$WATCH_SIM" \
+        -destination "platform=watchOS Simulator,id=$watch_sim_id" \
         -resultBundlePath "$bundle_dir/RockYou Watch App.xcresult" \
-        -allowProvisioningUpdates build | xcbeautify || return 1
+        -allowProvisioningUpdates build | xcbeautify
 }
 
 build_mac() {
@@ -450,6 +658,20 @@ build_mac() {
     build_products_root="$(build_products_root_for "$platform_tag")"
     local bundle_dir
     bundle_dir="$(bundle_dir_for "$platform_tag")"
+    with_platform_lock "$platform_tag" _build_mac_locked "$derived_data_root" "$bundle_dir"
+}
+
+_build_mac_locked() {
+    local derived_data_root=$1
+    local bundle_dir=$2
+
+    local app_path
+    app_path="$(build_products_root_for macos)/Debug/RockYou.app"
+    if [ "${LOCK_WAS_CONTENDED:-0}" -eq 1 ] && [ "$ALWAYS_BUILD" -eq 0 ] && [ -d "$app_path" ]; then
+        echo "✅ Skipping Mac build (another process already built macos)"
+        return 0
+    fi
+
     echo "🖥️  Building Mac app..."
     rm -rf "$bundle_dir/RockYou-Mac" "$bundle_dir/RockYou-Mac.xcresult"
     xcodebuild -scheme RockYou -configuration Debug \
@@ -457,7 +679,7 @@ build_mac() {
         -derivedDataPath "$derived_data_root" \
         -destination "$MAC_DEST" \
         -resultBundlePath "$bundle_dir/RockYou-Mac.xcresult" \
-        -allowProvisioningUpdates build | xcbeautify || return 1
+        -allowProvisioningUpdates build | xcbeautify
 }
 
 # Run iOS app on a simulator (iPhone or iPad)
@@ -565,6 +787,10 @@ if [ $# -eq 0 ]; then
     echo "  --lint      - Build only (no install/launch). If no targets given, builds phone+ipad+watch+mac."
     echo "  --console   - Keep streaming simulator console output (blocks; useful in tmux panes)"
     echo "  --no-log    - Disable tee-to-log (intended for tmux mode where tmux pipe-pane handles logs)"
+    echo "  --no-lock   - Disable cross-process DerivedData locks (not recommended; can cause Xcode build DB lock errors)"
+    echo "  --always-build - Rebuild even if we had to wait on a concurrent build lock"
+    echo "  --status-locks - Show any currently held build locks (best-effort via lsof)"
+    echo "  --break-locks  - Remove unused lock files (does not kill running builds)"
     echo ""
     echo "Targets (can combine multiple):"
     echo "  iphone     - iPhone app (alias: phone)"

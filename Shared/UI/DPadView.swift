@@ -68,6 +68,7 @@ struct DPadView: View {
   @State private var isDragging = false
   @State private var isInDragMode = false
   @State private var hasFiredDirection = false  // Track if any direction was sent
+  @State private var isPressingOK = false  // Visual-only: stick press should only occur for OK-region touches
 
   var body: some View {
     if let explicitSize = size {
@@ -100,7 +101,7 @@ struct DPadView: View {
     let okLabelYOffset = shadowClipMidpointYOffset + (size * okLabelExtraYOffsetFractionOfSize)
     // "Pressed" is a visual-only state: press down on touch-down, but pop back up once we
     // transition into real drag mode.
-    let stickPressed = isDragging && !isInDragMode
+    let stickPressed = isDragging && !isInDragMode && isPressingOK
     let stickPressYOffset = stickPressed ? (size * stickPressYOffsetFractionOfSize) : 0
 
     return ZStack {
@@ -144,7 +145,7 @@ struct DPadView: View {
         tapRegionDebugOverlay(size: size)
       }
     }
-    .gesture(dragGesture(size: size))
+    .modifier(platformDPadInteraction(size: size))
     .appButtonShadow(radius: 8, opacity: 0.2)
   }
 
@@ -153,7 +154,10 @@ struct DPadView: View {
   private func dragGesture(size: CGFloat) -> some Gesture {
     DragGesture(minimumDistance: 0)  // Start immediately to capture press
       .onChanged { value in
-        if !isDragging { isDragging = true }
+        if !isDragging {
+          isDragging = true
+          isPressingOK = isStartInOKRegion(startLocation: value.startLocation, size: size)
+        }
         dragOffset = value.translation
 
         let distance = hypot(value.translation.width, value.translation.height)
@@ -211,7 +215,7 @@ struct DPadView: View {
           HapticService.play(.click)
           if let tapDir {
             onDirection(tapDir)
-          } else {
+          } else if isStartInOKRegion(startLocation: value.startLocation, size: size) {
             onOK()
           }
         }
@@ -219,6 +223,7 @@ struct DPadView: View {
         // Reset state
         isDragging = false
         isInDragMode = false
+        isPressingOK = false
         dragOffset = .zero
         stopTapHoldRepeat()
         stopRepeat()
@@ -402,13 +407,19 @@ struct DPadView: View {
   private func repeatInterval(forNormalized u: CGFloat) -> TimeInterval {
     let u01 = max(0, min(1, u))
 
-    // Piecewise quadratic: slow in first half, faster in second.
+    // Piecewise quadratic:
+    // - Slow ramp occupies more of the range (0..2/3)
+    // - Faster ramp in the final third (2/3..1)
     let t: CGFloat
-    if u01 <= 0.5 {
-      let x = u01 / 0.5
+    let b: CGFloat = 2.0 / 3.0
+    if u01 <= b {
+      // Map 0..b → 0..0.5 (quadratic)
+      let x = u01 / max(0.0001, b)
       t = 0.5 * (x * x)
     } else {
-      let x = (u01 - 0.5) / 0.5
+      // Map b..1 → 0.5..1 (quadratic)
+      let denom = max(0.0001, (1.0 - b))
+      let x = (u01 - b) / denom
       t = 0.5 + 0.5 * (x * x)
     }
 
@@ -462,6 +473,10 @@ struct DPadView: View {
     if s.left.contains(startLocation) { return .left }
     if s.right.contains(startLocation) { return .right }
     return nil
+  }
+
+  private func isStartInOKRegion(startLocation: CGPoint, size: CGFloat) -> Bool {
+    tapShapes(size: size).ok.contains(startLocation)
   }
 
   private func tapShapes(size: CGFloat) -> (up: Path, down: Path, left: Path, right: Path, ok: Path)
@@ -595,6 +610,87 @@ struct DPadView: View {
     )
   }
 }
+
+// MARK: - Platform interaction (implementation detail)
+//
+// Intent: keep `DPadView`'s core interaction logic readable by pushing watch-vs-nonWatch routing
+// to one place at the bottom of the file.
+extension DPadView {
+  /// Platform routing hook used by the main view modifier chain.
+  ///
+  /// Implemented in the single `#if os(watchOS)` block below so the main DPad code stays clean.
+  fileprivate func platformDPadInteraction(size: CGFloat) -> some ViewModifier {
+    PlatformDPadInteraction(dPad: self, size: size)
+  }
+}
+
+#if os(watchOS)
+  extension DPadView {
+    fileprivate struct PlatformDPadInteraction: ViewModifier {
+      let dPad: DPadView
+      let size: CGFloat
+
+      func body(content: Content) -> some View {
+        content.overlay { dPad.watchInteractionOverlay(size: size) }
+      }
+    }
+
+    // MARK: - watchOS interaction routing
+    //
+    // Goal: don't claim swipes that should page-switch.
+    // - Arrow regions are tap-only (no drag gesture attached there).
+    // - Only the center OK region owns the drag gesture.
+
+    fileprivate struct FrozenPathShape: Shape {
+      let path: Path
+      func path(in rect: CGRect) -> Path { path }
+    }
+
+    @ViewBuilder
+    fileprivate func watchInteractionOverlay(size: CGFloat) -> some View {
+      let shapes = tapShapes(size: size)
+      let okDiameter = (size * arrowTapInnerRadiusFractionOfSize) * 2
+
+      ZStack {
+        watchArrowTapRegion(shape: FrozenPathShape(path: shapes.up), direction: .up)
+        watchArrowTapRegion(shape: FrozenPathShape(path: shapes.down), direction: .down)
+        watchArrowTapRegion(shape: FrozenPathShape(path: shapes.left), direction: .left)
+        watchArrowTapRegion(shape: FrozenPathShape(path: shapes.right), direction: .right)
+
+        Color.clear
+          .frame(width: okDiameter, height: okDiameter)
+          .contentShape(Circle())
+          // Reuse the same drag gesture implementation, but *only* attach it to the OK region.
+          // This avoids duplicating drag/repeat logic and prevents the DPad from stealing page-swipes.
+          .gesture(dragGesture(size: size))
+      }
+      .frame(width: size, height: size)
+    }
+
+    fileprivate func watchArrowTapRegion<S: Shape>(shape: S, direction: RemoteAction) -> some View {
+      Color.clear
+        .contentShape(shape)
+        .onTapGesture {
+          DebugBuild.run {
+            Log.debug("DPad", "watchOS arrow tap: \(direction)")
+          }
+          HapticService.play(.click)
+          onDirection(direction)
+        }
+    }
+  }
+#else
+  extension DPadView {
+    fileprivate struct PlatformDPadInteraction: ViewModifier {
+      let dPad: DPadView
+      let size: CGFloat
+
+      func body(content: Content) -> some View {
+        content.gesture(dPad.dragGesture(size: size))
+    }
+  }
+}
+#endif
 
 #Preview("Watch (80) @2x (top)") {
   VStack(spacing: 0) {

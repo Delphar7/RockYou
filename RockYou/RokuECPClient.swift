@@ -1138,6 +1138,29 @@ actor RokuECPClient {
       )
     }
 
+    // MARK: - Power / wake special-case (WoL fallback)
+
+    let isPowerishKey = (key == "PowerOn" || key == "Power")
+    if isPowerishKey {
+      // If we're confidently "red" (true off), send WoL immediately and don't attempt to connect.
+      // We can't know whether the device is unplugged; treat WoL as best-effort.
+      let pm: PowerMode = await MainActor.run {
+        DeviceStateManager.shared.state(for: device.id).powerMode
+      }
+
+      if pm == .off, device.canAttemptWakeOnLAN {
+        DebugBuild.run {
+          Log.info(
+            "WoL",
+            "[\(trace)] sending WoL first (powerMode=off) for \(device.name) macs=\(device.wakeOnLANMacAddresses)"
+          )
+        }
+        _ = await WakeOnLAN.wake(macAddresses: device.wakeOnLANMacAddresses, repeats: 2)
+        // Treat as success: we initiated the user's intent to turn the device on.
+        return .success
+      }
+    }
+
     // Try WebSocket (ecp-2) first - this is the authenticated, robust approach
     let wsResult = await sendKeypressViaWebSocket(key, to: device, trace: trace)
     if wsResult.success {
@@ -1147,6 +1170,18 @@ actor RokuECPClient {
 
     // If WebSocket indicated unreachable (connection failed), device is likely off.
     if wsResult.unreachable {
+      // If this looks like a "turn on" intent, fall back to WoL when supported.
+      if isPowerishKey, device.canAttemptWakeOnLAN {
+        DebugBuild.run {
+          Log.info(
+            "WoL",
+            "[\(trace)] WS unreachable; falling back to WoL for \(device.name) macs=\(device.wakeOnLANMacAddresses)"
+          )
+        }
+        _ = await WakeOnLAN.wake(macAddresses: device.wakeOnLANMacAddresses, repeats: 2)
+        return .success
+      }
+
       DebugBuild.run { Log.debug("ECP", "[\(trace)] keypress failed: unreachable") }
       return .unreachable
     }

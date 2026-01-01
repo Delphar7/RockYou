@@ -11,6 +11,8 @@ Roku devices expose local control primarily on port **8060**:
 
 Reference: [Roku External Control API](https://developer.roku.com/docs/developer-program/dev-tools/external-control-api.md)
 
+For deeper notes and examples (including ECP-2 message formats), see `Protocol.md`.
+
 ### ECP-1 (HTTP)
 
 - Send keypress:
@@ -42,6 +44,27 @@ watchOS restricts low-level networking APIs unless the app is actively streaming
 - **Works**: `URLSession.dataTask` (HTTP/HTTPS)
 - **Generally blocked**: multicast discovery (`NWConnectionGroup`/`NWMulticastGroup`), and low-level socket-style APIs unless in an audio-streaming scenario
 
+### Support matrix (what “blocked” actually means)
+
+“Blocked” typically surfaces as:
+
+```text
+Path was denied by NECP policy
+```
+
+To use low-level networking APIs on watchOS, the system expects a real streaming-audio scenario (not just “I opened a socket”):
+
+- Background Audio capability enabled
+- Active `AVAudioSession`
+- Requests marked `networkServiceType = .avStreaming`
+- App is actually streaming audio
+
+Practical API notes:
+
+- `URLSession.dataTask` (HTTP/HTTPS): ✅ works normally
+- `URLSession.webSocketTask` / `NWConnection` WebSocket: ⚠️ typically blocked unless streaming audio
+- SSDP discovery (multicast): ⚠️ blocked unless streaming audio
+
 Practical impact for RockYou:
 
 - Watch can do HTTP ECP-1 once it knows the IP, but generally cannot do:
@@ -54,9 +77,15 @@ Practical impact for RockYou:
 
 Reference: Apple TN3135 “Low-level networking on watchOS”.
 
+### Implication for TV discovery & pairing
+
+If we add “Other TV” control on watchOS, discovery must be mediated by iPhone (or manual IP entry), because the Watch cannot reliably do multicast discovery or long-lived sockets.
+
 ## Other TV protocols (future expansion notes)
 
 If RockYou expands beyond Roku, likely high-value targets:
+
+For detailed research notes (Samsung/LG/Sony/etc.), see `TV-Protocols.md`.
 
 - Samsung (Tizen): WebSocket remote API (power off works; power on often requires WoL)
 - LG (webOS): WebSocket SSAP

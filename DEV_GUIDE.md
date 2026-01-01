@@ -64,41 +64,61 @@ Validate Embedded Binary RockYou Watch App.app
 
 WatchConnectivity on simulators can be unreliable; validate important WC behaviors on **real devices**.
 
-## Deployment (TestFlight / App Store)
+### WatchConnectivity works in one direction only
 
-### App Store Connect
+Symptoms you’ll see:
 
-1. Create the app entry in App Store Connect
-2. Bundle id: `com.jtr.RockYou`
-3. Note: the watch app is bundled with the iOS app (no separate store entry)
+- Watch → iPhone messages work ✓
+- iPhone → Watch replies or sends fail ✗
+- iPhone logs: `WCSession counterpart app not installed`
+- `session.isWatchAppInstalled == false` on iPhone
 
-### CloudKit schema deployment (critical)
+Cause is usually the same as above: **the Watch app is not properly embedded**, so iOS doesn’t recognize it as the companion.
 
-TestFlight/Production builds use the **Production** CloudKit environment.
+### Messages time out (`WCErrorCodeTransferTimedOut`)
 
-1. Open CloudKit dashboard
-2. Select container `iCloud.com.jtr.RockYou`
-3. Ensure you are in **Development**
-4. Click **Deploy Schema Changes...**
-5. Verify deployment completes
+Common causes:
 
-### Archive
+- Watch app not embedded (see above)
+- iPhone app not running/foreground (since `sendMessage` requires reachability)
+- Network issues (Wi‑Fi/Bluetooth)
+
+Debug checks:
+
+- `session.isReachable`
+- `session.isPaired`
+- `session.isWatchAppInstalled`
+
+### Debug logging snippets (quick copy/paste)
+
+On iPhone side:
+
+```swift
+NSLog("[iPhone] ✅ Session activated, reachable: \(session.isReachable), paired: \(session.isPaired), watchAppInstalled: \(session.isWatchAppInstalled)")
+```
+
+On Watch side:
+
+```swift
+NSLog("[Watch] 📶 Reachability changed: \(session.isReachable)")
+```
+
+### Simulator pairing recipe (when you must)
 
 ```bash
-# iOS + watchOS bundle
-xcodebuild archive \
-  -scheme "RockYou" \
-  -destination "generic/platform=iOS" \
-  -archivePath ./build/RockYou-iOS.xcarchive \
-  -allowProvisioningUpdates
+# Create iPhone
+IPHONE=$(xcrun simctl create "iPhone 16 Pro" "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro" "com.apple.CoreSimulator.SimRuntime.iOS-18-4")
 
-# macOS
-xcodebuild archive \
-  -scheme "RockYou" \
-  -destination "generic/platform=macOS" \
-  -archivePath ./build/RockYou-macOS.xcarchive \
-  -allowProvisioningUpdates
+# Create Watch
+WATCH=$(xcrun simctl create "Apple Watch Series 10" "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-10-46mm" "com.apple.CoreSimulator.SimRuntime.watchOS-11-4")
+
+# Pair them
+xcrun simctl pair "$WATCH" "$IPHONE"
 ```
+
+## Deployment (TestFlight / App Store)
+
+See `Resources/Docs/Deployment.md`.
 
 ## Common build issues
 
