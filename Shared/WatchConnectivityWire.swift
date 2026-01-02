@@ -67,20 +67,32 @@ public struct WCSyncedSettings: Codable, Sendable, Equatable {
 
 public struct WCHandshakeReply: Codable, Sendable, Equatable {
   public var devices: [DeviceInfo]
+  /// Optional v2 representation: "whole device" controllers (TV/streamer/paired).
+  /// Backward-compatible: older builds ignore unknown keys.
+  public var controllers: [DeviceControllerDescriptor]?
   public var settings: WCSyncedSettings
 
-  public init(devices: [DeviceInfo], settings: WCSyncedSettings) {
+  public init(devices: [DeviceInfo], controllers: [DeviceControllerDescriptor]? = nil, settings: WCSyncedSettings) {
     self.devices = devices
+    self.controllers = controllers
     self.settings = settings
   }
 }
 
 public struct WCDeviceListEvent: Codable, Sendable, Equatable {
   public var devices: [DeviceInfo]
+  /// Optional v2 representation: "whole device" controllers (TV/streamer/paired).
+  /// Backward-compatible: older builds ignore unknown keys.
+  public var controllers: [DeviceControllerDescriptor]?
   public var settings: WCSyncedSettings?
 
-  public init(devices: [DeviceInfo], settings: WCSyncedSettings?) {
+  public init(
+    devices: [DeviceInfo],
+    controllers: [DeviceControllerDescriptor]? = nil,
+    settings: WCSyncedSettings?
+  ) {
     self.devices = devices
+    self.controllers = controllers
     self.settings = settings
   }
 }

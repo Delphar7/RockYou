@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RemoteControlsSectionView: View {
   let scaleFactor: CGFloat
+  let layoutMode: LayoutMode
   let selectedTVName: String?
   let selectedStreamerName: String?
   let selectedDeviceId: String?
@@ -40,8 +41,9 @@ struct RemoteControlsSectionView: View {
       GeometryReader { proxy in
           let available = proxy.size
           let natural = controlClusterNaturalSize
-          let targetW = available.width * RemoteControlsSectionPlatform.targetFraction
-          let targetH = available.height * RemoteControlsSectionPlatform.targetFraction
+        let targetFraction = RemoteControlsSectionPlatform.targetFraction(layoutMode: layoutMode)
+        let targetW = available.width * targetFraction
+        let targetH = available.height * targetFraction
 
         // Choose the uniform scale that ensures the cluster fits within 80% of BOTH
         // available width and height (never cramping either dimension).
@@ -51,7 +53,7 @@ struct RemoteControlsSectionView: View {
         // when the cluster was already smaller than the target.)
         let scale: CGFloat = max(0.01, min(scaleW, scaleH))
 
-        VStack {
+        VStack(spacing: 0) {
           controlCluster
             // Measure natural (unscaled) size.
               .background(
@@ -74,21 +76,25 @@ struct RemoteControlsSectionView: View {
   }
 
   private var controlCluster: some View {
-    VStack(spacing: 10 * scaleFactor) {
+    VStack(spacing: 0) {
       RemoteNavRowView(
         scaleFactor: scaleFactor,
         phoneHomeDelay: phoneHomeDelay,
         showingConfigure: $showingConfigure,
         onAction: onAction
-      )
+      ).padding(.bottom, 6 * scaleFactor)
 
       RemoteDPadClusterView(scaleFactor: scaleFactor, onAction: onAction)
+        .padding(.bottom, 10 * scaleFactor)
+
       RemoteTransportControlsView(scaleFactor: scaleFactor, onAction: onAction)
+        .padding(.bottom, 8 * scaleFactor)
+
       RemoteVolumeControlsView(
         scaleFactor: scaleFactor,
         hardwareControlsAvailable: hardwareControlsAvailable,
         onAction: onAction
-      )
+      ).padding(.bottom, 10 * scaleFactor)
     }
   }
 }

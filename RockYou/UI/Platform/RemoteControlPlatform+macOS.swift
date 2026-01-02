@@ -7,11 +7,49 @@ enum RemoteControlPlatform {
     guard containerSize.width > 0 && containerSize.height > 0 else {
       return .landscapeSplit
     }
+    // Drop the right pane when the window gets small.
+    // Goals:
+    // - Allow a true "mini remote" that can sit in a corner.
+    // - Keep split layout for comfortably wide windows.
     let aspectRatio = containerSize.width / containerSize.height
-    return aspectRatio >= 9.0 / 12.0 ? .landscapeSplit : .portraitCompact
+    let minWidthForSplit: CGFloat = 760
+    let minAspectForSplit: CGFloat = 1.05
+    if containerSize.width < minWidthForSplit { return .portraitCompact }
+    return aspectRatio >= minAspectForSplit ? .landscapeSplit : .portraitCompact
   }
 
-  static var scaleFactor: CGFloat { 0.85 }
+  /// Baseline scale for macOS (normal window sizes).
+  static var baseScaleFactor: CGFloat { 0.85 }
+
+  /// Dynamic scaling for macOS so the remote can become a true “mini remote” in a tiny window.
+  ///
+  /// - For normal sizes, returns `baseScaleFactor`.
+  /// - As the window height shrinks, we scale down smoothly.
+  static func scaleFactor(containerSize: CGSize, layoutMode: LayoutMode) -> CGFloat {
+    _ = layoutMode
+    // Tuned by feel: around this height, we’re at “normal”.
+    let referenceHeight: CGFloat = 720
+    // Don’t let the UI go to zero; keep it usable.
+    let minScale: CGFloat = 0.25
+
+    guard containerSize.height > 0 else { return baseScaleFactor }
+    let factor = min(1, containerSize.height / referenceHeight)
+    return max(minScale, baseScaleFactor * factor)
+  }
+
+  /// When the remote shrinks below its baseline size, scale app-strip sizing to match.
+  static func appStripScaleFactor(containerSize: CGSize, layoutMode: LayoutMode) -> CGFloat {
+    let s = scaleFactor(containerSize: containerSize, layoutMode: layoutMode)
+    return min(1, s / baseScaleFactor)
+  }
+
+  /// Tiny horizontal inset to avoid first/last icon clipping against the window edge in mini mode.
+  static func appStripHorizontalInset(layoutMode: LayoutMode) -> CGFloat {
+    layoutMode == .portraitCompact  ? 6 : 0
+  }
+
+  /// Back-compat for call sites that haven’t been migrated to dynamic scaling.
+  static var scaleFactor: CGFloat { baseScaleFactor }
 
   static func glowAnimationForegroundEnabled(scenePhase: ScenePhase, windowIsActive: Bool) -> Bool {
     _ = scenePhase

@@ -13,7 +13,7 @@ import Observation
 import os.lock
 
 // MARK: - Discovery Provider Protocol
-// Note: DeviceInfo is defined in Shared/DeviceInfo.swift
+// Note: DeviceInfo is defined in Shared/Devices/DeviceInfo.swift
 /// Providers call `onDeviceFound` for each device as it's discovered (streaming model)
 protocol RokuDiscoveryProvider: Sendable {
   var name: String { get }

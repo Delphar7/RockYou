@@ -18,6 +18,7 @@ public struct TVSelectorItem: Identifiable {
   public let secondaryName: String?  // Location name (shown underneath on all platforms)
   public let linkedDeviceId: String?    // Paired device id (used for correct power/icon on right)
   public let linkedDeviceName: String?  // Paired device name (shown on right for iOS/macOS)
+  public let linkedDeviceType: RokuDeviceType? // Optional device type for the right capsule glyph
 
   public init(
     id: String,
@@ -26,7 +27,8 @@ public struct TVSelectorItem: Identifiable {
     primaryName: String,
     secondaryName: String? = nil,
     linkedDeviceId: String? = nil,
-    linkedDeviceName: String? = nil
+    linkedDeviceName: String? = nil,
+    linkedDeviceType: RokuDeviceType? = nil
   ) {
     self.id = id
     self.selectionId = selectionId
@@ -35,6 +37,7 @@ public struct TVSelectorItem: Identifiable {
     self.secondaryName = secondaryName
     self.linkedDeviceId = linkedDeviceId
     self.linkedDeviceName = linkedDeviceName
+    self.linkedDeviceType = linkedDeviceType
   }
 }
 
@@ -112,65 +115,172 @@ public struct TVSelectorRow: View {
   public var body: some View {
     Button(action: onSelect) {
       let base =
-        HStack(alignment: .center, spacing: iconSpacing) {
-          // Device icon (centers naturally against the VStack's total height).
-          deviceIcon
-            .frame(width: iconSize)
-            .offset(x: TVSelectorListPlatform.rowIconXOffset)
-
-          VStack(alignment: .leading, spacing: TVSelectorListPlatform.rowTextLineSpacing) {
-            HStack(spacing: 0) {
-              // Primary name
-              Text(item.primaryName)
-                .font(.system(size: primaryFontSize, weight: isSelected ? .semibold : .medium))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .padding(.top, 1)
-
-              Spacer(minLength: iconSpacing)
-                .overlay(
-                  Group {
-                    if item.linkedDeviceName != nil {
-                      Rectangle()
-                        .fill(.white.opacity(AppOpacity.secondary))
-                        .frame(height: 1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, -iconSpacing * 0.60)  // Extend into the spacing gaps
-                    }
-                  },
-                  alignment: .center
-                )
-                .offset(y: 1)
-
-              // Linked device name (paired device) - shown in capsule on right
-              if let linkedName = item.linkedDeviceName {
-                RokuPurpleCapsuleLabel(
-                  text: linkedName,
-                  // Show the *paired* device's glyph + power state (not the primary device).
-                  leadingDeviceType: .tv,
-                  leadingPowerMode: linkedPowerMode,
-                  leadingPadding: 8,
-                  trailingPadding: 8,
-                  verticalPadding: 4
-                )
-                .font(.system(size: secondaryFontSize, weight: .medium))
-              }
-            }
-
-            // Secondary name (location) - shown underneath on all platforms
-            if let location = item.secondaryName {
-              Text(location)
-                .font(.system(size: secondaryFontSize))
-                .foregroundStyle(.white.opacity(AppOpacity.secondary))
-                .lineLimit(1)
-            }
+        Group {
+#if os(watchOS)
+          if item.linkedDeviceName != nil {
+            pairedRowWatchLayout
+          } else {
+            standardRowLayout
           }
+#else
+          standardRowLayout
+#endif
         }
 
       TVSelectorListPlatform.rowChrome(base, isSelected: isSelected)
     }
     .buttonStyle(.plain)
   }
+
+  // MARK: - Shared Layout
+
+  private var standardRowLayout: some View {
+    HStack(alignment: .center, spacing: iconSpacing) {
+      // Device icon (centers naturally against the VStack's total height).
+      deviceIcon
+        .frame(width: iconSize)
+        .offset(x: TVSelectorListPlatform.rowIconXOffset)
+
+      VStack(alignment: .leading, spacing: TVSelectorListPlatform.rowTextLineSpacing) {
+        HStack(spacing: 0) {
+          // Primary name
+          Text(item.primaryName)
+            .font(.system(size: primaryFontSize, weight: isSelected ? .semibold : .medium))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .padding(.top, 1)
+
+          Spacer(minLength: iconSpacing)
+            .overlay(
+              Group {
+                if item.linkedDeviceName != nil {
+                  Rectangle()
+                    .fill(.white.opacity(AppOpacity.secondary))
+                    .frame(height: 1)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, -iconSpacing * 0.60)  // Extend into the spacing gaps
+                }
+              },
+              alignment: .center
+            )
+            .offset(y: 1)
+
+          // Linked device name (paired device) - shown in capsule on right
+          if let linkedName = item.linkedDeviceName {
+            RokuPurpleCapsuleLabel(
+              text: linkedName,
+              // Show the *paired* device's glyph + power state (not the primary device).
+              leadingDeviceType: item.linkedDeviceType ?? .tv,
+              leadingPowerMode: linkedPowerMode,
+              leadingPadding: 8,
+              trailingPadding: 8,
+              verticalPadding: 4
+            )
+            .font(.system(size: secondaryFontSize, weight: .medium))
+          }
+        }
+
+        // Secondary name (location) - shown underneath on all platforms
+        if let location = item.secondaryName {
+          Text(location)
+            .font(.system(size: secondaryFontSize))
+            .foregroundStyle(.white.opacity(AppOpacity.secondary))
+            .lineLimit(1)
+        }
+      }
+    }
+  }
+
+#if os(watchOS)
+  // MARK: - watchOS paired-row layout (3 lines + connector)
+
+  private var pairedRowWatchLayout: some View {
+    // Design:
+    // 1) TV name
+    // 2) TV location
+    // 3) Streamer capsule (inset), with an L-shaped connector
+    let inset: CGFloat = 12
+    let capsuleLeadingPadding: CGFloat = 7
+    let capsuleTrailingPadding: CGFloat = 7
+    let capsuleVerticalPadding: CGFloat = 1
+
+    return ZStack(alignment: .topLeading) {
+      HStack(alignment: .top, spacing: iconSpacing) {
+        deviceIcon
+          .frame(width: iconSize)
+          .offset(x: TVSelectorListPlatform.rowIconXOffset)
+
+        VStack(alignment: .leading, spacing: TVSelectorListPlatform.rowTextLineSpacing) {
+          Text(item.primaryName)
+            .font(.system(size: primaryFontSize, weight: isSelected ? .semibold : .medium))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .padding(.top, 1)
+
+          if let location = item.secondaryName {
+            Text(location)
+              .font(.system(size: secondaryFontSize))
+              .foregroundStyle(.white.opacity(AppOpacity.secondary))
+              .lineLimit(1)
+          }
+
+          if let linkedName = item.linkedDeviceName {
+            HStack(spacing: 0) {
+              Spacer().frame(width: inset)
+              RokuPurpleCapsuleLabel(
+                text: linkedName,
+                leadingDeviceType: item.linkedDeviceType ?? .tv,
+                leadingPowerMode: linkedPowerMode,
+                leadingPadding: capsuleLeadingPadding,
+                trailingPadding: capsuleTrailingPadding,
+                verticalPadding: capsuleVerticalPadding
+              )
+              .font(.system(size: secondaryFontSize, weight: .medium))
+            }
+          }
+        }
+      }
+
+      // Connector overlay: start at the TV glyph center, end at the capsule glyph center.
+      GeometryReader { geo in
+        // Horizontal positions are measured from this ZStack's leading edge.
+        // - Icon center: ~ iconSize/2 (plus any small platform x offset).
+        // - Capsule icon center: iconWidth + spacing + inset + capsuleLeadingPadding + (approx glyph radius)
+        let startX = (iconSize * 0.50) + TVSelectorListPlatform.rowIconXOffset
+        let startY = (iconSize * 0.50)
+
+        // Connector should stop at the capsule (not run into the glyph).
+        // End at the capsule's leading edge with a tiny inset so it visually "touches" the pill.
+        let endX =
+          iconSize + iconSpacing
+          + inset
+          + 1
+
+        // Estimate the capsule's vertical center based on text sizing.
+        // (We avoid anchor-preference complexity; this is meant to be an “optical” connector.)
+        let lineGap = TVSelectorListPlatform.rowTextLineSpacing
+        let afterPrimary = 1 + primaryFontSize + lineGap
+        let afterSecondary = afterPrimary + (item.secondaryName != nil ? (secondaryFontSize + lineGap) : 0)
+
+        // Capsule is only present for paired rows; if not present, skip drawing.
+        if item.linkedDeviceName != nil {
+          // Approx capsule height: secondary font + vertical padding top/bot + a little chrome.
+          let capsuleH = secondaryFontSize + (capsuleVerticalPadding * 2) + 6
+          // Nudge slightly downward so we hit the visual midline of the pill.
+          let endY = afterSecondary + (capsuleH * 0.50) + 2
+
+          Path { p in
+            p.move(to: CGPoint(x: startX, y: startY))
+            p.addLine(to: CGPoint(x: startX, y: endY))
+            p.addLine(to: CGPoint(x: endX, y: endY))
+          }
+          .stroke(.white.opacity(AppOpacity.secondary), lineWidth: 1)
+        }
+      }
+      .allowsHitTesting(false)
+    }
+  }
+#endif
 
   // MARK: - Device Icon
 

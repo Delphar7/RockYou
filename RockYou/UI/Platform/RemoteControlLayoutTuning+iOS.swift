@@ -1,7 +1,10 @@
-import CoreGraphics
+import SwiftUI
 
 enum RemoteControlsSectionPlatform {
-  static let targetFraction: CGFloat = 0.95
+  static func targetFraction(layoutMode: LayoutMode) -> CGFloat {
+    _ = layoutMode
+    return 0.92
+  }
 }
 
 enum RemoteTopBarPlatform {

@@ -28,7 +28,8 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
   @Published private(set) var isPhoneReachable: Bool = false
   @Published private(set) var isScanning: Bool = false  // Waiting for device list from iPhone
   @Published private(set) var devices: [DeviceInfo] = []
-  @Published private(set) var selectedDeviceId: String?  // Stable device ID (serial)
+  @Published private(set) var controllers: [DeviceControllerDescriptor] = []
+  @Published private(set) var selectedControllerId: String?  // Stable whole-device ID (tvId / streamerId / tvId:streamerId)
   @Published private(set) var apps: [RokuApp] = []  // Apps for selected device (cached by AppCacheManager)
 
   /// Watch-owned: last active device on watch (used by complication/widget targeting).
@@ -46,6 +47,16 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
     return devices.first { $0.id == id }
   }
 
+  var selectedController: DeviceControllerDescriptor? {
+    guard let id = selectedControllerId else { return nil }
+    return controllers.first { $0.id == id }
+  }
+
+  /// Selected endpoint device id (used for ECP-ish requests like apps, nav keys, etc).
+  var selectedDeviceId: String? {
+    selectedController?.controlEndpointId
+  }
+
   /// The idx for messaging (derived from selectedDeviceId)
   var selectedDeviceIdx: String? {
     selectedDevice?.idx
@@ -54,7 +65,7 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
   var tvs: [DeviceInfo] { devices.filter { $0.isTV } }
 
   var hardwareControlsAvailable: Bool {
-    selectedDevice?.isTV == true
+    selectedController?.hardwareEndpointId != nil
   }
 
   // MARK: - DeviceStateProviding
@@ -86,7 +97,9 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
   }
 
   private func loadCached() {
-    selectedDeviceId = UserDefaults.standard.string(forKey: "selectedDeviceId")
+    selectedControllerId = UserDefaults.standard.string(forKey: "selectedControllerId")
+    // Legacy (pre-controller) selected endpoint id.
+    let legacySelectedDeviceId = UserDefaults.standard.string(forKey: "selectedDeviceId")
 
     // Load cached devices
     if let data = UserDefaults.standard.data(forKey: "cachedDevices"),
@@ -95,7 +108,7 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
     }
 
     // Load cached apps from AppCacheManager (single source of truth)
-    if let deviceId = selectedDeviceId {
+    if let deviceId = legacySelectedDeviceId {
       let cachedApps = AppCacheManager.shared.apps(for: deviceId)
       if !cachedApps.isEmpty {
         Log.info("Watch", "📦 Loaded \(cachedApps.count) cached apps for device \(deviceId)")
@@ -105,8 +118,8 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
   }
 
   private func saveCache() {
-    if let id = selectedDeviceId {
-      UserDefaults.standard.set(id, forKey: "selectedDeviceId")
+    if let id = selectedControllerId {
+      UserDefaults.standard.set(id, forKey: "selectedControllerId")
     }
     if let data = try? JSONEncoder().encode(devices) {
       UserDefaults.standard.set(data, forKey: "cachedDevices")
@@ -118,7 +131,16 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
 
   /// Send a remote action to the selected device
   func send(action: RemoteAction) {
-    guard let deviceId = selectedDeviceId else { return }
+    guard let controller = selectedController else { return }
+
+    let deviceId: String? = {
+      let isHardwareControl =
+        action == .volumeUp || action == .volumeDown
+        || action == .volumeMute || action == .power
+      if isHardwareControl { return controller.hardwareEndpointId }
+      return controller.controlEndpointId
+    }()
+    guard let deviceId else { return }
 
     // Hardware controls require a TV pairing (for now).
     // StreamBar support can extend this once we have a richer capability model.
@@ -161,13 +183,15 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
 
   /// Select a device by its stable ID (serial number)
   func selectDevice(id: String) {
-    selectedDeviceId = id
-    lastActiveDeviceId = id
+    // Backward compatibility: treat id as a controller id (whole-device).
+    selectedControllerId = id
+    lastActiveDeviceId = selectedDeviceId
 
     // Load cached apps immediately while waiting for fresh ones
-    let cachedApps = AppCacheManager.shared.apps(for: id)
+    let endpointId = selectedDeviceId ?? ""
+    let cachedApps = AppCacheManager.shared.apps(for: endpointId)
     if !cachedApps.isEmpty {
-      Log.debug("Watch", "📦 Using \(cachedApps.count) cached apps for device \(id)")
+      Log.debug("Watch", "📦 Using \(cachedApps.count) cached apps for device \(endpointId)")
       apps = cachedApps
     } else {
       apps = []  // Clear apps when switching to device with no cache
@@ -282,8 +306,35 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
   private func handleHandshakeReply(_ reply: WCReply) {
     guard case .handshake(let payload) = reply else { return }
     applyDevices(payload.devices)
+    if let controllers = payload.controllers {
+      applyControllers(controllers, legacySelectedDeviceId: UserDefaults.standard.string(forKey: "selectedDeviceId"))
+    }
     Task { @MainActor in
       WatchAppSettings.shared.applySyncedSettings(payload.settings)
+    }
+  }
+
+  private func applyControllers(_ controllers: [DeviceControllerDescriptor], legacySelectedDeviceId: String?) {
+    DispatchQueue.main.async {
+      self.controllers = controllers
+
+      if self.selectedControllerId == nil {
+        if let legacy = legacySelectedDeviceId,
+           let match = controllers.first(where: { $0.containsEndpoint(legacy) }) {
+          self.selectedControllerId = match.id
+        } else if let last = self.lastActiveDeviceId,
+                  let match = controllers.first(where: { $0.containsEndpoint(last) }) {
+          self.selectedControllerId = match.id
+        } else if let first = controllers.first {
+          self.selectedControllerId = first.id
+        }
+      } else if let selectedId = self.selectedControllerId,
+                !controllers.contains(where: { $0.id == selectedId }) {
+        // Pairing changed (id changed) or controller disappeared: fall back.
+        self.selectedControllerId = controllers.first?.id
+      }
+
+      self.saveCache()
     }
   }
 
@@ -291,23 +342,16 @@ final class ConnectivityManager: NSObject, ObservableObject, DeviceStateProvidin
     DispatchQueue.main.async {
       self.isScanning = false
       self.devices = devices
-
-      if self.selectedDeviceId == nil {
-        if let last = self.lastActiveDeviceId, devices.contains(where: { $0.id == last }) {
-          self.selectedDeviceId = last
-        } else if let firstTV = self.tvs.first {
-          self.selectedDeviceId = firstTV.id
-        } else if let first = devices.first {
-          self.selectedDeviceId = first.id
-        }
-      }
-
+      // Device list alone no longer decides selection; selection is based on controllers.
       self.saveCache()
     }
   }
 
   private func handleDeviceListEvent(_ event: WCDeviceListEvent) {
     applyDevices(event.devices)
+    if let controllers = event.controllers {
+      applyControllers(controllers, legacySelectedDeviceId: UserDefaults.standard.string(forKey: "selectedDeviceId"))
+    }
     if let settings = event.settings {
       Task { @MainActor in
         WatchAppSettings.shared.applySyncedSettings(settings)
@@ -490,6 +534,9 @@ extension ConnectivityManager: WCSessionDelegate {
 
     DispatchQueue.main.async {
       self.devices = snapshot.devices
+      if let controllers = snapshot.controllers {
+        self.controllers = controllers
+      }
 
       for (deviceId, state) in snapshot.deviceStates {
         DeviceStateManager.shared.updateState(state, for: deviceId)
@@ -497,12 +544,13 @@ extension ConnectivityManager: WCSessionDelegate {
 
       WatchSurfaceSnapshotStore.saveSnapshot(snapshot)
 
-      if self.selectedDeviceId == nil {
-        if let last = self.lastActiveDeviceId, snapshot.devices.contains(where: { $0.id == last }) {
-          self.selectedDeviceId = last
-        } else if let first = snapshot.devices.first {
-          self.selectedDeviceId = first.id
+      if self.selectedControllerId == nil, let legacy = UserDefaults.standard.string(forKey: "selectedDeviceId") {
+        if let match = self.controllers.first(where: { $0.containsEndpoint(legacy) }) {
+          self.selectedControllerId = match.id
         }
+      }
+      if self.selectedControllerId == nil, let first = self.controllers.first {
+        self.selectedControllerId = first.id
       }
 
       self.saveCache()

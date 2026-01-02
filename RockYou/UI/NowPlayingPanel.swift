@@ -239,7 +239,7 @@ extension InfoTopPanel {
                 )
             }
             Spacer()
-          }
+          }.padding(.bottom, -32)
 
           VStack(alignment: .leading, spacing: 8) {
             HStack {

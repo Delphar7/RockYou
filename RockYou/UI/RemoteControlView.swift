@@ -38,7 +38,7 @@ struct RemoteControlView: View {
 
   /// Scale factor for controls (Mac is 15% smaller)
   private var scaleFactor: CGFloat {
-    RemoteControlPlatform.scaleFactor
+    RemoteControlPlatform.scaleFactor(containerSize: containerSize, layoutMode: layoutMode)
   }
 
   var body: some View {
@@ -76,6 +76,9 @@ struct RemoteControlView: View {
       .onChange(of: geometry.size) { _, newSize in
         containerSize = newSize
       }
+    }
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      bottomAppStripContent()
     }
     // Foreground gating for AppIconWithLabel glow animations
     .environment(\.glowAnimationForegroundEnabled, glowAnimationForegroundEnabled)
@@ -145,30 +148,37 @@ struct RemoteControlView: View {
       case .portraitCompact:
         compactLayoutView()
       }
-
-      Spacer(minLength: 10)
-      bottomAppStrip()
     }
   }
 
   @ViewBuilder
-  private func bottomAppStrip() -> some View {
+  private func bottomAppStripContent() -> some View {
     if let deviceId = selection.selectedDeviceId {
       let config = AppStripConfig.config(for: layoutMode)
       if config.isVisible && config.position == .bottom {
-        if layoutMode == .portraitCompact && config.direction == .horizontal {
-          NowPlayingProgressHeaderView(deviceId: deviceId)
+        let stripScale =
+          RemoteControlPlatform.appStripScaleFactor(
+            containerSize: containerSize, layoutMode: layoutMode)
+        let scaledSizing = config.sizing?.scaled(by: stripScale)
+        let horizontalInset = RemoteControlPlatform.appStripHorizontalInset(layoutMode: layoutMode)
+
+        VStack(spacing: 0) {
+          if layoutMode == .portraitCompact && config.direction == .horizontal {
+            NowPlayingProgressHeaderView(deviceId: deviceId)
+              .padding(.bottom, 2)  // keep a tiny separation from the strip
+          }
+          AppStripView(
+            deviceId: deviceId,
+            direction: config.direction,
+            lanes: config.lanes,
+            sizing: scaledSizing,
+            showLabels: config.showLabels,
+            appLaunchDelay: settings.phoneAppLaunchDelay,
+            onLaunch: { app in launchApp(app) }
+          )
+          .padding(config.padding)
+          .padding(.horizontal, horizontalInset)
         }
-        AppStripView(
-          deviceId: deviceId,
-          direction: config.direction,
-          lanes: config.lanes,
-          sizing: config.sizing,
-          showLabels: config.showLabels,
-          appLaunchDelay: settings.phoneAppLaunchDelay,
-          onLaunch: { app in launchApp(app) }
-        )
-        .padding(config.padding)
       }
     }
   }
@@ -203,6 +213,7 @@ struct RemoteControlView: View {
   private var remoteControlsSection: some View {
     RemoteControlsSectionView(
       scaleFactor: scaleFactor,
+      layoutMode: layoutMode,
       selectedTVName: selection.selectedTVName,
       selectedStreamerName: selection.selectedStreamerName,
       selectedDeviceId: selection.selectedDeviceId,

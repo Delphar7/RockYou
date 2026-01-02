@@ -16,7 +16,28 @@ enum RemoteControlPlatform {
     }
   }
 
-  static var scaleFactor: CGFloat { 0.98 }
+  static var baseScaleFactor: CGFloat { 0.98 }
+
+  /// Back-compat for call sites that haven’t been migrated to dynamic scaling.
+  static var scaleFactor: CGFloat { baseScaleFactor }
+
+  /// iOS: keep scaling stable; we don’t want the remote shrinking with window size like macOS.
+  static func scaleFactor(containerSize: CGSize, layoutMode: LayoutMode) -> CGFloat {
+    _ = containerSize
+    _ = layoutMode
+    return baseScaleFactor
+  }
+
+  static func appStripScaleFactor(containerSize: CGSize, layoutMode: LayoutMode) -> CGFloat {
+    _ = containerSize
+    _ = layoutMode
+    return 1
+  }
+
+  static func appStripHorizontalInset(layoutMode: LayoutMode) -> CGFloat {
+    _ = layoutMode
+    return 0
+  }
 
   static func glowAnimationForegroundEnabled(scenePhase: ScenePhase, windowIsActive: Bool) -> Bool {
     _ = windowIsActive

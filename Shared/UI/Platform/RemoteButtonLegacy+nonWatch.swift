@@ -5,16 +5,24 @@ struct TopKeyButton: View {
   let systemName: String
   var width: CGFloat = 54
   var height: CGFloat = 44
-  var fontSize: CGFloat = 22
+  /// If nil, the glyph size is derived from `height` so it scales with the button.
+  var fontSize: CGFloat? = nil
   var cornerRadius: CGFloat = 12
   var baseColor: Color? = nil
   let action: () -> Void
 
   var body: some View {
+    let computedFontSize = fontSize ?? (height * 0.38)
     RemoteButton(
       icon: systemName,
       action: action,
-      style: .custom(width: width, height: height, isCircle: false, iconSize: fontSize, cornerRadius: cornerRadius),
+      style: .custom(
+        width: width,
+        height: height,
+        isCircle: false,
+        iconSize: computedFontSize,
+        cornerRadius: cornerRadius
+      ),
       baseColor: baseColor
     )
   }

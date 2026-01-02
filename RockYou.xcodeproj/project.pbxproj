@@ -117,6 +117,20 @@
 			);
 			target = D8AA01012F1C000100000001 /* RockYou Watch Widgets */;
 		};
+		D8AA01112F1C000100000001 /* Exceptions for "Shared" folder in "RockYou Watch App" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Services/WakeOnLANPlatform+nonWatch.swift",
+			);
+			target = D81AB0E82EC2C06400DA3A6E /* RockYou Watch App */;
+		};
+		D8AA01122F1C000100000001 /* Exceptions for "Shared" folder in "RockYou Watch Widgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Services/WakeOnLANPlatform+nonWatch.swift",
+			);
+			target = D8AA01012F1C000100000001 /* RockYou Watch Widgets */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -155,6 +169,10 @@
 		};
 		D8AA000C2EC4A00100000001 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D8AA01112F1C000100000001 /* Exceptions for "Shared" folder in "RockYou Watch App" target */,
+				D8AA01122F1C000100000001 /* Exceptions for "Shared" folder in "RockYou Watch Widgets" target */,
+			);
 			path = Shared;
 			sourceTree = "<group>";
 		};

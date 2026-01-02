@@ -494,7 +494,7 @@ private struct TVSelectorView: View {
   var body: some View {
     TVSelectorList(
       items: selectorItems,
-      selectedId: connectivity.selectedDeviceId,
+      selectedId: connectivity.selectedControllerId,
       isScanning: connectivity.isScanning,
       onSelect: { deviceId in
         connectivity.selectDevice(id: deviceId)
@@ -505,22 +505,13 @@ private struct TVSelectorView: View {
     .navigationTitle("Select Device")
   }
 
-  /// Build selector items from connectivity TVs
+  /// Build selector items from whole-device controllers (paired setups collapse to a single row).
   private var selectorItems: [TVSelectorItem] {
-    connectivity.devices.map { device in
-      TVSelectorItem(
-        id: device.id,
-        selectionId: device.id,
-        deviceType: device.isTV ? RokuDeviceType.tv : RokuDeviceType.streamingDevice,
-        primaryName: device.name,
-        secondaryName: {
-          let kind = device.isTV ? "TV" : "Streamer"
-          if let location = device.location, !location.isEmpty {
-            return "\(location) • \(kind)"
-          }
-          return kind
-        }()
-      )
+    let devicesById = Dictionary(uniqueKeysWithValues: connectivity.devices.map { ($0.id, $0) })
+    return connectivity.controllers.map { controller in
+      DeviceSelectionListItemBuilder
+        .build(controller: controller, devicesById: devicesById, selectionIdPolicy: .controllerId)
+        .toTVSelectorItem()
     }
   }
 }

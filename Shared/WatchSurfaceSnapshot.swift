@@ -13,15 +13,20 @@ import Foundation
 public struct WatchSurfaceSnapshot: Codable, Equatable, Sendable {
   public var generatedAt: TimeInterval
   public var devices: [DeviceInfo]
+  /// Optional v2 representation: "whole device" controllers (TV/streamer/paired).
+  /// Backward-compatible: older builds ignore unknown keys.
+  public var controllers: [DeviceControllerDescriptor]?
   public var deviceStates: [String: DeviceState]
 
   public init(
     generatedAt: TimeInterval,
     devices: [DeviceInfo],
+    controllers: [DeviceControllerDescriptor]? = nil,
     deviceStates: [String: DeviceState]
   ) {
     self.generatedAt = generatedAt
     self.devices = devices
+    self.controllers = controllers
     self.deviceStates = deviceStates
   }
 }

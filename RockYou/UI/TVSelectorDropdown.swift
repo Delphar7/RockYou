@@ -167,71 +167,42 @@ struct TVSelectorDropdown: View {
 
   /// Build the list of items for TVSelectorList
   private var selectorItems: [TVSelectorItem] {
-    var items: [TVSelectorItem] = []
+    let controllers = DeviceControllerBuilder.buildControllers(
+      discovered: discovery.discoveredDevices,
+      pairings: pairingStore.pairings
+    )
 
-    // Unpaired TVs (control via built-in Roku)
-    for tv in unpairedTVs {
-      items.append(TVSelectorItem(
-        id: tv.id,
-        selectionId: tv.id,
-        deviceType: .tv,
-        primaryName: tv.name,
-        secondaryName: secondaryLabel(location: tv.location, kind: "TV"),
-        linkedDeviceId: nil,
-        linkedDeviceName: nil
-      ))
-    }
-
-    // Paired streamers (with location underneath and TV name on right)
-    for streamer in pairedStreamers {
-      if let pairedTV = pairedTVForStreamer(streamer) {
-        items.append(TVSelectorItem(
-          id: streamer.id,
-          selectionId: pairedTV.id,  // Selecting streamer actually selects the TV
-          deviceType: .streamingDevice,
-          primaryName: streamer.name,
-          secondaryName: secondaryLabel(location: streamer.location, kind: "Streamer"),
-          linkedDeviceId: pairedTV.id,
-          linkedDeviceName: pairedTV.name
-        ))
+    // Preserve a similar grouping to the old UI:
+    // - TVs
+    // - Paired controllers
+    // - Streamers
+    let ordered = controllers.sorted { a, b in
+      func rank(_ c: DeviceControllerDescriptor) -> Int {
+        switch c.kind {
+        case .tv: return 0
+        case .paired: return 1
+        case .streamer: return 2
+        }
       }
+      let ra = rank(a), rb = rank(b)
+      if ra != rb { return ra < rb }
+      let la = (a.location ?? "").localizedCaseInsensitiveCompare(b.location ?? "")
+      if la != .orderedSame { return la == .orderedAscending }
+      let na = a.displayName.localizedCaseInsensitiveCompare(b.displayName)
+      if na != .orderedSame { return na == .orderedAscending }
+      return a.id < b.id
     }
 
-    // Unpaired streamers (show as top-level selectable device)
-    for streamer in unpairedStreamers {
-      items.append(TVSelectorItem(
-        id: streamer.id,
-        selectionId: streamer.id,
-        deviceType: .streamingDevice,
-        primaryName: streamer.name,
-        secondaryName: secondaryLabel(location: streamer.location, kind: "Streamer"),
-        linkedDeviceId: nil,
-        linkedDeviceName: nil
-      ))
+    let devicesById = Dictionary(uniqueKeysWithValues: discovery.discoveredDevices.map { ($0.id, $0) })
+
+    return ordered.map { controller in
+      DeviceSelectionListItemBuilder
+        .build(
+          controller: controller,
+          devicesById: devicesById,
+          selectionIdPolicy: .tvIdForPairedElseControllerId
+        )
+        .toTVSelectorItem()
     }
-
-    return items
-  }
-
-  /// TVs without a paired streaming device (controlled via built-in Roku)
-  private var unpairedTVs: [DeviceInfo] {
-    let pairedTVIds = Set(pairingStore.pairings.map { $0.tvId })
-    return discovery.tvs.filter { !pairedTVIds.contains($0.id) }
-  }
-
-  /// Streaming devices that are paired to a TV
-  private var pairedStreamers: [DeviceInfo] {
-    discovery.streamingDevices.filter { pairingStore.tvIdForStreamer($0.id) != nil }
-  }
-
-  /// Streaming devices not paired to any TV
-  private var unpairedStreamers: [DeviceInfo] {
-    discovery.streamingDevices.filter { pairingStore.tvIdForStreamer($0.id) == nil }
-  }
-
-  /// Get the TV paired with a streamer
-  private func pairedTVForStreamer(_ streamer: DeviceInfo) -> DeviceInfo? {
-    guard let tvId = pairingStore.tvIdForStreamer(streamer.id) else { return nil }
-    return discovery.tvs.first { $0.id == tvId }
   }
 }

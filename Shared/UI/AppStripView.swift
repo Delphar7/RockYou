@@ -50,6 +50,21 @@ enum AppStripSizing {
   static func fixed() -> AppStripSizing {
     defaultSizing()
   }
+
+  /// Return a sizing scaled by a factor (used for macOS "mini remote" window resizing).
+  func scaled(by factor: CGFloat) -> AppStripSizing {
+    let f = max(0.01, factor)
+    switch self {
+    case .fixed(let iconWidth, let iconHeight):
+      return .fixed(
+        iconWidth: iconWidth.map { $0 * f },
+        iconHeight: iconHeight.map { $0 * f }
+      )
+    case .percent:
+      // Percent is relative to the container/screen; keep it unchanged.
+      return self
+    }
+  }
 }
 
 // MARK: - App Strip View

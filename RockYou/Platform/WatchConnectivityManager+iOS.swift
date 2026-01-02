@@ -153,7 +153,14 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     switch request {
     case .handshake, .requestDevices:
       let devices = await buildDeviceListWaitingForDiscovery()
-      return .handshake(WCHandshakeReply(devices: devices, settings: AppSettings.shared.watchConnectivitySettings))
+      let controllers = buildDeviceControllers(from: devices)
+      return .handshake(
+        WCHandshakeReply(
+          devices: devices,
+          controllers: controllers,
+          settings: AppSettings.shared.watchConnectivitySettings
+        )
+      )
 
     case .keypress(let deviceId, let deviceIdx, let key):
       return await handleKeypress(deviceId: deviceId, deviceIdx: deviceIdx, key: key)
@@ -488,12 +495,14 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     _ = discovery.discoveredDevices
 
     let devicesWithIdx = buildDeviceList()
+    let controllers = buildDeviceControllers(from: devicesWithIdx)
     let statesById: [String: DeviceState] = Dictionary(
       uniqueKeysWithValues: devicesWithIdx.map { ($0.id, DeviceStateManager.shared.state(for: $0.id)) }
     )
     let snapshot = WatchSurfaceSnapshot(
       generatedAt: Date().timeIntervalSince1970,
       devices: devicesWithIdx,
+      controllers: controllers,
       deviceStates: statesById
     )
     let context = WCApplicationContext(snapshot: snapshot, settings: AppSettings.shared.watchConnectivitySettings)
@@ -514,7 +523,33 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
   private func pushDeviceListToWatch() {
     let devices = buildDeviceList()
     guard !devices.isEmpty else { return }
-    sendToWatch(.event(.deviceList(WCDeviceListEvent(devices: devices, settings: AppSettings.shared.watchConnectivitySettings))))
+    let controllers = buildDeviceControllers(from: devices)
+    sendToWatch(
+      .event(
+        .deviceList(
+          WCDeviceListEvent(
+            devices: devices,
+            controllers: controllers,
+            settings: AppSettings.shared.watchConnectivitySettings
+          )
+        )
+      )
+    )
+  }
+}
+
+// MARK: - Device Controllers ("whole device" descriptors)
+
+extension WatchConnectivityManager {
+  /// Build whole-device controllers from current discovery + configured pairings.
+  ///
+  /// Note: We take the already-idx'd device list so the watch can still map endpoint id → idx.
+  @MainActor
+  fileprivate func buildDeviceControllers(from devicesWithIdx: [DeviceInfo]) -> [DeviceControllerDescriptor] {
+    DeviceControllerBuilder.buildControllers(
+      discovered: devicesWithIdx,
+      pairings: PairingStore.shared.pairings
+    )
   }
 }
 
