@@ -41,7 +41,8 @@ struct RemoteControlsSectionView: View {
       GeometryReader { proxy in
           let available = proxy.size
           let natural = controlClusterNaturalSize
-        let targetFraction = RemoteControlsSectionPlatform.targetFraction(layoutMode: layoutMode)
+        let targetFraction = RemoteControlPlatform.remoteControlsTargetFraction(
+          layoutMode: layoutMode)
         let targetW = available.width * targetFraction
         let targetH = available.height * targetFraction
 
@@ -54,14 +55,14 @@ struct RemoteControlsSectionView: View {
         let scale: CGFloat = max(0.01, min(scaleW, scaleH))
 
         VStack(spacing: 0) {
-          controlCluster
-            // Measure natural (unscaled) size.
-              .background(
-                GeometryReader { inner in
-                  Color.clear.preference(key: SizePreferenceKey.self, value: inner.size)
-                }
-            )
-            .scaleEffect(scale, anchor: .center)
+          RemoteControlPlatform.fitScaledControlCluster(
+            content: { effectiveScaleFactor in
+              controlCluster(scaleFactor: effectiveScaleFactor)
+            },
+            scaleFactor: scaleFactor,
+            fitScale: scale,
+            measurePreferenceKey: SizePreferenceKey.self
+          )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
@@ -75,7 +76,7 @@ struct RemoteControlsSectionView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
 
-  private var controlCluster: some View {
+  private func controlCluster(scaleFactor: CGFloat) -> some View {
     VStack(spacing: 0) {
       RemoteNavRowView(
         scaleFactor: scaleFactor,

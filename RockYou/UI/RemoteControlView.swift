@@ -8,6 +8,7 @@
 
 import SwiftUI
 
+@MainActor
 struct RemoteControlView: View {
   @State private var settings = AppSettings.shared
   let onAction: (RemoteAction) -> Void
@@ -170,7 +171,10 @@ struct RemoteControlView: View {
           AppStripView(
             deviceId: deviceId,
             direction: config.direction,
-            lanes: config.lanes,
+            lanes: RemoteControlPlatform.appStripLanesOverride(
+              layoutMode: layoutMode,
+              direction: config.direction
+            ) ?? config.lanes,
             sizing: scaledSizing,
             showLabels: config.showLabels,
             appLaunchDelay: settings.phoneAppLaunchDelay,

@@ -31,12 +31,6 @@ import SwiftUI
       }
     }
 
-    static func mixedSweepComplete(pairState: SafePowerButtonPairState, onPower: @escaping () -> Void) -> () -> Void {
-      {
-        powerOffOnDevicesInPair(pairState: pairState, onPower: onPower)
-      }
-    }
-
     static func requiresSweepView<ButtonContent: View, Label: View>(
       buttonContent: ButtonContent,
       powerLabel: Label,
@@ -108,19 +102,6 @@ import SwiftUI
 
       if !tvOn { sendPower(to: tvId) }
       if !streamerOn { sendPower(to: streamerId) }
-    }
-
-    private static func powerOffOnDevicesInPair(pairState: SafePowerButtonPairState, onPower: () -> Void) {
-      guard let tvId = pairState.tvId, let streamerId = pairState.streamerId else {
-        onPower()
-        return
-      }
-
-      let tvOn = pairState.tvMode.isOn
-      let streamerOn = (pairState.streamerMode?.isOn ?? false)
-
-      if tvOn { sendPower(to: tvId) }
-      if streamerOn { sendPower(to: streamerId) }
     }
 
     private static func sendPower(to deviceId: String) {

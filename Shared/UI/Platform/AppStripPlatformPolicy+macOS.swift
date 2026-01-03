@@ -4,6 +4,10 @@ import SwiftUI
 enum AppStripPlatformPolicy {
   static var defaultSizing: AppStripSizing { .fixed(iconWidth: 60, iconHeight: 45) }
 
+  /// When icons get very small, multi-lane strips become cramped and harder to read.
+  /// Below this icon height we collapse to a single lane.
+  static var minIconHeightForMultiLane: CGFloat { 52 }
+
   static var defaultFixedIconSize: (width: CGFloat, height: CGFloat) {
     switch defaultSizing {
     case .fixed(let w, let h):

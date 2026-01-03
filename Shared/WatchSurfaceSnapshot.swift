@@ -43,13 +43,11 @@ public enum WatchSurfaceSnapshotStore {
   }
 
   public static func loadSnapshot() -> WatchSurfaceSnapshot? {
-    guard let data = defaults.data(forKey: snapshotKey) else { return nil }
-    return try? JSONDecoder().decode(WatchSurfaceSnapshot.self, from: data)
+    defaults.decoded(forKey: snapshotKey)
   }
 
   public static func saveSnapshot(_ snapshot: WatchSurfaceSnapshot) {
-    guard let data = try? JSONEncoder().encode(snapshot) else { return }
-    defaults.set(data, forKey: snapshotKey)
+    defaults.setEncoded(snapshot, forKey: snapshotKey)
   }
 
   public static var lastActiveDeviceId: String? {

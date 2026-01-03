@@ -41,3 +41,4 @@ public enum TVControlProtocolKind: String, Codable, Sendable, CaseIterable {
   case sonyBraviaIRCC
   case unknown
 }
+

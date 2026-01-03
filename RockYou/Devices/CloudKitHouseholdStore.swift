@@ -1199,15 +1199,11 @@ final class CloudKitHouseholdStore {
   private func loadCaches() {
     let defaults = UserDefaults.standard
 
-    if let data = defaults.data(forKey: DefaultsKey.cachedPairings),
-      let decoded = try? JSONDecoder().decode([TVPairing].self, from: data)
-    {
+    if let decoded: [TVPairing] = defaults.decoded(forKey: DefaultsKey.cachedPairings) {
       cachedPairings = decoded
     }
 
-    if let data = defaults.data(forKey: DefaultsKey.cachedMRU),
-      let decoded = try? JSONDecoder().decode([String: [String: TimeInterval]].self, from: data)
-    {
+    if let decoded: [String: [String: TimeInterval]] = defaults.decoded(forKey: DefaultsKey.cachedMRU) {
       cachedMRUByDevice = decoded.mapValues { inner in
         inner.mapValues { Date(timeIntervalSince1970: $0) }
       }
@@ -1221,9 +1217,7 @@ final class CloudKitHouseholdStore {
 
   private func savePairingsCache() {
     let defaults = UserDefaults.standard
-    if let data = try? JSONEncoder().encode(cachedPairings) {
-      defaults.set(data, forKey: DefaultsKey.cachedPairings)
-    }
+    defaults.setEncoded(cachedPairings, forKey: DefaultsKey.cachedPairings)
   }
 
   private func saveMRUCache() {
@@ -1231,9 +1225,7 @@ final class CloudKitHouseholdStore {
     let enc: [String: [String: TimeInterval]] = cachedMRUByDevice.mapValues { inner in
       inner.mapValues { $0.timeIntervalSince1970 }
     }
-    if let data = try? JSONEncoder().encode(enc) {
-      defaults.set(data, forKey: DefaultsKey.cachedMRU)
-    }
+    defaults.setEncoded(enc, forKey: DefaultsKey.cachedMRU)
   }
 
   private func loadZoneToken(forKey key: String) -> CKServerChangeToken? {

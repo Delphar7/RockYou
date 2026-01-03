@@ -820,8 +820,10 @@ enum MaterialButtonEffect {
         // A fully-transparent/empty label can become effectively non-hittable in some SwiftUI/UIView
         // compositions. We *force* a concrete hit-test shape here to prevent regressions
         // (this has broken input multiple times due to GeometryReader + transparency interactions).
-        .foregroundStyle(Color.clear)
-        .tint(.clear)
+        // Keep the label for layout + hit-testing, but do not draw it.
+        // Using `.hidden()` avoids rare glyph "leak-through" at tiny scales that can happen
+        // when we rely on "paint clear" approaches.
+        .hidden()
         // Breadcrumb: this is required for reliable hit-testing when the label is visually transparent.
         // Keep it on the *base* label (the overlay chrome is hit-testing disabled).
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -853,8 +855,7 @@ enum MaterialButtonEffect {
       let pressed = configuration.isPressed && isEnabled
       configuration.label
         // See `RoundedRectStyle` for hit-testing notes. Same constraints apply here.
-        .foregroundStyle(Color.clear)
-        .tint(.clear)
+        .hidden()
         .contentShape(Circle())
         .overlay {
           MaterialButtonEffect.chromeWithContent(
@@ -881,8 +882,7 @@ enum MaterialButtonEffect {
     func makeBody(configuration: Configuration) -> some View {
       let pressed = configuration.isPressed && isEnabled
       configuration.label
-        .foregroundStyle(Color.clear)
-        .tint(.clear)
+        .hidden()
         .contentShape(Capsule())
         .overlay {
           MaterialButtonEffect.chromeWithContent(
@@ -939,7 +939,7 @@ enum MaterialButtonEffect {
 
   private static func textureImage() -> Image {
     if let path = Bundle.main.path(forResource: "PlasticTexture", ofType: "png"),
-      let image = PlatformSwiftUIImage.contentsOfFile(path)
+      let image = PlatformImage.cachedContentsOfFile(path)
     {
       return image
     }

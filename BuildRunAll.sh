@@ -14,6 +14,7 @@ NO_BUILD_LOCK=0
 ALWAYS_BUILD=0
 BREAK_LOCKS=0
 STATUS_LOCKS=0
+MAC_ARCHIVE=0
 
 mkdir -p "$DERIVED_DATA_BASE" "$RUNALL_LOG_ARCHIVE_DIR"
 
@@ -514,6 +515,12 @@ while [[ "${1:-}" == --* ]]; do
             LAUNCH_CONSOLE=1
             shift
             ;;
+        --archive)
+            # For the `mac` target: build a Release archive and launch the archived app.
+            # This is a closer approximation to "prod" behavior than a Debug build.
+            MAC_ARCHIVE=1
+            shift
+            ;;
         --16pro)
             SIM_PROFILE="16pro"
             SIM_PROFILE_FLAG="--16pro"
@@ -661,25 +668,55 @@ build_mac() {
     with_platform_lock "$platform_tag" _build_mac_locked "$derived_data_root" "$bundle_dir"
 }
 
+mac_app_bundle_path() {
+    # Returns the `.app` bundle path for the mac target based on build mode.
+    if [ "$MAC_ARCHIVE" -eq 1 ]; then
+        local bundle_dir
+        bundle_dir="$(bundle_dir_for macos)"
+        echo "$bundle_dir/RockYou-mac.xcarchive/Products/Applications/RockYou.app"
+    else
+        echo "$(build_products_root_for macos)/Debug/RockYou.app"
+    fi
+}
+
+mac_app_bin_path() {
+    local app_bundle
+    app_bundle="$(mac_app_bundle_path)"
+    echo "$app_bundle/Contents/MacOS/RockYou"
+}
+
 _build_mac_locked() {
     local derived_data_root=$1
     local bundle_dir=$2
 
     local app_path
-    app_path="$(build_products_root_for macos)/Debug/RockYou.app"
+    app_path="$(mac_app_bundle_path)"
     if [ "${LOCK_WAS_CONTENDED:-0}" -eq 1 ] && [ "$ALWAYS_BUILD" -eq 0 ] && [ -d "$app_path" ]; then
         echo "✅ Skipping Mac build (another process already built macos)"
         return 0
     fi
 
-    echo "🖥️  Building Mac app..."
-    rm -rf "$bundle_dir/RockYou-Mac" "$bundle_dir/RockYou-Mac.xcresult"
-    xcodebuild -scheme RockYou -configuration Debug \
-        -project "$PROJECT" \
-        -derivedDataPath "$derived_data_root" \
-        -destination "$MAC_DEST" \
-        -resultBundlePath "$bundle_dir/RockYou-Mac.xcresult" \
-        -allowProvisioningUpdates build | xcbeautify
+    if [ "$MAC_ARCHIVE" -eq 1 ]; then
+        local archive_path="$bundle_dir/RockYou-mac.xcarchive"
+        echo "🖥️  Archiving Mac app (Release)..."
+        rm -rf "$archive_path" "$bundle_dir/RockYou-Mac-Archive.xcresult"
+        xcodebuild -scheme RockYou -configuration Release \
+            -project "$PROJECT" \
+            -derivedDataPath "$derived_data_root" \
+            -destination "generic/platform=macOS" \
+            -archivePath "$archive_path" \
+            -resultBundlePath "$bundle_dir/RockYou-Mac-Archive.xcresult" \
+            -allowProvisioningUpdates archive | xcbeautify
+    else
+        echo "🖥️  Building Mac app..."
+        rm -rf "$bundle_dir/RockYou-Mac" "$bundle_dir/RockYou-Mac.xcresult"
+        xcodebuild -scheme RockYou -configuration Debug \
+            -project "$PROJECT" \
+            -derivedDataPath "$derived_data_root" \
+            -destination "$MAC_DEST" \
+            -resultBundlePath "$bundle_dir/RockYou-Mac.xcresult" \
+            -allowProvisioningUpdates build | xcbeautify
+    fi
 }
 
 # Run iOS app on a simulator (iPhone or iPad)
@@ -705,7 +742,18 @@ run_mac() {
     # Kill existing *macOS* instance if running.
     # NOTE: The iOS Simulator app process is also named "RockYou", so `pkill -x RockYou`
     # would kill the simulator app too. Match the macOS binary path instead.
-    local mac_bin="$(build_products_root_for macos)/Debug/RockYou.app/Contents/MacOS/RockYou"
+    local mac_bin
+    mac_bin="$(mac_app_bin_path)"
+    if [ ! -x "$mac_bin" ]; then
+        if [ "$MAC_ARCHIVE" -eq 1 ]; then
+            echo "❌ Mac archive binary not found (expected): $mac_bin"
+            echo "   Build it first with: $0 --archive mac"
+        else
+            echo "❌ Mac Debug binary not found (expected): $mac_bin"
+            echo "   Build it first with: $0 mac"
+        fi
+        return 1
+    fi
     pkill -f "$mac_bin" 2>/dev/null || true
     sleep 0.5
     "$mac_bin"
@@ -786,6 +834,7 @@ if [ $# -eq 0 ]; then
     echo "  --ResetSim  - Terminate+uninstall before install (slower; fixes some sim launch flakiness)"
     echo "  --lint      - Build only (no install/launch). If no targets given, builds phone+ipad+watch+mac."
     echo "  --console   - Keep streaming simulator console output (blocks; useful in tmux panes)"
+    echo "  --archive   - For mac target: build a Release archive and launch the archived app"
     echo "  --no-log    - Disable tee-to-log (intended for tmux mode where tmux pipe-pane handles logs)"
     echo "  --no-lock   - Disable cross-process DerivedData locks (not recommended; can cause Xcode build DB lock errors)"
     echo "  --always-build - Rebuild even if we had to wait on a concurrent build lock"

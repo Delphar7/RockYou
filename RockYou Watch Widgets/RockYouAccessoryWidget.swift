@@ -238,7 +238,7 @@ private enum WidgetAppIconDiskCache {
     let fileURL = iconDir.appendingPathComponent(app.iconFilename(for: deviceId))
 
     guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-    return PlatformSwiftUIImage.contentsOfFile(fileURL.path)
+    return PlatformImage.cachedContentsOfFile(fileURL.path)
   }
 }
 

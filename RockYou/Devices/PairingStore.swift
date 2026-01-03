@@ -35,12 +35,7 @@ struct UserDefaultsPairingBackend: PairingStorageBackend {
   func load() -> [TVPairing] {
     let defaults = UserDefaults.standard
 
-    let storedData: Data? = {
-      if let data = defaults.data(forKey: key) { return data }
-      if let data = preferencesPlistValue(forKey: key) as? Data { return data }
-      if let nsData = preferencesPlistValue(forKey: key) as? NSData { return Data(referencing: nsData) }
-      return nil
-    }()
+    let storedData = defaults.data(forKey: key) ?? PreferencesPlist.data(forKey: key)
 
     if let data = storedData {
       if let pairings = try? JSONDecoder().decode([TVPairing].self, from: data) {
@@ -69,27 +64,10 @@ struct UserDefaultsPairingBackend: PairingStorageBackend {
     return []
   }
 
-  private func preferencesPlistValue(forKey key: String) -> Any? {
-    guard let bundleId = Bundle.main.bundleIdentifier,
-          let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
-    else { return nil }
-
-    let url = lib
-      .appendingPathComponent("Preferences", isDirectory: true)
-      .appendingPathComponent("\(bundleId).plist")
-
-    guard let data = try? Data(contentsOf: url),
-          let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-          let dict = plist as? [String: Any]
-    else { return nil }
-
-    return dict[key]
-  }
-
   func save(_ pairings: [TVPairing]) {
     guard let data = try? JSONEncoder().encode(pairings) else { return }
     UserDefaults.standard.set(data, forKey: key)
-    DebugBuild.run { UserDefaults.standard.synchronize() }
+    DebugBuild.flushUserDefaults()
   }
 }
 
@@ -122,10 +100,7 @@ final class PairingStore {
   }
 
   init(backend: PairingStorageBackend) {
-    DebugBuild.run {
-      // When installing via `simctl install`, cfprefsd can briefly serve stale values.
-      CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
-    }
+    DebugBuild.syncCurrentAppPreferences()
 
     self.backend = backend
     self.pairings = backend.load()
@@ -138,7 +113,7 @@ final class PairingStore {
         }
       }
       return UserDefaults.standard.string(forKey: currentTVKey)
-        ?? (preferencesPlistValue(forKey: currentTVKey) as? String)
+        ?? PreferencesPlist.string(forKey: currentTVKey)
     }()
     migrateCurrentTVSelectionIfNeeded()
     migrateCurrentSelectionIfNeeded()
@@ -225,11 +200,8 @@ final class PairingStore {
     if let data = defaults.data(forKey: currentSelectionKey) {
       return try? JSONDecoder().decode(DeviceSelection.self, from: data)
     }
-    if let data = preferencesPlistValue(forKey: currentSelectionKey) as? Data {
+    if let data = PreferencesPlist.data(forKey: currentSelectionKey) {
       return try? JSONDecoder().decode(DeviceSelection.self, from: data)
-    }
-    if let nsData = preferencesPlistValue(forKey: currentSelectionKey) as? NSData {
-      return try? JSONDecoder().decode(DeviceSelection.self, from: Data(referencing: nsData))
     }
     return nil
   }
@@ -421,24 +393,7 @@ final class PairingStore {
   }
 
   private func flushDefaultsIfDebug() {
-    DebugBuild.run { UserDefaults.standard.synchronize() }
-  }
-
-  private func preferencesPlistValue(forKey key: String) -> Any? {
-    guard let bundleId = Bundle.main.bundleIdentifier,
-          let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
-    else { return nil }
-
-    let url = lib
-      .appendingPathComponent("Preferences", isDirectory: true)
-      .appendingPathComponent("\(bundleId).plist")
-
-    guard let data = try? Data(contentsOf: url),
-          let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-          let dict = plist as? [String: Any]
-    else { return nil }
-
-    return dict[key]
+    DebugBuild.flushUserDefaults()
   }
 
   // MARK: - CloudKit Sharing

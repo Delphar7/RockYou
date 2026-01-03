@@ -4,6 +4,10 @@ import SwiftUI
 enum AppStripPlatformPolicy {
   static var defaultSizing: AppStripSizing { .percent(15) }
 
+  /// watchOS: AppStripView is not a primary layout surface for the watch UI, so leave lane
+  /// collapsing disabled by default.
+  static var minIconHeightForMultiLane: CGFloat { 0 }
+
   static var defaultFixedIconSize: (width: CGFloat, height: CGFloat) {
     switch defaultSizing {
     case .fixed(let w, let h):

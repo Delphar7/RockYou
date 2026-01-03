@@ -56,9 +56,12 @@ enum AppStripSizing {
     let f = max(0.01, factor)
     switch self {
     case .fixed(let iconWidth, let iconHeight):
+      // Prevent the strip from becoming unusably tiny. We clamp the *icon* size so
+      // the overall strip still has a minimum tappable affordance.
+      let minIconSide: CGFloat = 32
       return .fixed(
-        iconWidth: iconWidth.map { $0 * f },
-        iconHeight: iconHeight.map { $0 * f }
+        iconWidth: iconWidth.map { max(minIconSide, $0 * f) },
+        iconHeight: iconHeight.map { max(minIconSide, $0 * f) }
       )
     case .percent:
       // Percent is relative to the container/screen; keep it unchanged.
@@ -107,7 +110,7 @@ struct AppStripView: View {
     // Reference mruVersion to trigger re-render when MRU changes (sorting)
     let _ = cache.mruVersion
 
-    let sizes = calculateSizes()
+    let (effectiveLanes, sizes) = resolvedLayout()
 
     let activeAppId = DeviceStateManager.shared.states[deviceId]?.activeApp
     let _ = glowPulseFactor  // keep dependency explicit
@@ -118,7 +121,7 @@ struct AppStripView: View {
       if apps.isEmpty {
         emptyView(sizes: sizes)
       } else {
-        scrollableGrid(sizes: sizes)
+        scrollableGrid(sizes: sizes, lanes: effectiveLanes)
       }
     }
     base
@@ -241,13 +244,13 @@ struct AppStripView: View {
 
   // MARK: - Grid Layout
 
-  private func scrollableGrid(sizes: IconSizes) -> some View {
+  private func scrollableGrid(sizes: IconSizes, lanes: Int) -> some View {
     // The glow halo on the active icon is intentionally allowed to extend beyond the icon bounds.
     // Scroll views/grid containers can clip at their edges, so give the content a small safe inset
     // so edge icons (top/left/right/bottom) don’t lose their halo.
     let haloSafePadding: CGFloat = AppStripPlatformPolicy.haloSafePaddingAlongScrollAxis
 
-    let content = gridContent(sizes: sizes)
+    let content = gridContent(sizes: sizes, lanes: lanes)
       .padding(direction == .horizontal ? .horizontal : .vertical, 4)
       // Only add padding along the scroll axis (left/right for horizontal strips).
       // Top/bottom padding changes the perceived layout too much.
@@ -275,7 +278,7 @@ struct AppStripView: View {
   }
 
   @ViewBuilder
-  private func gridContent(sizes: IconSizes) -> some View {
+  private func gridContent(sizes: IconSizes, lanes: Int) -> some View {
     if direction == .horizontal {
       LazyHGrid(
         rows: Array(
@@ -307,38 +310,32 @@ struct AppStripView: View {
     // - Geometry is stable: each frame is an index (0..n-1).
     // - The app shown in a slot can change if ordering changes.
     // - On press-began we snapshot "app at slot" so sweep icon + launch uses a consistent target.
-    let slotCount = orderedAppsForDisplay().count
+    // Break up computations for watchOS compiler (avoids "unable to type-check" in reasonable time).
+    let ordered: [RokuApp] = orderedAppsForDisplay()
+    let slotCount = ordered.count
     let activeAppId = DeviceStateManager.shared.states[deviceId]?.activeApp
-    let pulseFactor = AppStripPlatformPolicy.supportsGlowPulse ? glowPulseFactor : 1.0
+    let pulseFactor: CGFloat = AppStripPlatformPolicy.supportsGlowPulse ? glowPulseFactor : 1.0
+
+    let iconConfig: AppIconConfig = AppIconConfig(
+      width: sizes.iconWidth,
+      height: sizes.iconHeight,
+      cornerRadius: sizes.cornerRadius,
+      labelFont: sizes.labelFont,
+      showLabel: showLabels,
+      showShadow: platformShowShadow
+    )
+
     ForEach(0..<slotCount, id: \.self) { slotIndex in
       AppStripSlotButton(
         slotIndex: slotIndex,
-        appsProvider: { orderedAppsForDisplay() },
+        appsProvider: { ordered },
         deviceId: deviceId,
-        config: AppIconConfig(
-          width: sizes.iconWidth,
-          height: sizes.iconHeight,
-          cornerRadius: sizes.cornerRadius,
-          labelFont: sizes.labelFont,
-          showLabel: showLabels,
-          showShadow: platformShowShadow
-        ),
+        config: iconConfig,
         activeAppId: activeAppId,
         glowPulseFactor: pulseFactor,
         launchDelay: appLaunchDelay,
         onLaunch: onLaunch
       )
-      .onAppear {
-        // Prefetch visible + buffer (based on slot indices).
-        let ordered = orderedAppsForDisplay()
-        let visibleRange = max(0, slotIndex - 1)..<min(ordered.count, slotIndex + 2)
-        cache.prefetchIcons(
-          appIds: ordered.map(\.id),
-          deviceId: deviceId,
-          visibleRange: visibleRange,
-          buffer: 4
-        )
-      }
     }
   }
 
@@ -387,33 +384,27 @@ struct AppStripView: View {
 
       private var displayApp: RokuApp? { capturedApp ?? currentApp }
 
+      @ViewBuilder
       var body: some View {
-        guard let app = currentApp else { return AnyView(EmptyView()) }
-      let isActive = (activeAppId == app.id)
+        if let app = currentApp {
+          let isActive = (activeAppId == app.id)
+          let isInput = AppIconClassifier.isInput(appId: app.id, appType: app.type)
+          let debugLabel = "slot=\(slotIndex) appId=\(app.id) name='\(app.name)'"
 
-      let isInput = AppIconClassifier.isInput(appId: app.id, appType: app.type)
-
-        let debugLabel = "slot=\(slotIndex) appId=\(app.id) name='\(app.name)'"
-
-      if AppStripPlatformPolicy.usesClickToLaunch {
-        // macOS: stable slots still make sense, but interaction is click-to-launch.
-        return AnyView(
-          AppIconButton(
-            appId: app.id,
-            appName: app.name,
-            appType: app.type,
-            deviceId: deviceId,
-            config: config,
-            isActiveApp: isActive,
-            glowPulseFactor: glowPulseFactor,
-            launchDelay: nil,
+          if AppStripPlatformPolicy.usesClickToLaunch {
+            // macOS: click-to-launch.
+            AppIconButton(
+              appId: app.id,
+              appName: app.name,
+              appType: app.type,
+              deviceId: deviceId,
+              config: config,
+              isActiveApp: isActive,
+              glowPulseFactor: glowPulseFactor,
+              launchDelay: nil,
               action: { onLaunch(app) }
             )
-        )
-      }
-
-        if launchDelay == nil {
-          return AnyView(
+          } else if launchDelay == nil {
             Button(action: { onLaunch(app) }) {
               AppStripAppIconTile(
                 appId: app.id,
@@ -426,57 +417,51 @@ struct AppStripView: View {
               )
             }
             .buttonStyle(.plain)
-          )
-        }
-
-        return AnyView(
-          Button(action: {}) {
-            AppStripAppIconTile(
-              appId: app.id,
-              appName: app.name,
-              appType: app.type,
-              deviceId: deviceId,
-              config: config,
-              isActiveApp: isActive,
-              glowPulseFactor: glowPulseFactor
+          } else {
+            Button(action: {}) {
+              AppStripAppIconTile(
+                appId: app.id,
+                appName: app.name,
+                appType: app.type,
+                deviceId: deviceId,
+                config: config,
+                isActiveApp: isActive,
+                glowPulseFactor: glowPulseFactor
+              )
+            }
+            .buttonStyle(.plain)
+            .sweepable(
+              icon: {
+                let show = displayApp ?? app
+                return AppIconWithLabel.sweepOverlayIcon(
+                  appId: show.id,
+                  appName: show.name,
+                  appType: show.type,
+                  deviceId: deviceId,
+                  config: config
+                )
+              },
+              color: isInput ? rokuPurple : AppBranding.color(for: app.name, appId: app.id),
+              delay: launchDelay ?? 1.0,
+              overlayDelay: 0.25,
+              tooltip: "Hold to launch app channel",
+              debugLabel: debugLabel,
+              onPressBegan: {
+                capturedApp = currentApp
+              },
+              showTooltipOnEarlyRelease: true,
+              gestureStyle: .simultaneous,
+              onSweepComplete: {
+                let snap = capturedApp ?? currentApp
+                capturedApp = nil
+                guard let snap else { return }
+                onLaunch(snap)
+              }
             )
           }
-          .buttonStyle(.plain)
-          .sweepable(
-            icon: {
-              let show = displayApp ?? app
-              return AppIconWithLabel.sweepOverlayIcon(
-                appId: show.id,
-                appName: show.name,
-                appType: show.type,
-                deviceId: deviceId,
-                config: config
-              )
-            },
-            color: isInput ? rokuPurple : AppBranding.color(for: app.name, appId: app.id),
-            delay: launchDelay ?? 1.0,
-            overlayDelay: 0.25,
-            tooltip: "Hold to launch app channel",
-            debugLabel: debugLabel,
-            onPressBegan: {
-              // Snapshot the current app for this slot immediately.
-              capturedApp = currentApp
-              if let snap = capturedApp {
-                Log.debug("Sweep", "slot=\(slotIndex) captured appId=\(snap.id) name='\(snap.name)'")
-              } else {
-                Log.debug("Sweep", "slot=\(slotIndex) captured nil")
-              }
-            },
-            showTooltipOnEarlyRelease: true,
-            gestureStyle: .simultaneous,
-            onSweepComplete: {
-              let snap = capturedApp ?? currentApp
-              capturedApp = nil
-              guard let snap else { return }
-              onLaunch(snap)
-            }
-        )
-      )
+        } else {
+          EmptyView()
+        }
       }
     }
 
@@ -518,10 +503,29 @@ struct AppStripView: View {
     return haloVerticalPadding.top + haloVerticalPadding.bottom
   }
 
-  private func calculateSizes() -> IconSizes {
+  private func resolvedLayout() -> (lanes: Int, sizes: IconSizes) {
+    let initialLanes = max(1, lanes)
+    let initialSizes = calculateSizes(lanes: initialLanes)
+    if shouldCollapseToSingleLane(initialLanes: initialLanes, initialSizes: initialSizes) {
+      let single = 1
+      return (single, calculateSizes(lanes: single))
+    }
+    return (initialLanes, initialSizes)
+  }
+
+  private func shouldCollapseToSingleLane(initialLanes: Int, initialSizes: IconSizes) -> Bool {
+    guard direction == .horizontal else { return false }
+    guard initialLanes > 1 else { return false }
+    let threshold = AppStripPlatformPolicy.minIconHeightForMultiLane
+    guard threshold > 0 else { return false }
+    return initialSizes.iconHeight < threshold
+  }
+
+  private func calculateSizes(lanes laneCount: Int) -> IconSizes {
     let iconWidth: CGFloat
     let iconHeight: CGFloat
     let stripSize: CGFloat
+    let laneCount = max(1, laneCount)
 
     switch sizing {
     case .fixed(let w, let h):
@@ -546,12 +550,14 @@ struct AppStripView: View {
       }
       let labelHeight: CGFloat = showLabels ? 20 : 0
       let cellSize = (direction == .horizontal ? iconHeight : iconWidth) + labelHeight
-      stripSize = cellSize * CGFloat(lanes) + effectiveLaneSpacing * CGFloat(lanes - 1) + 8
+      stripSize =
+        cellSize * CGFloat(laneCount) + effectiveLaneSpacing * CGFloat(laneCount - 1) + 8
 
     case .percent(let pct):
       let screenDim = screenDimension
       stripSize = screenDim * (pct / 100.0)
-      let singleLaneSize = (stripSize - effectiveLaneSpacing * CGFloat(lanes - 1)) / CGFloat(lanes)
+      let singleLaneSize =
+        (stripSize - effectiveLaneSpacing * CGFloat(laneCount - 1)) / CGFloat(laneCount)
       let iconHeightRatio: CGFloat = showLabels ? 0.70 : 0.90
       iconHeight = singleLaneSize * iconHeightRatio
       iconWidth = iconHeight * (4.0 / 3.0)

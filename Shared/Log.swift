@@ -29,6 +29,8 @@ public enum LogLevel: Int, Comparable {
   }
 }
 
+#if DEBUG
+
 /// Unified logger - thread-safe, works from any context
 public enum Log {
 
@@ -36,8 +38,8 @@ public enum Log {
   public static var minimumLevel: LogLevel = DebugBuild.isEnabled ? .info : .warn
 
   /// Extra-noisy packet-level logging. This is intentionally opt-in and should
-  /// only be enabled by editing this value in code.
-  public static var noisyEnabled: Bool = true
+    /// only be enabled by editing this value in code.
+    public static var noisyEnabled: Bool = DebugBuild.isEnabled
 
   // MARK: - Public API
 
@@ -46,30 +48,35 @@ public enum Log {
     minimumLevel = level
   }
 
-  /// Debug-level logging (verbose, development only)
-  public static func debug(_ tag: String, _ message: String) {
-    log(.debug, tag, message)
+    /// Debug-level logging (verbose, development only)
+    @inlinable @inline(__always)
+    public static func debug(_ tag: String, _ message: @autoclosure () -> String) {
+      log(.debug, tag, message())
   }
 
-  /// Extra-noisy logging (full packet dumps, etc.). Not governed by minimumLevel.
-  public static func noisy(_ tag: String, _ message: String) {
+    /// Extra-noisy logging (full packet dumps, etc.). Not governed by minimumLevel.
+    @inlinable @inline(__always)
+    public static func noisy(_ tag: String, _ message: @autoclosure () -> String) {
     guard noisyEnabled else { return }
-    write("[\(tag)] 🗯️ \(message)")
+      write("[\(tag)] 🗯️ \(message())")
   }
 
-  /// Info-level logging (normal operations)
-  public static func info(_ tag: String, _ message: String) {
-    log(.info, tag, message)
+    /// Info-level logging (normal operations)
+    @inlinable @inline(__always)
+    public static func info(_ tag: String, _ message: @autoclosure () -> String) {
+      log(.info, tag, message())
   }
 
-  /// Warning-level logging (unexpected but recoverable)
-  public static func warn(_ tag: String, _ message: String) {
-    log(.warn, tag, message)
+    /// Warning-level logging (unexpected but recoverable)
+    @inlinable @inline(__always)
+    public static func warn(_ tag: String, _ message: @autoclosure () -> String) {
+      log(.warn, tag, message())
   }
 
-  /// Error-level logging (failures)
-  public static func error(_ tag: String, _ message: String) {
-    log(.error, tag, message)
+    /// Error-level logging (failures)
+    @inlinable @inline(__always)
+    public static func error(_ tag: String, _ message: @autoclosure () -> String) {
+      log(.error, tag, message())
   }
 
   // MARK: - Gesture timeline (debug-only)
@@ -98,18 +105,20 @@ public enum Log {
       .joined(separator: " ")
 
     Log.debug("GestureTL", "[t+\(ts)] \(category):\(event) \(payload)")
-  }
+    }
 
-  // MARK: - Private
+    // MARK: - Private
 
-  private static func log(_ level: LogLevel, _ tag: String, _ message: String) {
+    @usableFromInline
+    static func log(_ level: LogLevel, _ tag: String, _ message: String) {
     guard level >= minimumLevel else { return }
 
     let logMessage = "[\(tag)] \(level.prefix) \(message)"
-    write(logMessage)
-  }
+      write(logMessage)
+    }
 
-  private static func write(_ message: String) {
+    @usableFromInline
+    static func write(_ message: String) {
     // Write to stderr (good for piping to `mac.log`).
     let ts = String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
     let stamped = "[t+\(ts)] \(message)"
@@ -131,6 +140,53 @@ public enum GestureTimeline {
     set {
       guard DebugBuild.isEnabled else { return }
       enabledInDebug = newValue
+      }
     }
   }
+
+#else
+
+  /// Release/Archive builds: compile logging to no-ops.
+  ///
+  /// This makes call sites effectively free (especially with `@autoclosure`) so we don't
+  /// pay for string interpolation / formatting unless logging is compiled in.
+  public enum Log {
+    public static var minimumLevel: LogLevel = .warn
+    public static var noisyEnabled: Bool = false
+
+    @inlinable @inline(__always)
+    public static func setLevel(_ level: LogLevel) {}
+
+    @inlinable @inline(__always)
+    public static func debug(_ tag: String, _ message: @autoclosure () -> String) {}
+
+    @inlinable @inline(__always)
+    public static func noisy(_ tag: String, _ message: @autoclosure () -> String) {}
+
+    @inlinable @inline(__always)
+    public static func info(_ tag: String, _ message: @autoclosure () -> String) {}
+
+    @inlinable @inline(__always)
+    public static func warn(_ tag: String, _ message: @autoclosure () -> String) {}
+
+    @inlinable @inline(__always)
+    public static func error(_ tag: String, _ message: @autoclosure () -> String) {}
+
+    @MainActor
+    @inlinable @inline(__always)
+    public static func gestureTimeline(
+      _ category: String,
+      _ event: String,
+      _ fields: [String: CustomStringConvertible] = [:]
+    ) {}
+  }
+
+  @MainActor
+  public enum GestureTimeline {
+    public static var enabled: Bool {
+      get { false }
+      set {}
+  }
 }
+
+#endif

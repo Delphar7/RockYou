@@ -131,31 +131,14 @@ final class AppSettings {
   }
 
   private func flushDefaultsIfDebug() {
-    DebugBuild.run { UserDefaults.standard.synchronize() }
+    DebugBuild.flushUserDefaults()
   }
 
   private func readDefaultsObject(key: String) -> Any? {
     if let value = UserDefaults.standard.object(forKey: key) {
       return value
     }
-    return preferencesPlistValue(forKey: key)
-  }
-
-  private func preferencesPlistValue(forKey key: String) -> Any? {
-    guard let bundleId = Bundle.main.bundleIdentifier,
-          let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
-    else { return nil }
-
-    let url = lib
-      .appendingPathComponent("Preferences", isDirectory: true)
-      .appendingPathComponent("\(bundleId).plist")
-
-    guard let data = try? Data(contentsOf: url),
-          let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-          let dict = plist as? [String: Any]
-    else { return nil }
-
-    return dict[key]
+    return PreferencesPlist.value(forKey: key)
   }
 
   private func syncToWatch() {
@@ -163,10 +146,7 @@ final class AppSettings {
   }
 
   private init() {
-    DebugBuild.run {
-      // When installing via `simctl install`, cfprefsd can briefly serve stale values.
-      CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
-    }
+    DebugBuild.syncCurrentAppPreferences()
 
     // Load initial values
     _ = watchPowerDelay

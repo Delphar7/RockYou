@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		D89F41602EB7FC3D00D66A14 /* RockYou Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D81AB0E92EC2C06400DA3A6E /* RockYou Watch App.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		D8AA01062F1C000100000001 /* RockYou Watch Widgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D8AA01002F1C000100000001 /* RockYou Watch Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D8AA01062F1C000100000001 /* RockYou Watch Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D8AA01002F1C000100000001 /* RockYou Watch Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D8DAD100000000000000001 /* DPad-Ring.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000001 /* DPad-Ring.png */; };
 		D8DAD100000000000000003 /* Stick.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000003 /* Stick.png */; };
 		D8DAD100000000000000004 /* StickShadow.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000004 /* StickShadow.png */; };
@@ -75,15 +75,15 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D8AA01052F1C000100000001 /* Embed App Extensions */ = {
+		D8AA01052F1C000100000001 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				D8AA01062F1C000100000001 /* RockYou Watch Widgets.appex in Embed App Extensions */,
+				D8AA01062F1C000100000001 /* RockYou Watch Widgets.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -127,6 +127,7 @@
 		D8AA01122F1C000100000001 /* Exceptions for "Shared" folder in "RockYou Watch Widgets" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Log.swift,
 				"Services/WakeOnLANPlatform+nonWatch.swift",
 			);
 			target = D8AA01012F1C000100000001 /* RockYou Watch Widgets */;
@@ -290,7 +291,7 @@
 				D81AB0E52EC2C06400DA3A6E /* Sources */,
 				D81AB0E62EC2C06400DA3A6E /* Frameworks */,
 				D81AB0E72EC2C06400DA3A6E /* Resources */,
-				D8AA01052F1C000100000001 /* Embed App Extensions */,
+				D8AA01052F1C000100000001 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -456,7 +457,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2610;
-				LastUpgradeCheck = 2600;
+				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					D81AB0E82EC2C06400DA3A6E = {
 						CreatedOnToolsVersion = 26.1;
@@ -688,6 +689,8 @@
 					Shared/UI/Platform/TVSelectorListPlatform.swift,
 					Shared/NetworkInfo.swift,
 					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					Shared/AppCacheStore.swift,
+					Shared/AppCacheManager.swift,
 					"Shared/DeviceSelectionProvider+nonWatch.swift",
 					"Shared/UI/Styles+nonWatch.swift",
 				);
@@ -714,6 +717,8 @@
 					Shared/UI/Platform/TVSelectorListPlatform.swift,
 					Shared/NetworkInfo.swift,
 					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					Shared/AppCacheStore.swift,
+					Shared/AppCacheManager.swift,
 					"Shared/DeviceSelectionProvider+nonWatch.swift",
 					"Shared/UI/Styles+nonWatch.swift",
 				);
@@ -773,6 +778,8 @@
 					Shared/UI/Platform/TVSelectorListPlatform.swift,
 					Shared/NetworkInfo.swift,
 					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					Shared/AppCacheStore.swift,
+					Shared/AppCacheManager.swift,
 					"Shared/DeviceSelectionProvider+nonWatch.swift",
 					"Shared/UI/Styles+nonWatch.swift",
 				);
@@ -799,6 +806,8 @@
 					Shared/UI/Platform/TVSelectorListPlatform.swift,
 					Shared/NetworkInfo.swift,
 					"Shared/AppCacheManagerPlatform+nonWatch.swift",
+					Shared/AppCacheStore.swift,
+					Shared/AppCacheManager.swift,
 					"Shared/DeviceSelectionProvider+nonWatch.swift",
 					"Shared/UI/Styles+nonWatch.swift",
 				);
@@ -926,9 +935,12 @@
 				CODE_SIGN_ENTITLEMENTS = RockYou/RockYou.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TEAMID;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				"EXCLUDED_SOURCE_FILE_NAMES[sdk=iphoneos*]" = (
@@ -1040,9 +1052,12 @@
 				CODE_SIGN_ENTITLEMENTS = RockYou/RockYou.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TEAMID;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				"EXCLUDED_SOURCE_FILE_NAMES[sdk=iphoneos*]" = (
@@ -1180,6 +1195,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = TEAMID;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1205,6 +1221,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -1244,6 +1261,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = TEAMID;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -1262,6 +1280,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
@@ -1272,6 +1291,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TEAMID;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1298,6 +1318,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TEAMID;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1323,6 +1344,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TEAMID;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1348,6 +1370,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TEAMID;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1402,6 +1425,8 @@
 					Shared/NetworkInfo.swift,
 					Shared/AppBranding.swift,
 					Shared/AppCacheManager.swift,
+					Shared/AppCacheStore.swift,
+					"Shared/AppCacheManager+watchOS.swift",
 					"Shared/AppCacheManagerPlatform+watchOS.swift",
 					"Shared/AppCacheManagerPlatform+nonWatch.swift",
 					"Shared/DeviceSelectionProvider+nonWatch.swift",
@@ -1435,6 +1460,8 @@
 					Shared/NetworkInfo.swift,
 					Shared/AppBranding.swift,
 					Shared/AppCacheManager.swift,
+					Shared/AppCacheStore.swift,
+					"Shared/AppCacheManager+watchOS.swift",
 					"Shared/AppCacheManagerPlatform+watchOS.swift",
 					"Shared/AppCacheManagerPlatform+nonWatch.swift",
 					"Shared/DeviceSelectionProvider+nonWatch.swift",
@@ -1488,6 +1515,8 @@
 					Shared/NetworkInfo.swift,
 					Shared/AppBranding.swift,
 					Shared/AppCacheManager.swift,
+					Shared/AppCacheStore.swift,
+					"Shared/AppCacheManager+watchOS.swift",
 					"Shared/AppCacheManagerPlatform+watchOS.swift",
 					"Shared/AppCacheManagerPlatform+nonWatch.swift",
 					"Shared/DeviceSelectionProvider+nonWatch.swift",
@@ -1521,6 +1550,8 @@
 					Shared/NetworkInfo.swift,
 					Shared/AppBranding.swift,
 					Shared/AppCacheManager.swift,
+					Shared/AppCacheStore.swift,
+					"Shared/AppCacheManager+watchOS.swift",
 					"Shared/AppCacheManagerPlatform+watchOS.swift",
 					"Shared/AppCacheManagerPlatform+nonWatch.swift",
 					"Shared/DeviceSelectionProvider+nonWatch.swift",

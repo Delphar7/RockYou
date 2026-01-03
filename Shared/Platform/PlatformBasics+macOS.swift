@@ -1,7 +1,6 @@
 import AppKit
 import CoreGraphics
 import Foundation
-import SwiftUI
 
 enum PlatformDevice {
   static var isPad: Bool { false }
@@ -24,12 +23,5 @@ enum PlatformURLHandler {
 
   static func openAppSettingsFallback() {
     // no-op
-  }
-}
-
-enum PlatformSwiftUIImage {
-  static func contentsOfFile(_ path: String) -> Image? {
-    guard let nsImage = NSImage(contentsOfFile: path) else { return nil }
-    return Image(nsImage: nsImage)
   }
 }

@@ -10,7 +10,7 @@ struct RemoteTopBarView: View {
   private static let helpMaterialSeed: UInt64 = 0xC0FFEE
 
   let scaleFactor: CGFloat
-  var edgePadding: CGFloat = RemoteTopBarPlatform.edgePadding
+  var edgePadding: CGFloat = RemoteControlPlatform.remoteTopBarEdgePadding
   let selectedTVName: String?
   let selectedStreamerName: String?
   let selectedDeviceId: String?

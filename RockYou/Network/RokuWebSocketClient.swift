@@ -4,7 +4,6 @@
 // Clean-room implementation of Roku's ecp-2 WebSocket protocol
 // using Apple's Network framework for consistency with discovery.
 
-import CommonCrypto
 import Foundation
 import Network
 import os.lock
@@ -92,11 +91,7 @@ actor RokuWebSocketClient {
   /// Compute the challenge response
   private static nonisolated func computeAuthResponse(challenge: String) -> String {
     let data = challenge.data(using: .utf8)! + authSeed
-    var digest = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
-    data.withUnsafeBytes { buffer in
-      _ = CC_SHA1(buffer.baseAddress, CC_LONG(data.count), &digest)
-    }
-    return Data(digest).base64EncodedString()
+    return SHA1.digest(data).base64EncodedString()
   }
 
   // MARK: - Event Subscriptions
@@ -116,6 +111,7 @@ actor RokuWebSocketClient {
   private var state: ConnectionState = .disconnected
   private var requestCounter: Int = 2  // Start at 2 (1 is reserved for auth)
   private var pendingResponses: [String: CheckedContinuation<ECPResponseMsg, Error>] = [:]
+  private var pendingResponseTimeoutTasks: [String: Task<Void, Never>] = [:]
   private var receiveTask: Task<Void, Never>?
   private let queue = DispatchQueue(label: "com.rockyou.websocket", qos: .userInitiated)
 
@@ -238,11 +234,7 @@ actor RokuWebSocketClient {
 
   private func handleConnectionFailure(_ error: String) {
     state = .failed(error)
-    // Fail all pending requests
-    for (_, continuation) in pendingResponses {
-      continuation.resume(throwing: ECPError.connectionFailed(error))
-    }
-    pendingResponses.removeAll()
+    failAllPendingResponses(with: ECPError.connectionFailed(error))
   }
 
   /// Disconnect from the device
@@ -252,11 +244,7 @@ actor RokuWebSocketClient {
     connection?.cancel()
     connection = nil
 
-    // Fail all pending requests
-    for (_, continuation) in pendingResponses {
-      continuation.resume(throwing: ECPError.notConnected)
-    }
-    pendingResponses.removeAll()
+    failAllPendingResponses(with: ECPError.notConnected)
 
     state = .disconnected
   }
@@ -430,9 +418,7 @@ actor RokuWebSocketClient {
           }
         }
         // Then check for regular pending response
-        if let continuation = pendingResponses.removeValue(forKey: response.responseId) {
-          continuation.resume(returning: response)
-        }
+        finishPendingResponse(id: response.responseId, result: .success(response))
         return
       }
     }
@@ -1103,45 +1089,69 @@ actor RokuWebSocketClient {
     requestId: String,
     timeout: UInt64
   ) async throws -> ECPResponseMsg {
-    try await withThrowingTaskGroup(of: ECPResponseMsg.self) { group in
-      group.addTask {
-        try await withCheckedThrowingContinuation { continuation in
-          Task {
-            await self.registerPendingResponse(id: requestId, continuation: continuation)
+    try await withCheckedThrowingContinuation { continuation in
+      Task { [weak self] in
+        guard let self else {
+          continuation.resume(throwing: ECPError.connectionFailed("Client deallocated"))
+          return
+        }
 
-            do {
-              try await self.sendWebSocketMessage(json, to: conn)
-            } catch {
-              await self.removePendingResponse(id: requestId)
-              continuation.resume(throwing: error)
-            }
+        // Register continuation before sending so we can receive the response.
+        await self.registerPendingResponse(id: requestId, continuation: continuation)
+
+        // Timeout task: best-effort (no-ops if the response already completed).
+        let t = Task { [weak self] in
+          guard let self else { return }
+          do {
+            try await Task.sleep(nanoseconds: timeout * 1_000_000_000)
+          } catch {
+            return
           }
+          await self.finishPendingResponse(id: requestId, result: .failure(ECPError.timeout))
+        }
+        await self.storePendingResponseTimeoutTask(t, for: requestId)
+
+        do {
+          try await self.sendWebSocketMessage(json, to: conn)
+        } catch {
+          await self.finishPendingResponse(id: requestId,   result: .failure(error))
         }
       }
-
-      group.addTask {
-        try await Task.sleep(nanoseconds: timeout * 1_000_000_000)
-        throw ECPError.timeout
-      }
-
-      guard let result = try await group.next() else {
-        group.cancelAll()
-        throw ECPError.connectionFailed("Internal error: no task completed")
-      }
-      group.cancelAll()
-      return result
     }
   }
 
   private func registerPendingResponse(
-    id: String, continuation: CheckedContinuation<ECPResponseMsg, Error>
+    id: String,
+    continuation: CheckedContinuation<ECPResponseMsg, Error>
   ) {
     pendingResponses[id] = continuation
   }
 
-  private func removePendingResponse(id: String) {
-    if let continuation = pendingResponses.removeValue(forKey: id) {
-      continuation.resume(throwing: ECPError.timeout)
+  private func storePendingResponseTimeoutTask(_ task: Task<Void, Never>, for id: String) {
+    pendingResponseTimeoutTasks[id] = task
+  }
+
+  private func finishPendingResponse(id: String, result: Result<ECPResponseMsg, Error>) {
+    // Cancel any outstanding timeout task.
+    if let t = pendingResponseTimeoutTasks.removeValue(forKey: id) {
+      t.cancel()
+    }
+
+    guard let continuation = pendingResponses.removeValue(forKey: id) else { return }
+    continuation.resume(with: result)
+  }
+
+  private func failAllPendingResponses(with error: Error) {
+    // Cancel timeouts first (prevents later task wakeups doing extra actor work).
+    for (_, t) in pendingResponseTimeoutTasks {
+      t.cancel()
+    }
+    pendingResponseTimeoutTasks.removeAll()
+
+    let continuations = pendingResponses.values
+    pendingResponses.removeAll()
+    for c in continuations {
+      c.resume(throwing: error)
     }
   }
 

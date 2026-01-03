@@ -1,6 +1,5 @@
 import CoreGraphics
 import Foundation
-import SwiftUI
 import UIKit
 import WatchKit
 
@@ -27,12 +26,5 @@ enum PlatformURLHandler {
 
   static func openAppSettingsFallback() {
     // no-op
-  }
-}
-
-enum PlatformSwiftUIImage {
-  static func contentsOfFile(_ path: String) -> Image? {
-    guard let uiImage = UIImage(contentsOfFile: path) else { return nil }
-    return Image(uiImage: uiImage)
   }
 }

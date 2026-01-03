@@ -64,15 +64,16 @@ final class RokuDiscoveryService {
   private let subnetProvider = SubnetScanDiscoveryProvider()
   private static let debugTestRokuTVId = "debug-test-roku-tv"
 
+  // Coalesce frequent updates (SSDP/subnet can produce bursts; saving + notifying per-device is expensive).
+  private var pendingDeviceListFlushTask: Task<Void, Never>?
+  private var deviceListDirty: Bool = false
+
   // MARK: - Cache Persistence
   private static let cacheKey = "com.rockyou.devicecache"
 
   /// Load device cache from persistent storage
   private func loadCache() {
-    DebugBuild.run {
-      // When installing via `simctl install`, cfprefsd can briefly serve stale values.
-      CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
-    }
+    DebugBuild.syncCurrentAppPreferences()
 
     guard let data = UserDefaults.standard.data(forKey: Self.cacheKey),
       let cached = try? JSONDecoder().decode([DeviceInfo].self, from: data)
@@ -103,7 +104,26 @@ final class RokuDiscoveryService {
   private func saveCache() {
     guard let data = try? JSONEncoder().encode(discoveredDevices) else { return }
     UserDefaults.standard.set(data, forKey: Self.cacheKey)
-    DebugBuild.run { UserDefaults.standard.synchronize() }
+    DebugBuild.flushUserDefaults()
+  }
+
+  private func scheduleDeviceListFlush(reason: String) {
+    _ = reason
+    deviceListDirty = true
+    pendingDeviceListFlushTask?.cancel()
+    pendingDeviceListFlushTask = Task { @MainActor in
+      // Small debounce to coalesce bursts of discoveries.
+      try? await Task.sleep(nanoseconds: 150_000_000)
+      guard !Task.isCancelled else { return }
+      flushDeviceListNow()
+    }
+  }
+
+  private func flushDeviceListNow() {
+    guard deviceListDirty else { return }
+    deviceListDirty = false
+    saveCache()
+    onDevicesChanged?(discoveredDevices)
   }
 
   /// Purge devices not seen in 72+ hours
@@ -310,14 +330,13 @@ final class RokuDiscoveryService {
           let existing = self.discoveredDevices[index]
           // Existing device - update with fresh data
           self.discoveredDevices[index] = device
-          self.saveCache()
           // Notify if IP changed (UI may need to reconnect)
           if existing.ipAddress != device.ipAddress {
             Log.info(
               "Discovery",
               "📡 \(device.name) IP changed: \(existing.ipAddress) → \(device.ipAddress)")
-            self.onDevicesChanged?(self.discoveredDevices)
           }
+          self.scheduleDeviceListFlush(reason: "update")
         } else {
           // NEW device - log it and notify
           let typeIcon = device.isTV ? "📺" : "📡"
@@ -326,8 +345,7 @@ final class RokuDiscoveryService {
             "Discovered \(typeIcon) \(device.deviceType.rawValue): \(device.name) at \(device.ipAddress)"
           )
           self.discoveredDevices.append(device)
-          self.saveCache()
-          self.onDevicesChanged?(self.discoveredDevices)
+          self.scheduleDeviceListFlush(reason: "new")
         }
       }
 
@@ -406,6 +424,9 @@ final class RokuDiscoveryService {
 
       if !Task.isCancelled {
         await awaitPendingUpdates()
+        await MainActor.run { [weak self] in
+          self?.flushDeviceListNow()
+        }
         lastRefreshTime = Date()
         let seen = snapshotSeenIds()
         let ssdpSeen = snapshotSSDPSeenIds()

@@ -85,10 +85,9 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
 
     // Subscribe to icon hash changes - proactively push to Watch
     Task { @MainActor in
-      AppCacheManager.shared.onIconHashChanged = { [weak self] appId, deviceId, data, hash in
-        Task { @MainActor in
-          guard let self = self else { return }
-          // Resize and push to Watch
+      await AppCacheStore.shared.setOnIconHashChanged { [weak self] appId, deviceId, data, hash in
+        Task { @MainActor [weak self] in
+          guard let self else { return }
           if let resized = self.resizeIconForWatch(data) {
             Log.debug("iPhone", "🔄 Proactively pushing updated icon: \(appId)")
             self.sendIconDataToWatch(appId: appId, deviceId: deviceId, data: resized, hash: hash)
@@ -401,27 +400,23 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
   /// Hash is of ORIGINAL data - computed once when fetched, never recomputed
   @MainActor
   private func getIconWithHash(appId: String, deviceId: String) async -> (Data, String)? {
-    let cache = AppCacheManager.shared
-
-    // Try cached icon first - use stored hash
-    if let iconData = cache.iconData(for: appId, deviceId: deviceId),
+    // Try cached icon first (store is the source of truth on iOS).
+    if let iconData = await AppCacheStore.shared.iconData(for: appId, deviceId: deviceId),
        let resized = resizeIconForWatch(iconData) {
-      let hash = cache.iconHash(for: appId, deviceId: deviceId)
-      // If no hash stored (legacy), compute it now
-      let finalHash = hash.isEmpty ? AppCacheManager.sha1(iconData) : hash
+      let hash = await AppCacheStore.shared.iconHash(for: appId, deviceId: deviceId)
+      let finalHash = hash.isEmpty ? SHA1.hex(iconData) : hash
       return (resized, finalHash)
     }
 
     // Fetch from Roku - AppCacheManager stores hash when saving
     if let device = RokuDiscoveryService.shared.discoveredDevices.first(where: { $0.id == deviceId }),
        let iconData = await RokuECPClient.shared.fetchAppIcon(appId: appId, device: device) {
-      // Save to cache (this computes and stores hash)
-      let app = RokuApp(id: appId, name: "", type: nil, version: nil)
-      await cache.saveIconAsync(data: iconData, for: app, deviceId: deviceId)
+      // Save to cache (computes + stores hash)
+      await AppCacheStore.shared.saveIconAsync(data: iconData, appId: appId, deviceId: deviceId)
 
       // Now resize for Watch
       if let resized = resizeIconForWatch(iconData) {
-        let hash = cache.iconHash(for: appId, deviceId: deviceId)
+        let hash = await AppCacheStore.shared.iconHash(for: appId, deviceId: deviceId)
         return (resized, hash)
       }
     }

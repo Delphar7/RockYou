@@ -1,6 +1,5 @@
-import CoreGraphics
 import Foundation
-import SwiftUI
+import CoreGraphics
 import UIKit
 
 enum PlatformDevice {
@@ -28,12 +27,5 @@ enum PlatformURLHandler {
     if let url = URL(string: UIApplication.openSettingsURLString) {
       UIApplication.shared.open(url)
     }
-  }
-}
-
-enum PlatformSwiftUIImage {
-  static func contentsOfFile(_ path: String) -> Image? {
-    guard let uiImage = UIImage(contentsOfFile: path) else { return nil }
-    return Image(uiImage: uiImage)
   }
 }

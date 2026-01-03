@@ -39,6 +39,12 @@ enum RemoteControlPlatform {
     return 0
   }
 
+  static func appStripLanesOverride(layoutMode: LayoutMode, direction: AppStripDirection) -> Int? {
+    _ = layoutMode
+    _ = direction
+    return nil
+  }
+
   static func glowAnimationForegroundEnabled(scenePhase: ScenePhase, windowIsActive: Bool) -> Bool {
     _ = windowIsActive
     return scenePhase == .active
@@ -49,4 +55,30 @@ enum RemoteControlPlatform {
   }
 
   static var windowIsActiveDefault: Bool { true }
+
+  // MARK: - Remote control layout tuning (iOS)
+
+  static func remoteControlsTargetFraction(layoutMode: LayoutMode) -> CGFloat {
+    _ = layoutMode
+    return 0.92
+  }
+
+  static var remoteTopBarEdgePadding: CGFloat { 8 }
+
+  /// iOS: use transform scaling for fit; hit-testing remains correct.
+  @ViewBuilder
+  static func fitScaledControlCluster<Content: View, K: PreferenceKey>(
+    content: (CGFloat) -> Content,
+    scaleFactor: CGFloat,
+    fitScale: CGFloat,
+    measurePreferenceKey: K.Type
+  ) -> some View where K.Value == CGSize {
+    content(scaleFactor)
+      .background(
+        GeometryReader { inner in
+          Color.clear.preference(key: measurePreferenceKey, value: inner.size)
+        }
+      )
+      .scaleEffect(fitScale, anchor: .center)
+  }
 }

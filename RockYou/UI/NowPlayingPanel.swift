@@ -10,6 +10,7 @@ import SwiftUI
 
 // MARK: - Main Panel (Landscape)
 
+@MainActor
 struct NowPlayingPanel: View {
   let deviceId: String?
 
@@ -28,6 +29,7 @@ struct NowPlayingPanel: View {
 
 // MARK: - Top Panel Component (Device Header + Now Playing)
 
+@MainActor
 struct InfoTopPanel: View {
   let deviceId: String?
 
@@ -69,6 +71,7 @@ struct InfoTopPanel: View {
 
 // MARK: - Bottom Panel Component (Device State)
 
+@MainActor
 struct InfoBottomPanel: View {
   let deviceId: String?
   @State private var macAddresses: [(label: String, value: String)] = []

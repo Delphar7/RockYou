@@ -578,7 +578,7 @@ struct DPadView: View {
   private func dpadLayer(named name: String, size: CGFloat) -> some View {
     // Prefer explicit bundle file lookup so we don't depend on Asset Catalog behavior.
     if let path = Bundle.main.path(forResource: name, ofType: "png"),
-      let image = PlatformSwiftUIImage.contentsOfFile(path)
+      let image = PlatformImage.cachedContentsOfFile(path)
     {
       return AnyView(
         image
