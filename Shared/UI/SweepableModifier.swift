@@ -42,11 +42,6 @@ extension EnvironmentValues {
 
 // MARK: - Sweepable Modifier
 
-enum SweepGestureStyle {
-  case highPriority
-  case simultaneous
-}
-
 enum SweepQuickTapPolicy {
   /// Fire `onQuickTap` for any non-completed press (current behavior).
   case anyReleaseBeforeComplete
@@ -70,8 +65,6 @@ struct SweepableModifier: ViewModifier {
   /// uses a consistent target even if the underlying list changes mid-hold.
   let onPressBegan: (() -> Void)?
   let quickTapPolicy: SweepQuickTapPolicy
-  let showTooltipOnEarlyRelease: Bool
-  let gestureStyle: SweepGestureStyle
   let onQuickTap: (() -> Void)?
   let onSweepComplete: () -> Void
 

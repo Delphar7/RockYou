@@ -46,13 +46,15 @@ import SwiftUI
           TooltipBubbleFrameReporter(manager: manager, bubbleFrameGlobal: bubbleFrameGlobal)
             .allowsHitTesting(false)
 
-          TooltipPointerTriangle(
+          TooltipBubbleShape(
             bubbleFrame: bubbleFrame,
             targetFrame: localButtonFrame,
             baseRatio: 0.20,
-            tipDistance: 1.0
+            tipDistance: 1.0,
+            baseInset: 0.75
           )
           .fill(tooltipColor)
+          .shadow(color: .black.opacity(AppOpacity.light), radius: 4, y: 2)
           .allowsHitTesting(false)
 
           Text(message)
@@ -66,9 +68,6 @@ import SwiftUI
             .frame(width: layout.textWidth)
             .padding(.horizontal, bubbleHorizontalPadding)
             .padding(.vertical, bubbleVerticalPadding)
-            .background(tooltipColor)
-            .clipShape(Capsule(style: .continuous))
-            .shadow(color: .black.opacity(AppOpacity.light), radius: 4, y: 2)
             .position(x: bubbleFrame.midX, y: bubbleFrame.midY)
             .contentShape(Capsule(style: .continuous))
             .onTapGesture { manager.dismiss() }

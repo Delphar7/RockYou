@@ -449,8 +449,6 @@ struct AppStripView: View {
               onPressBegan: {
                 capturedApp = currentApp
               },
-              showTooltipOnEarlyRelease: true,
-              gestureStyle: .simultaneous,
               onSweepComplete: {
                 let snap = capturedApp ?? currentApp
                 capturedApp = nil

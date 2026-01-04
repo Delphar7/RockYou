@@ -12,6 +12,9 @@ struct TooltipPointerTriangle: Shape {
   let targetFrame: CGRect
   let baseRatio: CGFloat
   let tipDistance: CGFloat
+  /// How far to inset the triangle base into the bubble to avoid anti-alias seams.
+  /// A small positive value makes the triangle slightly overlap the bubble.
+  let baseInset: CGFloat
 
   func path(in rect: CGRect) -> Path {
     _ = rect
@@ -20,6 +23,9 @@ struct TooltipPointerTriangle: Shape {
       x: targetFrame.midX - bubbleFrame.midX,
       y: targetFrame.midY - bubbleFrame.midY
     )
+    let dirLen = hypot(direction.x, direction.y)
+    guard dirLen > 0.0001 else { return Path() }
+    let dirUnit = CGPoint(x: direction.x / dirLen, y: direction.y / dirLen)
 
     // Find where ray crosses each frame boundary
     let (p1, edge) = findRayCrossing(
@@ -44,10 +50,12 @@ struct TooltipPointerTriangle: Shape {
       ? (bubbleFrame.minX, bubbleFrame.maxX)
       : (bubbleFrame.minY, bubbleFrame.maxY)
 
+    // Inset base slightly into the bubble so triangle and bubble overlap (eliminates seam).
+    let p1Inset = CGPoint(x: p1.x - dirUnit.x * baseInset, y: p1.y - dirUnit.y * baseInset)
     let base1 = clampedBasePoint(
-      p1, baseVector: baseVector, offset: -baseHalf, bounds: (minBound, maxBound))
+      p1Inset, baseVector: baseVector, offset: -baseHalf, bounds: (minBound, maxBound))
     let base2 = clampedBasePoint(
-      p1, baseVector: baseVector, offset: baseHalf, bounds: (minBound, maxBound))
+      p1Inset, baseVector: baseVector, offset: baseHalf, bounds: (minBound, maxBound))
 
     // Triangle tip is partway from P1 toward P2
     let tip = CGPoint(
@@ -119,5 +127,31 @@ struct TooltipPointerTriangle: Shape {
       result.y = max(bounds.0, min(bounds.1, result.y))
     }
     return result
+  }
+}
+
+/// A single, contiguous tooltip bubble shape (capsule + pointer).
+/// Drawing this as one filled shape avoids gaps/edges where the pointer meets the capsule.
+struct TooltipBubbleShape: Shape {
+  let bubbleFrame: CGRect
+  let targetFrame: CGRect
+  let baseRatio: CGFloat
+  let tipDistance: CGFloat
+  let baseInset: CGFloat
+
+  func path(in rect: CGRect) -> Path {
+    _ = rect
+    var p = Path()
+    p.addPath(Capsule(style: .continuous).path(in: bubbleFrame))
+    p.addPath(
+      TooltipPointerTriangle(
+        bubbleFrame: bubbleFrame,
+        targetFrame: targetFrame,
+        baseRatio: baseRatio,
+        tipDistance: tipDistance,
+        baseInset: baseInset
+      ).path(in: .zero)
+    )
+    return p
   }
 }

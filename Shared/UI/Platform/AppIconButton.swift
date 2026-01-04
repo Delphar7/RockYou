@@ -71,8 +71,6 @@ struct AppIconButton: View {
         overlayDelay: 0.25,
         tooltip: "Hold to launch app channel",
         debugLabel: "appId=\(appId) name='\(appName)'",
-        showTooltipOnEarlyRelease: true,
-        gestureStyle: .simultaneous,
         onSweepComplete: action
       )
     }

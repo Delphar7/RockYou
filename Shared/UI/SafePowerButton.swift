@@ -194,8 +194,25 @@ struct SafePowerButton: View {
   // MARK: - Body
 
   var body: some View {
-    // Mixed pair state: treat like "power on" (tap-only) so interaction is simple and consistent.
-    if pairState.isMixed {
+    // Mixed pair state:
+    // - Tap (quick release, before overlay): turn ON any OFF device(s) in the pair.
+    // - Hold to completion: turn OFF any ON device(s) in the pair.
+    // - Early release after overlay begins: show a tooltip explaining both actions.
+    if pairState.isMixed, let safetyDelay, safetyDelay > 0 {
+      buttonContent
+        .sweepable(
+          icon: "power",
+          color: .red,
+          delay: safetyDelay,
+          overlayDelay: 1.0 / 3.0,
+          tooltip:
+            "Tap the power button to turn on both devices, hold down to turn off both devices.",
+          quickTapPolicy: .onlyIfOverlayNotShown,
+          onQuickTap: SafePowerButtonPlatform.mixedQuickTap(pairState: pairState, onPower: onPower),
+          onSweepComplete: SafePowerButtonPlatform.mixedSweepComplete(pairState: pairState, onPower: onPower)
+        )
+    } else if pairState.isMixed {
+      // Degenerate fallback (no safety delay): behave like "power on" tap.
       let bg = backgroundColor(for: pairState.tvMode)
       SafePowerButtonPlatform.normalOffView(
         buttonContent: buttonContent,

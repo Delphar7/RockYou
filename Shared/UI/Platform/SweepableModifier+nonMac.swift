@@ -21,8 +21,6 @@ import SwiftUI
       debugLabel: String = "",
       onPressBegan: (() -> Void)? = nil,
       quickTapPolicy: SweepQuickTapPolicy = .anyReleaseBeforeComplete,
-      showTooltipOnEarlyRelease: Bool = false,
-      gestureStyle: SweepGestureStyle = .highPriority,
       onQuickTap: (() -> Void)? = nil,
       onSweepComplete: @escaping () -> Void
     ) -> some View {
@@ -39,8 +37,6 @@ import SwiftUI
           debugName: debugLabel,
           onPressBegan: onPressBegan,
           quickTapPolicy: quickTapPolicy,
-          showTooltipOnEarlyRelease: showTooltipOnEarlyRelease,
-          gestureStyle: gestureStyle,
           onQuickTap: onQuickTap,
           onSweepComplete: onSweepComplete
         ))
@@ -56,8 +52,6 @@ import SwiftUI
       debugLabel: String = "",
       onPressBegan: (() -> Void)? = nil,
       quickTapPolicy: SweepQuickTapPolicy = .anyReleaseBeforeComplete,
-      showTooltipOnEarlyRelease: Bool = false,
-      gestureStyle: SweepGestureStyle = .highPriority,
       onQuickTap: (() -> Void)? = nil,
       onSweepComplete: @escaping () -> Void
     ) -> some View {
@@ -74,8 +68,6 @@ import SwiftUI
           debugName: debugLabel,
           onPressBegan: onPressBegan,
           quickTapPolicy: quickTapPolicy,
-          showTooltipOnEarlyRelease: showTooltipOnEarlyRelease,
-          gestureStyle: gestureStyle,
           onQuickTap: onQuickTap,
           onSweepComplete: onSweepComplete
         ))
