@@ -9,6 +9,7 @@ RUNALL_LOG_ARCHIVE_DIR="$DERIVED_DATA_BASE/Logs/BuildRunall"
 RESET_SIM=0
 LINT_ONLY=0
 LAUNCH_CONSOLE=0
+NO_CONSOLE=0
 NO_LOG=0
 NO_BUILD_LOCK=0
 ALWAYS_BUILD=0
@@ -46,7 +47,7 @@ if [ "${1:-}" = "--watchexec" ]; then
     done
 
     # Compute a best-effort minimal watch set based on requested targets/commands.
-    # (We intentionally ignore flags like --16e/--16pro/--console/--ResetSim here.)
+    # (We intentionally ignore flags like --16e/--16pro/--ResetSim here.)
     wants_phone=0
     wants_watch=0
     wants_ipad=0
@@ -88,6 +89,38 @@ if [ "${1:-}" = "--watchexec" ]; then
     fi
 
     cd "$PROJECT_DIR" || exit 1
+
+    # Auto-enable simulator console streaming under watchexec, unless explicitly disabled.
+    # Motivation: `iphone.log`/`ipad.log` are far more useful when they include runtime logs.
+    #
+    # Rules:
+    # - If user already passed --console, keep it.
+    # - If user passed --no-console, do NOT inject --console.
+    should_inject_console=1
+    for arg in "$@"; do
+        case "$arg" in
+            --console) should_inject_console=0 ;;
+            --no-console|--noconsole) should_inject_console=0 ;;
+        esac
+    done
+
+    if [ "$should_inject_console" -eq 1 ]; then
+        # Insert --console before the first non-flag argument so it is actually parsed.
+        NEW_ARGS=()
+        injected=0
+        for arg in "$@"; do
+            if [ "$injected" -eq 0 ] && [[ "$arg" != --* ]]; then
+                NEW_ARGS+=("--console")
+                injected=1
+            fi
+            NEW_ARGS+=("$arg")
+        done
+        if [ "$injected" -eq 0 ]; then
+            NEW_ARGS+=("--console")
+        fi
+        set -- "${NEW_ARGS[@]}"
+    fi
+
     exec watchexec -d "5 s" "${WATCH_ARGS[@]}" -r ./BuildRunAll.sh "$@"
 fi
 
@@ -513,6 +546,11 @@ while [[ "${1:-}" == --* ]]; do
             ;;
         --console)
             LAUNCH_CONSOLE=1
+            shift
+            ;;
+        --no-console|--noconsole)
+            LAUNCH_CONSOLE=0
+            NO_CONSOLE=1
             shift
             ;;
         --archive)

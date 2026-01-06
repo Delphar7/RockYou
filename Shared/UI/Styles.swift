@@ -63,7 +63,8 @@ enum AppFontSize {
   static let caption: CGFloat = 12      // Caption text (consolidated from 12-13)
   static let body: CGFloat = 13         // Body text (consolidated from 13-14)
   static let medium: CGFloat = 16       // Medium text
-  static let large: CGFloat = 17        // Large text
+  static let large: CGFloat = 17  // Large text
+  static let veryLarge: CGFloat = 26    // Very large text
   static let iconSmall: CGFloat = 32     // Small icons
   static let iconMedium: CGFloat = 40    // Medium icons
   static let iconLarge: CGFloat = 48     // Large icons

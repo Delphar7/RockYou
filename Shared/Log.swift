@@ -34,8 +34,8 @@ public enum LogLevel: Int, Comparable {
 /// Unified logger - thread-safe, works from any context
 public enum Log {
 
-  /// Minimum level to output (set to .warn for release builds if desired)
-  public static var minimumLevel: LogLevel = DebugBuild.isEnabled ? .info : .warn
+    /// Minimum level to output (set to .warn for release builds if desired)
+    public static var minimumLevel: LogLevel = DebugBuild.isEnabled ? .debug : .warn
 
   /// Extra-noisy packet-level logging. This is intentionally opt-in and should
     /// only be enabled by editing this value in code.

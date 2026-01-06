@@ -22,9 +22,6 @@ enum RemoteControlPlatform {
   static var baseScaleFactor: CGFloat { 0.85 }
 
   /// Dynamic scaling for macOS so the remote can become a true “mini remote” in a tiny window.
-  ///
-  /// - For normal sizes, returns `baseScaleFactor`.
-  /// - As the window height shrinks, we scale down smoothly.
   static func scaleFactor(containerSize: CGSize, layoutMode: LayoutMode) -> CGFloat {
     _ = layoutMode
     // Tuned by feel: around this height, we’re at “normal”.
@@ -72,57 +69,7 @@ enum RemoteControlPlatform {
 
   static var windowIsActiveDefault: Bool { true }
 
-  // MARK: - Remote control layout tuning (macOS)
-
-  static func remoteControlsTargetFraction(layoutMode: LayoutMode) -> CGFloat {
-    // In split mode we want comfortable margins; in "mini remote" / portraitCompact
-    // we want to use more of the available space.
-    switch layoutMode {
-    case .portraitCompact:
-      return 0.95
-    default:
-      return 0.85
-    }
-  }
-
   static var remoteTopBarEdgePadding: CGFloat { 12 }
 
-  /// macOS: avoid `scaleEffect` on interactive controls.
-  ///
-  /// On macOS, scaling a subtree containing `Button`s + custom `ButtonStyle`s can produce
-  /// incorrect hit-testing (e.g. only part of the button responds) depending on window size
-  /// and update timing. Instead, apply the fit scaling by multiplying the control metrics
-  /// (`scaleFactor`) so the layout is truly resized (no transforms).
-  ///
-  /// Additionally, measure the control cluster at a fixed reference scale so the fit-scaling
-  /// doesn't "cancel out" `RemoteControlPlatform.scaleFactor` (which is intentionally driven by
-  /// window height).
-  @ViewBuilder
-  static func fitScaledControlCluster<Content: View, K: PreferenceKey>(
-    content: (CGFloat) -> Content,
-    scaleFactor: CGFloat,
-    fitScale: CGFloat,
-    measurePreferenceKey: K.Type
-  ) -> some View where K.Value == CGSize {
-    // `fitScale` is computed as `target / natural`, where `natural` is measured at `baseScaleFactor`.
-    // Convert to an absolute scale (in the same units as `scaleFactor`) before applying.
-    //
-    // Important: we do NOT multiply `scaleFactor * fitScale` here. `scaleFactor` already encodes
-    // macOS window-height-driven "mini remote" scaling; multiplying again causes over-scaling
-    // (increasing padding as the window shrinks).
-    let fitAbsoluteScale = fitScale * baseScaleFactor
-    // Prefer the largest scale that fits (avoid "extra padding" as the window shrinks).
-    // The global `scaleFactor` is still used elsewhere (e.g. AppStrip scaling), but the remote
-    // control cluster should primarily obey this local fit calculation.
-    content(fitAbsoluteScale)
-      .background(
-        content(baseScaleFactor)
-          .background(
-            GeometryReader { inner in
-              Color.clear.preference(key: measurePreferenceKey, value: inner.size)
-            }
-          )
-          .hidden()
-      )
-  }
+  static var shouldDismissSettingsBeforePresentingHelp: Bool { false }
 }

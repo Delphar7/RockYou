@@ -126,6 +126,7 @@ struct ContentView: View {
   @State private var slideDirection: SlideDirection = .forward
   @State private var lastVolumeAction: Date = .distantPast
   @State private var didApplyLaunchScreen = false
+  @State private var didLogInitialState = false
 
   enum SlideDirection {
     case forward, backward
@@ -167,6 +168,28 @@ struct ContentView: View {
     }
     .ignoresSafeArea(edges: [.top, .bottom])
     .background(Color.black)
+    .onAppear {
+      if !didLogInitialState {
+        didLogInitialState = true
+        Log.debug(
+          "WatchUI",
+          "appear reachable=\(connectivity.isPhoneReachable ? "1" : "0") devices=\(connectivity.devices.count) controllers=\(connectivity.controllers.count) selectedControllerId=\(connectivity.selectedControllerId ?? "nil") selectedDeviceId=\(connectivity.selectedDeviceId ?? "nil")"
+        )
+      }
+      applyLaunchScreenIfNeeded()
+    }
+    .onChange(of: connectivity.isPhoneReachable) { _, newValue in
+      Log.debug("WatchUI", "reachability=\(newValue ? "1" : "0")")
+    }
+    .onChange(of: connectivity.devices.count) { _, newValue in
+      Log.debug("WatchUI", "devices.count=\(newValue)")
+    }
+    .onChange(of: connectivity.controllers.count) { _, newValue in
+      Log.debug("WatchUI", "controllers.count=\(newValue)")
+    }
+    .onChange(of: connectivity.selectedControllerId) { _, newValue in
+      Log.debug("WatchUI", "selectedControllerId=\(newValue ?? "nil") selectedDeviceId=\(connectivity.selectedDeviceId ?? "nil")")
+    }
     .onOpenURL { url in
       guard let link = DeepLink(url: url) else { return }
       handleDeepLink(link)
@@ -210,9 +233,6 @@ struct ContentView: View {
     }
     .environment(\.onSwipeLeft, goToNextPage)
     .environment(\.onSwipeRight, goToPreviousPage)
-    .onAppear {
-      applyLaunchScreenIfNeeded()
-    }
     .onChange(of: connectivity.selectedDeviceId) { _, _ in
       applyLaunchScreenIfNeeded()
     }

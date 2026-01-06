@@ -65,6 +65,13 @@ struct RokuDeviceProperties: Sendable {
 actor RokuECPClient {
   static let shared = RokuECPClient()
 
+  // MARK: - Text Edit (ECP-2 keyboard)
+
+  struct TexteditState: Sendable, Equatable {
+    let texteditId: String
+    let text: String
+  }
+
   // MARK: - ECP-1 HTTP is disabled by default
   //
   // ⚠️ IMPORTANT:
@@ -120,13 +127,60 @@ actor RokuECPClient {
 
   private init() {}
 
+  // MARK: - Textedit snapshot fetcher install (for debounce/resync)
+
+  private func installTextEditSnapshotFetcherIfNeeded() async {
+    await MainActor.run {
+      RokuTextEditStateManager.shared.installSnapshotFetcherIfNeeded { deviceId in
+        await RokuECPClient.shared.fetchTexteditSnapshot(deviceId: deviceId)
+      }
+    }
+  }
+
+  /// Fetch a best-effort textedit snapshot for a device id.
+  /// Used by `RokuTextEditStateManager` when notifications omit the current text.
+  private func fetchTexteditSnapshot(deviceId: String) async -> RokuTextEditState? {
+    let device: DeviceInfo
+    if let known = devicesById[deviceId] {
+      device = known
+    } else if let discovered = await MainActor.run(body: {
+      RokuDiscoveryService.shared.discoveredDevices.first(where: { $0.id == deviceId })
+    }) {
+      device = discovered
+    } else {
+      return nil
+    }
+
+    guard await ensureConnected(to: device, primeState: false),
+          let client = webSocketClients[device.ipAddress],
+          await client.isConnected
+    else { return nil }
+
+    do {
+      guard let data = try await client.queryTexteditState(),
+            let payload = String(data: data, encoding: .utf8),
+            let parsed = Self.parseTexteditState(xml: payload)
+      else { return nil }
+
+      if parsed.texteditId.isEmpty || parsed.texteditId == "none" { return nil }
+      return RokuTextEditState(texteditId: parsed.texteditId, text: parsed.text)
+    } catch {
+      DebugBuild.run {
+        Log.debug("ECP", "query-textedit-state (snapshot) failed: \(error.localizedDescription)")
+      }
+      return nil
+    }
+  }
+
   // MARK: - Public snapshots (UI helpers)
 
   /// Perform an immediate ECP-2 snapshot of the device's active app + media state.
   /// Intended for UI to converge quickly (e.g. after connect or after we initiate a launch).
   func snapshotActiveStateNow(for device: DeviceInfo) async {
+    await installTextEditSnapshotFetcherIfNeeded()
     await queryAndSetActiveAppECP2(for: device)
     await queryAndSetMediaState(for: device, logRaw: false)
+    await queryAndSetAudioDeviceGlobalState(for: device)
   }
 
   // MARK: - Silo router public API
@@ -165,6 +219,111 @@ actor RokuECPClient {
 
       return await self.sendActionWithResult(action, to: targetDevice)
     }
+  }
+
+  /// Send a raw ECP key name through the per-silo router.
+  /// Use this for non-`RemoteAction` keys such as:
+  /// - `Backspace`
+  /// - `Enter`
+  /// - `Lit_a` / `Lit_%20` (typed characters)
+  func sendKeypressInSilo(
+    _ key: String,
+    siloId: String,
+    requiredDevices: [DeviceInfo],
+    targetDevice: DeviceInfo
+  ) async -> KeypressResult {
+    // Keep ordering consistent with other button presses.
+    cancelWakeWaitIfNeeded(siloId: siloId)
+
+    return await enqueueSilo(siloId) { [weak self] in
+      guard let self else { return .failed }
+      let _ = requiredDevices  // Reserved for future wake gating if needed.
+      return await self.sendKeypressWithResult(key, to: targetDevice)
+    }
+  }
+
+  /// Query the currently active text edit state (if any) via ECP-2.
+  func queryTexteditState(for device: DeviceInfo) async -> TexteditState? {
+    await installTextEditSnapshotFetcherIfNeeded()
+    guard await ensureConnected(to: device, primeState: false),
+          let client = webSocketClients[device.ipAddress],
+          await client.isConnected
+    else { return nil }
+
+    do {
+      guard let data = try await client.queryTexteditState(),
+            let xml = String(data: data, encoding: .utf8)
+      else { return nil }
+      let parsed = Self.parseTexteditState(xml: xml)
+      if let parsed, parsed.texteditId.isEmpty || parsed.texteditId == "none" {
+        await MainActor.run { RokuTextEditStateManager.shared.noteRemoteUpdate(nil, for: device.id) }
+        return nil
+      }
+      if let parsed {
+        await MainActor.run {
+          RokuTextEditStateManager.shared.noteRemoteUpdate(
+            RokuTextEditState(texteditId: parsed.texteditId, text: parsed.text),
+            for: device.id
+          )
+        }
+      }
+      return parsed
+    } catch {
+      DebugBuild.run { Log.debug("ECP", "query-textedit-state failed: \(error.localizedDescription)") }
+      return nil
+    }
+  }
+
+  /// Set the full text for the active text edit field via ECP-2.
+  func setTexteditText(texteditId: String, text: String, for device: DeviceInfo) async -> Bool {
+    if texteditId.isEmpty || texteditId == "none" { return false }
+    guard await ensureConnected(to: device, primeState: false),
+          let client = webSocketClients[device.ipAddress],
+          await client.isConnected
+    else { return false }
+
+    do {
+      try await client.setTexteditText(texteditId: texteditId, text: text)
+      return true
+    } catch {
+      DebugBuild.run { Log.debug("ECP", "set-textedit-text failed: \(error.localizedDescription)") }
+      return false
+    }
+  }
+
+  private static func parseTexteditState(xml: String) -> TexteditState? {
+    // Best-effort XML scraping (Roku returns a small XML blob).
+    // We intentionally keep this loose to tolerate firmware differences.
+    func firstMatch(_ pattern: String) -> String? {
+      guard let r = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+        return nil
+      }
+      let ns = xml as NSString
+      guard let m = r.firstMatch(in: xml, range: NSRange(location: 0, length: ns.length)),
+            m.numberOfRanges >= 2
+      else { return nil }
+      return ns.substring(with: m.range(at: 1))
+    }
+
+    // Common forms observed/expected:
+    // - <textedit id="XYZ">...</textedit>
+    // - <textedit-state textedit-id="XYZ">...</textedit-state>
+    // - {"textedit-state":{"textedit-id":"XYZ"}}   (observed on some firmware)
+    let id =
+      firstMatch(#"<textedit\b[^>]*\bid="([^"]+)""#)
+      ?? firstMatch(#"textedit-id="([^"]+)""#)
+      ?? firstMatch(#"param-textedit-id":"([^"]+)""#)
+      ?? firstMatch(#""textedit-id"\s*:\s*"([^"]+)""#)
+
+    guard let texteditId = id, !texteditId.isEmpty else { return nil }
+
+    let text =
+      firstMatch(#"<text\b[^>]*>([^<]*)</text>"#)
+      ?? firstMatch(#"<value\b[^>]*>([^<]*)</value>"#)
+      ?? firstMatch(#""text"\s*:\s*"([^"]*)""#)
+      ?? ""
+
+    return TexteditState(texteditId: texteditId, text: text)
   }
 
   /// Launch an app through the per-silo router.
@@ -535,6 +694,7 @@ actor RokuECPClient {
 
   /// Ensure WebSocket is connected (for persistent connection/event monitoring)
   func ensureConnected(to device: DeviceInfo, primeState: Bool = false) async -> Bool {
+    await installTextEditSnapshotFetcherIfNeeded()
     devicesById[device.id] = device
 
     // Always ensure notifications are routed with the current device ID.
@@ -555,6 +715,7 @@ actor RokuECPClient {
       await queryAndSetPowerMode(for: device)
       await queryAndSetActiveApp(for: device)
       await queryAndSetMediaState(for: device)
+      await queryAndSetAudioDeviceGlobalState(for: device)
     }
 
     return true
@@ -574,6 +735,8 @@ actor RokuECPClient {
     let task = Task<Bool, Never> { [device] in
       let ip = device.ipAddress
       let deviceId = device.id
+
+      await self.installTextEditSnapshotFetcherIfNeeded()
 
       // Re-check in case another caller connected first.
       if let existing = self.webSocketClients[ip], await existing.isConnected {
@@ -603,6 +766,7 @@ actor RokuECPClient {
         await self.queryAndSetPowerMode(for: device)
         await self.queryAndSetActiveApp(for: device)
         await self.queryAndSetMediaState(for: device)
+        await self.queryAndSetAudioDeviceGlobalState(for: device)
         return true
       } catch {
         Log.warn(
@@ -618,6 +782,31 @@ actor RokuECPClient {
     let ok = await task.value
     connectTasksByIP[ip] = nil
     return ok
+  }
+
+  // MARK: - Audio Device (ECP-2 query-audio-device)
+
+  /// Query and apply the device's global volume/mute state.
+  /// This is the only reliable way to get initial volume without waiting for a `volume-changed` event.
+  private func queryAndSetAudioDeviceGlobalState(for device: DeviceInfo) async {
+    let deviceId = device.id
+    devicesById[deviceId] = device
+
+    guard let client = webSocketClients[device.ipAddress], await client.isConnected else { return }
+
+    do {
+      guard let data = try await client.queryAudioDevice() else { return }
+      let audio = try RokuAudioDeviceParser.parse(data)
+
+      guard let volume = audio.global.volume, let muted = audio.global.muted else { return }
+      await MainActor.run {
+        DeviceStateManager.shared.setVolume(volume, muted: muted, for: deviceId)
+      }
+    } catch {
+      DebugBuild.run {
+        Log.debug("ECP", "query-audio-device failed for \(device.name): \(error.localizedDescription)")
+      }
+    }
   }
 
   /// Handle a WebSocket notification and update device state
@@ -676,6 +865,10 @@ actor RokuECPClient {
         }
       }
       shouldNoisyLog = true
+    case .texteditOpened(let s), .texteditChanged(let s), .texteditStateChanged(let s):
+      RokuTextEditStateManager.shared.noteRemoteUpdate(s, for: deviceId)
+    case .texteditClosed:
+      RokuTextEditStateManager.shared.noteRemoteUpdate(nil, for: deviceId)
     case .other(let type, let params):
       Log.info(
         "ECP", "🔍 Unhandled notification type '\(type)' for device \(deviceId), params: \(params)")

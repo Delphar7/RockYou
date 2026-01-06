@@ -32,8 +32,6 @@ struct LiveBadgeView: View {
           .padding(.horizontal, 4)
       }
     }
-    // Nudge the badge up slightly (requested)
-    .offset(y: -1)
     .accessibilityLabel(isBlocked ? "Live (blocked)" : "Live")
   }
 }

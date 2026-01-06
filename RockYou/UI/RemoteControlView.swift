@@ -10,12 +10,23 @@ import SwiftUI
 
 @MainActor
 struct RemoteControlView: View {
+  private static let docsURL: URL = {
+    guard let url = URL(string: "https://jtr.sh/RockYou/docs/") else {
+      preconditionFailure("Invalid docs URL")
+    }
+    return url
+  }()
+
   @State private var settings = AppSettings.shared
   let onAction: (RemoteAction) -> Void
   let windowIsActive: Bool
 
   @State private var showingConfigure = false
   @State private var showingTVSelector = false
+  @State private var showingHelp = false
+  @State private var showingKeyboard = false
+  @State private var keyboardWasAutoPresented = false
+  @State private var keyboardSuppressedWhileTextEditActive = false
   @FocusState private var isFocused: Bool
   @State private var containerSize: CGSize = .zero
 
@@ -44,10 +55,11 @@ struct RemoteControlView: View {
 
   var body: some View {
     GeometryReader { geometry in
+      let textEditStatus = RokuTextEditStateManager.shared.status(for: selection.selectedDeviceId)
       ZStack(alignment: .top) {
         // Main layout based on unified layout mode
         mainLayout(in: geometry)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         // Sweep overlays (tooltip + sweep animation)
         TooltipOverlayView()
@@ -59,6 +71,7 @@ struct RemoteControlView: View {
             TVSelectorDropdown(
               isShowing: $showingTVSelector,
               isPresentingConfigure: $showingConfigure,
+              isPresentingHelp: $showingHelp,
               barBounds: barBounds
             )
           }
@@ -68,6 +81,41 @@ struct RemoteControlView: View {
         containerSize = geometry.size
         Task { await updateActiveStatePollingEnablement() }
       }
+      .onChange(of: textEditStatus.isActive) { _, isActive in
+        // Parity with Roam: if Roku reports an active text field, auto-present keyboard entry.
+        // If the field closes, auto-dismiss only if it was auto-presented.
+        if isActive {
+          if !showingKeyboard {
+            if !keyboardSuppressedWhileTextEditActive {
+              keyboardWasAutoPresented = true
+              showingKeyboard = true
+              Log.debug("Keyboard", "Auto-present keyboard (textedit active)")
+            }
+          }
+        } else {
+          keyboardSuppressedWhileTextEditActive = false
+          if keyboardWasAutoPresented {
+            keyboardWasAutoPresented = false
+            showingKeyboard = false
+            Log.debug("Keyboard", "Auto-dismiss keyboard (textedit inactive)")
+          }
+        }
+      }
+      .onChange(of: showingKeyboard) { _, isShowing in
+        // If the user hides the keyboard UI while the text field is still active on Roku,
+        // do not immediately re-open it. Keep it suppressed until the text field goes inactive.
+        if !isShowing, textEditStatus.isActive {
+          keyboardSuppressedWhileTextEditActive = true
+          keyboardWasAutoPresented = false
+          Log.debug("Keyboard", "User dismissed keyboard while textedit active (suppressing auto-present)")
+        }
+        if isShowing {
+          keyboardSuppressedWhileTextEditActive = false
+        }
+      }
+      // Intentionally do not force focus changes here; iOS software keyboard visibility
+      // is primarily controlled by (a) first-responder focus and (b) the simulator
+      // "Connect Hardware Keyboard" setting. Forcing focus here can make debugging harder.
       .onChange(of: scenePhase) { _, newValue in
         Task { await updateActiveStatePollingEnablement(phase: newValue) }
       }
@@ -77,9 +125,6 @@ struct RemoteControlView: View {
       .onChange(of: geometry.size) { _, newSize in
         containerSize = newSize
       }
-    }
-    .safeAreaInset(edge: .bottom, spacing: 0) {
-      bottomAppStripContent()
     }
     // Foreground gating for AppIconWithLabel glow animations
     .environment(\.glowAnimationForegroundEnabled, glowAnimationForegroundEnabled)
@@ -98,6 +143,10 @@ struct RemoteControlView: View {
           .inspectorColumnWidth(min: 280, ideal: 320, max: 380)
       }
     )
+    .platformHelpPresentation(isPresented: $showingHelp, url: Self.docsURL)
+    .sheet(isPresented: $showingKeyboard) {
+      RemoteKeyboardEntryView(target: keyboardTarget())
+    }
     .task(id: selection.selectedDeviceIP) {
       // Connect to selected device to get state updates
       await connectToSelectedDevice()
@@ -117,6 +166,55 @@ struct RemoteControlView: View {
     }
   }
 
+  private func keyboardTapped() {
+    keyboardWasAutoPresented = false
+    if showingKeyboard {
+      showingKeyboard = false
+    } else {
+      keyboardSuppressedWhileTextEditActive = false
+      showingKeyboard = true
+    }
+  }
+
+  struct KeyboardTarget: Sendable {
+    let siloId: String
+    let requiredDevices: [DeviceInfo]
+    let targetDevice: DeviceInfo
+  }
+
+  private func keyboardTarget() -> KeyboardTarget? {
+    let pairingStore = PairingStore.shared
+    let discovery = RokuDiscoveryService.shared
+
+    if let selection = pairingStore.currentSelection {
+      switch selection {
+      case .tv(let tvId):
+        guard let target = self.selection.selectedDevice else { return nil }
+        var required: [DeviceInfo] = []
+        if let tv = discovery.tvs.first(where: { $0.id == tvId }) { required.append(tv) }
+        if let streamerId = pairingStore.streamerIdForTV(tvId),
+           let streamer = discovery.streamingDevices.first(where: { $0.id == streamerId }) {
+          required.append(streamer)
+        }
+        return KeyboardTarget(siloId: tvId, requiredDevices: required, targetDevice: target)
+      case .streamer(let streamerId):
+        guard let device = discovery.streamingDevices.first(where: { $0.id == streamerId }) else { return nil }
+        return KeyboardTarget(siloId: streamerId, requiredDevices: [device], targetDevice: device)
+      }
+    }
+
+    // Legacy fallback: selected TV id
+    guard let tvId = pairingStore.currentTVId else { return nil }
+    guard let target = self.selection.selectedDevice else { return nil }
+    var required: [DeviceInfo] = []
+    if let tv = discovery.tvs.first(where: { $0.id == tvId }) { required.append(tv) }
+    if let streamerId = pairingStore.streamerIdForTV(tvId),
+       let streamer = discovery.streamingDevices.first(where: { $0.id == streamerId }) {
+      required.append(streamer)
+    }
+    return KeyboardTarget(siloId: tvId, requiredDevices: required, targetDevice: target)
+  }
+
   @ViewBuilder
   private func mainLayout(in geometry: GeometryProxy) -> some View {
     VStack(spacing: 0) {
@@ -130,6 +228,8 @@ struct RemoteControlView: View {
           showingConfigure: $showingConfigure,
           showingTVSelector: $showingTVSelector,
           onAction: onAction,
+          onKeyboard: keyboardTapped,
+          isKeyboardShown: showingKeyboard,
           onLaunchApp: { app in launchApp(app) },
           hardwareControlsAvailable: selection.hardwareControlsAvailable
         )
@@ -141,13 +241,36 @@ struct RemoteControlView: View {
           showingConfigure: $showingConfigure,
           showingTVSelector: $showingTVSelector,
           onAction: onAction,
+          onKeyboard: keyboardTapped,
+          isKeyboardShown: showingKeyboard,
           onLaunchApp: { app in launchApp(app) },
           hardwareControlsAvailable: selection.hardwareControlsAvailable
         )
       case .landscapeSplit:
-        splitLayoutView(deviceId: selection.selectedDeviceId)
+        VStack(spacing: 0) {
+          splitLayoutView(deviceId: selection.selectedDeviceId)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+          bottomAppStripContent()
+        }
       case .portraitCompact:
-        compactLayoutView()
+        let shouldRenderBottomTicker = true
+        RemotePortraitCompactLayoutView(
+          containerSize: geometry.size,
+          renderBottomTicker: shouldRenderBottomTicker,
+          selectedTVName: selection.selectedTVName,
+          selectedStreamerName: selection.selectedStreamerName,
+          selectedDeviceId: selection.selectedDeviceId,
+          hardwareControlsAvailable: selection.hardwareControlsAvailable,
+          showingConfigure: $showingConfigure,
+          showingTVSelector: $showingTVSelector,
+          isKeyboardShown: showingKeyboard,
+          onKeyboard: keyboardTapped,
+          phonePowerDelay: settings.phonePowerDelay,
+          phoneHomeDelay: settings.phoneHomeDelay,
+          appLaunchDelay: settings.phoneAppLaunchDelay,
+          onAction: onAction,
+          onLaunchApp: { app in launchApp(app) }
+        )
       }
     }
   }
@@ -156,7 +279,7 @@ struct RemoteControlView: View {
   private func bottomAppStripContent() -> some View {
     if let deviceId = selection.selectedDeviceId {
       let config = AppStripConfig.config(for: layoutMode)
-      if config.isVisible && config.position == .bottom {
+      if config.isVisible {
         let stripScale =
           RemoteControlPlatform.appStripScaleFactor(
             containerSize: containerSize, layoutMode: layoutMode)
@@ -164,10 +287,6 @@ struct RemoteControlView: View {
         let horizontalInset = RemoteControlPlatform.appStripHorizontalInset(layoutMode: layoutMode)
 
         VStack(spacing: 0) {
-          if layoutMode == .portraitCompact && config.direction == .horizontal {
-            NowPlayingProgressHeaderView(deviceId: deviceId)
-              .padding(.bottom, 2)  // keep a tiny separation from the strip
-          }
           AppStripView(
             deviceId: deviceId,
             direction: config.direction,
@@ -194,8 +313,26 @@ struct RemoteControlView: View {
   @ViewBuilder
   private func splitLayoutView(deviceId: String?) -> some View {
     HStack(spacing: 0) {
-      remoteControlsSection
-        .frame(maxWidth: .infinity)
+      // Use the experiment renderer for the left pane too (no toggle).
+      // Bottom ticker remains owned by `RemoteControlView` so it spans both panes.
+      RemotePortraitCompactLayoutView(
+        containerSize: containerSize,
+        renderBottomTicker: false,
+        selectedTVName: selection.selectedTVName,
+        selectedStreamerName: selection.selectedStreamerName,
+        selectedDeviceId: selection.selectedDeviceId,
+        hardwareControlsAvailable: selection.hardwareControlsAvailable,
+        showingConfigure: $showingConfigure,
+        showingTVSelector: $showingTVSelector,
+        isKeyboardShown: showingKeyboard,
+        onKeyboard: keyboardTapped,
+        phonePowerDelay: settings.phonePowerDelay,
+        phoneHomeDelay: settings.phoneHomeDelay,
+        appLaunchDelay: settings.phoneAppLaunchDelay,
+        onAction: onAction,
+        onLaunchApp: { app in launchApp(app) }
+      )
+      .frame(maxWidth: .infinity)
 
       Divider()
         .background(Color.white.opacity(0.1))
@@ -205,30 +342,8 @@ struct RemoteControlView: View {
     }
   }
 
-  /// Compact layout: Just remote controls
-  /// Used by: iPhone portrait, Mac thin window
-  @ViewBuilder
-  private func compactLayoutView() -> some View {
-    remoteControlsSection
-  }
-
-  // MARK: - Remote Controls Section
-
-  private var remoteControlsSection: some View {
-    RemoteControlsSectionView(
-      scaleFactor: scaleFactor,
-      layoutMode: layoutMode,
-      selectedTVName: selection.selectedTVName,
-      selectedStreamerName: selection.selectedStreamerName,
-      selectedDeviceId: selection.selectedDeviceId,
-      hardwareControlsAvailable: selection.hardwareControlsAvailable,
-      showingConfigure: $showingConfigure,
-      showingTVSelector: $showingTVSelector,
-      phonePowerDelay: settings.phonePowerDelay,
-      phoneHomeDelay: settings.phoneHomeDelay,
-      onAction: onAction
-    )
-  }
+  // (Old `RemoteControlsSectionView` compact renderer removed; the portrait layout is now
+  // implemented by `RemotePortraitCompactLayoutView`.)
 
   // MARK: - Device Connection
 

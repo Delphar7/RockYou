@@ -16,6 +16,10 @@ enum RokuNotification: Sendable {
   case volumeChanged(Int, muted: Bool)
   case mediaPlayerStateChanged(
     String, appId: String?, position: Int?, duration: Int?, title: String?)
+  case texteditOpened(RokuTextEditState)
+  case texteditChanged(RokuTextEditState)
+  case texteditStateChanged(RokuTextEditState)
+  case texteditClosed
   case other(String, [String: String])
 }
 
@@ -102,6 +106,14 @@ actor RokuWebSocketClient {
     "+volume-changed",
     "+media-player-state-changed",
   ].joined(separator: ",")
+
+  /// Best-effort keyboard/textedit event subscriptions.
+  /// These are sent separately so unknown event names won't risk breaking core subscriptions.
+  private static let keyboardEventSubscriptions = [
+    "+textedit-changed",
+    "+textedit-opened",
+    "+textedit-closed",
+  ]
 
   // MARK: - Properties
 
@@ -223,6 +235,7 @@ actor RokuWebSocketClient {
     // Subscribe to events
     state = .subscribing
     try await subscribeToEvents()
+    await subscribeToKeyboardEventsBestEffort()
 
     state = .connected
     Log.info("RokuWS", "✅ Connected to \(deviceName) at \(deviceIP)")
@@ -326,6 +339,34 @@ actor RokuWebSocketClient {
       "RokuWS",
       "✅ Event subscription acknowledged: status=\(response.status), events=\(Self.eventSubscriptions)"
     )
+  }
+
+  private func subscribeToKeyboardEventsBestEffort() async {
+    guard let conn = connection else { return }
+    for eventName in Self.keyboardEventSubscriptions {
+      let requestId = String(requestCounter)
+      requestCounter += 1
+      let subscribeJSON = """
+        {"request":"request-events","request-id":"\(requestId)","param-events":"\(eventName)"}
+        """
+      do {
+        let response = try await sendRequestWithTimeout(
+          subscribeJSON, to: conn, requestId: requestId, timeout: 5)
+        guard response.status == "200" || response.status == "202" else {
+          Log.debug(
+            "RokuWS",
+            "Keyboard event subscription rejected: event=\(eventName) status=\(response.status)"
+          )
+          continue
+        }
+        Log.debug("RokuWS", "Keyboard event subscription ok: \(eventName) status=\(response.status)")
+      } catch {
+        Log.debug(
+          "RokuWS",
+          "Keyboard event subscription failed: event=\(eventName) error=\(error.localizedDescription)"
+        )
+      }
+    }
   }
 
   // MARK: - WebSocket I/O
@@ -545,13 +586,82 @@ actor RokuWebSocketClient {
       return .mediaPlayerStateChanged(
         state ?? "unknown", appId: appId, position: position, duration: duration, title: title)
 
+    case "textedit-opened", "textedit-changed", "textedit-state-changed":
+      // Prefer real JSON parsing for textedit payloads (text can include arbitrary characters).
+      guard let state = Self.parseTexteditState(from: data) else { return nil }
+      switch notifyType {
+      case "textedit-opened":
+        return .texteditOpened(state)
+      case "textedit-state-changed":
+        return .texteditStateChanged(state)
+      default:
+        return .texteditChanged(state)
+      }
+
+    case "textedit-closed":
+      return .texteditClosed
+
     default:
       // Log unknown notification types with full JSON for analysis
       Log.info("RokuWS", "🔍 Unknown notification type '\(notifyType)': \(json)")
-      return .other(notifyType, [:])
+      return .other(notifyType, Self.extractParams(from: json))
     }
 
     return nil
+  }
+
+  private static func parseTexteditState(from data: Data) -> RokuTextEditState? {
+    guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return nil
+    }
+
+    // Some firmware wraps state in "textedit-state": {...} (e.g. query-textedit-state response).
+    let source: [String: Any]
+    if let wrapped = obj["textedit-state"] as? [String: Any] {
+      source = wrapped
+    } else {
+      source = obj
+    }
+
+    func str(_ key: String) -> String? {
+      if let s = source[key] as? String { return s }
+      if let s = obj[key] as? String { return s }
+      return nil
+    }
+
+    let id =
+      str("textedit-id")
+      ?? str("param-textedit-id")
+      ?? str("texteditId")
+      ?? str("param-texteditId")
+      ?? "none"
+
+    return RokuTextEditState(
+      texteditId: id,
+      text: str("text") ?? str("param-text"),
+      masked: str("masked") ?? str("param-masked"),
+      maxLength: str("max-length") ?? str("param-max-length"),
+      selectionStart: str("selection-start") ?? str("param-selection-start"),
+      selectionEnd: str("selection-end") ?? str("param-selection-end"),
+      textEditType: str("textedit-type") ?? str("param-textedit-type")
+    )
+  }
+
+  private static func extractParams(from json: String) -> [String: String] {
+    // Best-effort extraction of "param-*" fields.
+    // Example: "param-textedit-id":"123", "param-foo":"bar"
+    guard let r = try? NSRegularExpression(pattern: #""(param-[^"]+)":"([^"]*)""#, options: [])
+    else { return [:] }
+
+    let ns = json as NSString
+    let matches = r.matches(in: json, range: NSRange(location: 0, length: ns.length))
+    var out: [String: String] = [:]
+    for m in matches where m.numberOfRanges == 3 {
+      let k = ns.substring(with: m.range(at: 1))
+      let v = ns.substring(with: m.range(at: 2))
+      out[k] = v
+    }
+    return out
   }
 
   // MARK: - Commands

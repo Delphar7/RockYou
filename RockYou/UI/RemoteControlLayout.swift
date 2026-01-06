@@ -27,13 +27,6 @@ struct AppStripConfig {
   let sizing: AppStripSizing?
   let showLabels: Bool
   let padding: EdgeInsets
-  let position: AppStripPosition
-
-  enum AppStripPosition {
-    case bottom  // Full width at bottom
-    case right  // Full height on right side
-    case embedded  // Embedded in LandscapeiPhoneView
-  }
 
   static func config(for mode: LayoutMode) -> AppStripConfig {
     switch mode {
@@ -45,8 +38,7 @@ struct AppStripConfig {
         sizing: .fixed(width: 96),
         // iPhone portrait: labels off by default; wide Roku icons render their labels inside the tile.
         showLabels: false,
-        padding: EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0),
-        position: .bottom
+        padding: EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
       )
 
     case .landscapeSplit:
@@ -56,20 +48,18 @@ struct AppStripConfig {
         lanes: 1,
         sizing: .fixed(width: 96),
         showLabels: true,
-        padding: EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0),
-        position: .bottom
+        padding: EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0)
       )
 
     case .landscapeCompact:
       return AppStripConfig(
         isVisible: true,
         direction: .vertical,
-        lanes: 2,
-        sizing: .fixed(width: 72),
-        // Vertical strips can default to labels on.
-        showLabels: true,
-        padding: EdgeInsets(),
-        position: .embedded
+        lanes: 1,
+        sizing: .fixed(width: 96),
+        // Landscape compact: prioritize remote space; labels off by default.
+        showLabels: false,
+        padding: EdgeInsets()
       )
 
     case .portraitExpanded:
@@ -80,8 +70,7 @@ struct AppStripConfig {
         sizing: .fixed(width: 96),
         // Vertical strips can default to labels on.
         showLabels: true,
-        padding: EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16),
-        position: .right
+        padding: EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
       )
     }
   }

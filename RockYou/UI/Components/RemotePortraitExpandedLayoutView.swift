@@ -8,6 +8,8 @@ struct RemotePortraitExpandedLayoutView: View {
   @Binding var showingConfigure: Bool
   @Binding var showingTVSelector: Bool
   let onAction: (RemoteAction) -> Void
+  let onKeyboard: () -> Void
+  let isKeyboardShown: Bool
   let onLaunchApp: (RokuApp) -> Void
   let hardwareControlsAvailable: Bool
 
@@ -23,15 +25,14 @@ struct RemotePortraitExpandedLayoutView: View {
 
         LandscapeiPhoneView(
           onAction: onAction,
+          onKeyboard: onKeyboard,
+          isKeyboardShown: isKeyboardShown,
           showingConfigure: $showingConfigure,
           showingTVSelector: $showingTVSelector,
-          deviceId: selectedDeviceId,
-          onLaunchApp: onLaunchApp,
           selectedTVName: selectedTVName,
           selectedStreamerName: selectedStreamerName,
           selectedDeviceId: selectedDeviceId,
-          hardwareControlsAvailable: hardwareControlsAvailable,
-          showAppStrip: false
+          hardwareControlsAvailable: hardwareControlsAvailable
         )
         .frame(height: fullHeight / 3)
 
@@ -48,20 +49,12 @@ struct RemotePortraitExpandedLayoutView: View {
       Divider()
         .background(Color.white.opacity(0.1))
 
-      if let deviceId = selectedDeviceId {
-        let config = AppStripConfig.config(for: .portraitExpanded)
-        AppStripView(
-          deviceId: deviceId,
-          direction: config.direction,
-          lanes: config.lanes,
-          sizing: config.sizing,
-          showLabels: config.showLabels,
-          appLaunchDelay: AppSettings.shared.phoneAppLaunchDelay,
-          onLaunch: onLaunchApp
-        )
-        .frame(maxHeight: .infinity)
-        .padding(config.padding)
-      }
+      AppStripPaneView(
+        mode: .portraitExpanded,
+        deviceId: selectedDeviceId,
+        appLaunchDelay: AppSettings.shared.phoneAppLaunchDelay,
+        onLaunchApp: onLaunchApp
+      )
     }
   }
 }

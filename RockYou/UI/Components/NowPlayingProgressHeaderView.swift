@@ -28,8 +28,8 @@ struct NowPlayingProgressView: View {
     let barHeight: CGFloat = (style == .compactHeader) ? 3 : 4
     let horizontalPadding: CGFloat = (style == .compactHeader) ? 6 : 0
     let reserveTopLineSpace: Bool = (style == .compactHeader)
-    let topLineOffsetY: CGFloat = (style == .compactHeader) ? -2 : 0
-    let barOffsetY: CGFloat = (style == .compactHeader) ? 1 : 0
+    // Spacing between the top line (LIVE / remaining) and the progress bar.
+    let topToBarSpacing: CGFloat = (style == .compactHeader) ? 2 : 0
 
     let topLineShouldShow: Bool = showTimestamps ? hasProgress : (isLive || hasProgress)
     let centerFont: Font =
@@ -39,7 +39,7 @@ struct NowPlayingProgressView: View {
     let centerColor: Color =
       showTimestamps ? .white.opacity(AppOpacity.primary) : .white
 
-    VStack(spacing: 0) {
+    VStack(spacing: topToBarSpacing) {
       // Adornments (above the line): optional timestamps (full panel), plus center content.
       HStack {
         if showTimestamps,
@@ -85,7 +85,6 @@ struct NowPlayingProgressView: View {
       // Now it lives above the bar, so we use padding(.bottom, 4).
       .padding(.bottom, showTimestamps ? 4 : 0)
       .opacity(topLineShouldShow ? 1 : 0)
-      .offset(y: topLineOffsetY)
 
       // Progress bar (track + fill)
       Group {
@@ -118,7 +117,6 @@ struct NowPlayingProgressView: View {
       }
       .frame(height: barHeight)
       .opacity(hasProgress ? 1 : 0)
-      .offset(y: barOffsetY)
     }
     .frame(maxWidth: .infinity)
     .padding(.horizontal, horizontalPadding)

@@ -68,7 +68,10 @@ struct TVSelectorBar: View {
 struct TVSelectorDropdown: View {
   @Binding var isShowing: Bool
   @Binding var isPresentingConfigure: Bool
+  @Binding var isPresentingHelp: Bool
   let barBounds: Anchor<CGRect>
+
+  private static let helpMaterialSeed: UInt64 = 0xC0FFEE
 
   private var pairingStore: PairingStore { PairingStore.shared }
   private var discovery: RokuDiscoveryService { RokuDiscoveryService.shared }
@@ -123,27 +126,51 @@ struct TVSelectorDropdown: View {
             Divider()
               .background(Color.white.opacity(AppOpacity.light))
 
-            Button {
-              withAnimation(.easeInOut(duration: 0.2)) {
-                isShowing = false
+            // Bottom row: Configure (primary) + Help (aux).
+            HStack(spacing: 10) {
+              Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                  isShowing = false
+                }
+                // Present Settings (which contains ConfigureTVsView).
+                isPresentingConfigure = true
+              } label: {
+                HStack(spacing: 10) {
+                  Image(systemName: "gearshape.fill")
+                    .font(.system(size: AppFontSize.body, weight: .semibold))
+                    .foregroundStyle(.white.opacity(AppOpacity.twoThirds))
+                  Text("Configure Roku/TV Pairs…")
+                    .font(.system(size: AppFontSize.body, weight: .medium))
+                    .foregroundStyle(.white)
+                  Spacer()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
               }
-              // Present Settings (which contains ConfigureTVsView).
-              isPresentingConfigure = true
-            } label: {
-              HStack(spacing: 10) {
-                Image(systemName: "gearshape.fill")
-                  .font(.system(size: AppFontSize.body, weight: .semibold))
-                  .foregroundStyle(.white.opacity(AppOpacity.twoThirds))
-                Text("Configure Roku/TV Pairs…")
-                  .font(.system(size: AppFontSize.body, weight: .medium))
+              .buttonStyle(.plain)
+
+              Button {
+                // Keep the dropdown visible while presenting Help so the presentation
+                // isn't cancelled by removing this view from the hierarchy.
+                isPresentingHelp = true
+              } label: {
+                Image(systemName: "questionmark")
+                  .font(.system(size: AppFontSize.medium, weight: .semibold))
                   .foregroundStyle(.white)
-                Spacer()
+                  // Visually a capsule (not a big circle), but keep a solid tap target.
+                  .frame(width: 54, height: 28)
               }
-              .padding(.horizontal, 12)
-              .padding(.vertical, 10)
+              .buttonStyle(
+                MaterialButtonEffect.CapsuleStyle(
+                  baseColor: rokuPurple, seed: Self.helpMaterialSeed)
+              )
+              .frame(minWidth: 44, minHeight: 42)
               .contentShape(Rectangle())
+              // Nudge the whole capsule up slightly (material effect reads bottom-heavy otherwise).
+              .offset(y: -1.5)
+              .accessibilityLabel("Help")
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
           }
           .frame(width: dropdownWidth)
           .background(Color(white: 0.15))

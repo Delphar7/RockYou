@@ -3,9 +3,13 @@ import SwiftUI
 struct RemoteDPadClusterView: View {
   let scaleFactor: CGFloat
   let onAction: (RemoteAction) -> Void
+  /// Base (unscaled) spacing between the top key row (options/replay) and the DPad.
+  /// Keeping this configurable allows experiment layouts to nudge the DPad without changing
+  /// the DPad geometry itself.
+  var topRowToDPadSpacing: CGFloat = 8
 
   var body: some View {
-    VStack(spacing: 8 * scaleFactor) {
+    VStack(spacing: topRowToDPadSpacing * scaleFactor) {
       HStack(spacing: RemoteCoreButtonMetrics.topKeyHorizontalPadding * scaleFactor) {
         TopKeyButton(
           systemName: "asterisk",

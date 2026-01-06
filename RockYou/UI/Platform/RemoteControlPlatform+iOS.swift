@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum RemoteControlPlatform {
+
   static func layoutMode(containerSize: CGSize, horizontalSizeClass: UserInterfaceSizeClass?) -> LayoutMode {
     let isiPad = horizontalSizeClass == .regular
     let isPortrait = containerSize.height > containerSize.width
@@ -56,29 +57,9 @@ enum RemoteControlPlatform {
 
   static var windowIsActiveDefault: Bool { true }
 
-  // MARK: - Remote control layout tuning (iOS)
-
-  static func remoteControlsTargetFraction(layoutMode: LayoutMode) -> CGFloat {
-    _ = layoutMode
-    return 0.92
-  }
-
   static var remoteTopBarEdgePadding: CGFloat { 8 }
 
-  /// iOS: use transform scaling for fit; hit-testing remains correct.
-  @ViewBuilder
-  static func fitScaledControlCluster<Content: View, K: PreferenceKey>(
-    content: (CGFloat) -> Content,
-    scaleFactor: CGFloat,
-    fitScale: CGFloat,
-    measurePreferenceKey: K.Type
-  ) -> some View where K.Value == CGSize {
-    content(scaleFactor)
-      .background(
-        GeometryReader { inner in
-          Color.clear.preference(key: measurePreferenceKey, value: inner.size)
-        }
-      )
-      .scaleEffect(fitScale, anchor: .center)
-  }
+  /// iOS: Help is presented via a sheet (`SFSafariViewController`), so if Settings is already
+  /// presented as a sheet we must dismiss it first.
+  static var shouldDismissSettingsBeforePresentingHelp: Bool { true }
 }

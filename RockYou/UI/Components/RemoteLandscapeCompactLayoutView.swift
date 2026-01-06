@@ -7,21 +7,34 @@ struct RemoteLandscapeCompactLayoutView: View {
   @Binding var showingConfigure: Bool
   @Binding var showingTVSelector: Bool
   let onAction: (RemoteAction) -> Void
+  let onKeyboard: () -> Void
+  let isKeyboardShown: Bool
   let onLaunchApp: (RokuApp) -> Void
   let hardwareControlsAvailable: Bool
 
   var body: some View {
-    LandscapeiPhoneView(
-      onAction: onAction,
-      showingConfigure: $showingConfigure,
-      showingTVSelector: $showingTVSelector,
-      deviceId: selectedDeviceId,
-      onLaunchApp: onLaunchApp,
-      selectedTVName: selectedTVName,
-      selectedStreamerName: selectedStreamerName,
-      selectedDeviceId: selectedDeviceId,
-      hardwareControlsAvailable: hardwareControlsAvailable
-    )
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    let paneGap: CGFloat = 12
+
+    HStack(spacing: paneGap) {
+      LandscapeiPhoneView(
+        onAction: onAction,
+        onKeyboard: onKeyboard,
+        isKeyboardShown: isKeyboardShown,
+        showingConfigure: $showingConfigure,
+        showingTVSelector: $showingTVSelector,
+        selectedTVName: selectedTVName,
+        selectedStreamerName: selectedStreamerName,
+        selectedDeviceId: selectedDeviceId,
+        hardwareControlsAvailable: hardwareControlsAvailable
+      )
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+      AppStripPaneView(
+        mode: .landscapeCompact,
+        deviceId: selectedDeviceId,
+        appLaunchDelay: AppSettings.shared.phoneAppLaunchDelay,
+        onLaunchApp: onLaunchApp
+      )
+    }
   }
 }

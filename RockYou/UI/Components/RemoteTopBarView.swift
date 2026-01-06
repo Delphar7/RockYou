@@ -1,12 +1,6 @@
 import SwiftUI
 
 struct RemoteTopBarView: View {
-  private static let docsURL: URL = {
-    guard let url = URL(string: "https://jtr.sh/RockYou/docs/") else {
-      preconditionFailure("Invalid docs URL")
-    }
-    return url
-  }()
   private static let helpMaterialSeed: UInt64 = 0xC0FFEE
 
   let scaleFactor: CGFloat
@@ -16,9 +10,11 @@ struct RemoteTopBarView: View {
   let selectedDeviceId: String?
   let hardwareControlsAvailable: Bool
   @Binding var showingTVSelector: Bool
+  let isKeyboardShown: Bool
+  let onKeyboard: () -> Void
   let phonePowerDelay: TimeInterval?
+  var showsPowerButton: Bool = true
   let onAction: (RemoteAction) -> Void
-  @State private var isPresentingHelp: Bool = false
 
   var body: some View {
     ZStack {
@@ -36,10 +32,10 @@ struct RemoteTopBarView: View {
 
       HStack(alignment: .top) {
         Button {
-          isPresentingHelp = true
+          onKeyboard()
         } label: {
-          Image(systemName: "questionmark")
-            .font(.system(size: AppFontSize.medium, weight: .semibold))
+          Image(systemName: isKeyboardShown ? "keyboard.chevron.compact.down" : "keyboard")
+            .font(.system(size: AppFontSize.veryLarge, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: 68 * scaleFactor, height: 48 * scaleFactor)
         }
@@ -49,17 +45,19 @@ struct RemoteTopBarView: View {
         .padding(.top, 8)
 
         Spacer()
-        SafePowerButton(
-          onPower: { onAction(.power) },
-          style: .custom(height: 48 * scaleFactor, showLabel: false),
-          safetyDelay: phonePowerDelay
-        )
-        .disabledForUnavailableHardwareControls(isAvailable: hardwareControlsAvailable)
-        .frame(width: 68 * scaleFactor)
-        .padding(.top, 8)
+        if showsPowerButton {
+          SafePowerButton(
+            onPower: { onAction(.power) },
+            style: .custom(height: 48 * scaleFactor, showLabel: false),
+            safetyDelay: phonePowerDelay
+          )
+          .disabledForUnavailableHardwareControls(isAvailable: hardwareControlsAvailable)
+          .frame(width: 68 * scaleFactor)
+          .padding(.top, 8)
+        }
       }
       .padding(.horizontal, edgePadding)
     }
-    .platformHelpPresentation(isPresented: $isPresentingHelp, url: Self.docsURL)
   }
+
 }

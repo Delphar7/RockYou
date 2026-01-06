@@ -173,14 +173,22 @@ class ProtocolExplorerViewModel {
             message = "📢 Power: \(mode)"
         case .volumeChanged(let level, let muted):
             message = "📢 Volume: \(level)\(muted ? " (muted)" : "")"
-            case .mediaPlayerStateChanged(let state, let appId, let position, let duration, let title):
-                var parts: [String] = [state]
-                if let appId = appId { parts.append("app:\(appId)") }
-                if let title = title { parts.append("title:\(title)") }
-                if let pos = position { parts.append("pos:\(pos)ms") }
-                if let dur = duration { parts.append("dur:\(dur)ms") }
-                message = "📢 Media: \(parts.joined(separator: ", "))"
-            case .other(let type, let data):
+        case .mediaPlayerStateChanged(let state, let appId, let position, let duration, let title):
+            var parts: [String] = [state]
+            if let appId = appId { parts.append("app:\(appId)") }
+            if let title = title { parts.append("title:\(title)") }
+            if let pos = position { parts.append("pos:\(pos)ms") }
+            if let dur = duration { parts.append("dur:\(dur)ms") }
+            message = "📢 Media: \(parts.joined(separator: ", "))"
+        case .texteditOpened(let s):
+            message = "📢 TextEdit opened: id=\(s.texteditId)"
+        case .texteditChanged(let s):
+            message = "📢 TextEdit changed: id=\(s.texteditId)"
+        case .texteditStateChanged(let s):
+            message = "📢 TextEdit state: id=\(s.texteditId)"
+        case .texteditClosed:
+            message = "📢 TextEdit closed"
+        case .other(let type, let data):
             message = "📢 \(type): \(data)"
         }
         addResponse(message)
