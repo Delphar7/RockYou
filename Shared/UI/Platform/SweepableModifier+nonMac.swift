@@ -15,7 +15,9 @@ import SwiftUI
       icon: String,
       color: Color,
       delay: TimeInterval = 1.0,
-      overlayDelay: TimeInterval = 0.10,
+      // Match "tap" timing more closely: don't show sweep UI for typical quick taps.
+      // (Roughly aligned with the press highlight delay used by `SwipeAwareButtonStyle`.)
+      overlayDelay: TimeInterval = 0.25,
       completionHold: TimeInterval = 0.5,
       tooltip: String,
       debugLabel: String = "",
@@ -46,7 +48,8 @@ import SwiftUI
       icon: @escaping () -> Icon,
       color: Color,
       delay: TimeInterval = 1.0,
-      overlayDelay: TimeInterval = 0.10,
+      // Match "tap" timing more closely: don't show sweep UI for typical quick taps.
+      overlayDelay: TimeInterval = 0.25,
       completionHold: TimeInterval = 0.15,
       tooltip: String,
       debugLabel: String = "",

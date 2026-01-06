@@ -18,12 +18,14 @@ struct NowPlayingPanel: View {
     VStack(alignment: .leading, spacing: 24) {
       InfoTopPanel(deviceId: deviceId)
 
-      Spacer()
-
       InfoBottomPanel(deviceId: deviceId)
+
+      // Flexible spacer: pushes content up when there's excess height.
+      // In a ScrollView this is effectively zero (minLength: 0).
+      Spacer(minLength: 0)
     }
     .padding(24)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .frame(maxWidth: .infinity, alignment: .topLeading)
   }
 }
 
@@ -50,20 +52,20 @@ struct InfoTopPanel: View {
     }
 
     VStack(alignment: .leading, spacing: 24) {
-      // Device info header
-      if let device = currentDevice {
-        let deviceState = stateManager.state(for: device.id)
-        deviceHeader(device, state: deviceState)
-      } else {
-        noDeviceView
+      // Now playing section (top)
+      if let deviceId = deviceId, let state = currentState {
+        nowPlayingSection(deviceId: deviceId, state: state, appCache: appCache)
       }
 
       Divider()
         .background(Color.white.opacity(0.2))
 
-      // Now playing section
-      if let deviceId = deviceId, let state = currentState {
-        nowPlayingSection(deviceId: deviceId, state: state, appCache: appCache)
+      // Device info header (bottom)
+      if let device = currentDevice {
+        let deviceState = stateManager.state(for: device.id)
+        deviceHeader(device, state: deviceState)
+      } else {
+        noDeviceView
       }
     }
   }
@@ -263,35 +265,18 @@ extension InfoTopPanel {
 
               Spacer()
 
-              // App ID and type (right-justified label:value)
-              VStack(alignment: .trailing, spacing: 2) {
-                HStack {
-                  Text("App ID:")
-                    .foregroundStyle(.white.opacity(AppOpacity.secondary))
-                  Text(app.id)
-                    .foregroundStyle(.white.opacity(AppOpacity.secondary))
+              // Volume (moved up from State Information panel)
+              VStack(alignment: .trailing, spacing: 6) {
+                let isMutedLike = state.muted || state.volume == 0
+                HStack(spacing: 8) {
+                  Image(systemName: isMutedLike ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .foregroundStyle(isMutedLike ? .yellow : .white.opacity(0.8))
+                    .font(.system(size: AppFontSize.veryLarge, weight: .semibold))
+                  Text(isMutedLike ? "Muted" : "\(state.volume)%")
+                    .foregroundStyle(isMutedLike ? .yellow : .white.opacity(AppOpacity.primary))
                     .font(.caption.monospaced())
                 }
-                if let type = app.type {
-                  HStack {
-                    Text("Type:")
-                      .foregroundStyle(.white.opacity(AppOpacity.secondary))
-                    Text(type)
-                      .foregroundStyle(.white.opacity(AppOpacity.secondary))
-                      .font(.caption)
-                  }
-                }
-                if let version = app.version {
-                  HStack {
-                    Text("Version:")
-                      .foregroundStyle(.white.opacity(AppOpacity.secondary))
-                    Text(version)
-                      .foregroundStyle(.white.opacity(AppOpacity.secondary))
-                      .font(.caption)
-                  }
-                }
               }
-              .font(.caption)
             }
 
             // Media position and duration (if available)
@@ -361,27 +346,40 @@ extension InfoBottomPanel {
           .foregroundStyle(.white.opacity(AppOpacity.secondary))
           .textCase(.uppercase)
 
-        // Volume
-        HStack(spacing: 12) {
-          let isMutedLike = state.muted || state.volume == 0
-
-          Image(systemName: isMutedLike ? "speaker.slash.fill" : "speaker.wave.2.fill")
-            .foregroundStyle(isMutedLike ? .yellow : .white.opacity(0.8))
-            .frame(width: 24)
-
-          if isMutedLike {
-            Text("Muted")
-              .foregroundStyle(.yellow)
-          } else {
-            Text("Volume: \(state.volume)%")
-              .foregroundStyle(.white.opacity(AppOpacity.nearlyOpaque))
-          }
-
-          Spacer()
+        // App ID + type (moved down from the media panel).
+        // Note: these should *share a row* with the position/duration rows (trailing aligned),
+        // not consume an extra vertical line that can push the AppStrip off-screen.
+        let appCache = AppCacheManager.shared
+        let _ = appCache.iconVersion
+        let activeApp = state.activeApp.flatMap { id in
+          appCache.apps(for: deviceId).first(where: { $0.id == id })
         }
-        .font(.subheadline)
+        let appInfo: AnyView? = {
+          guard let activeApp else { return nil }
+          return AnyView(
+            VStack(alignment: .trailing, spacing: 2) {
+              Text("App ID: \(activeApp.id)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.white.opacity(AppOpacity.secondary))
+                .lineLimit(1)
+                .truncationMode(.middle)
+              if let type = activeApp.type {
+                Text("Type: \(type)")
+                  .font(.caption)
+                  .foregroundStyle(.white.opacity(AppOpacity.secondary))
+                  .lineLimit(1)
+              }
+            }
+          )
+        }()
 
         // Media Position/Duration
+        // If we have app info, attach it to the first available time row.
+        let attachAppInfoToPositionRow = (appInfo != nil && state.mediaPosition != nil)
+        let attachAppInfoToDurationRow =
+          (appInfo != nil && state.mediaPosition == nil && state.mediaDuration != nil)
+        let showStandaloneAppInfoRow =
+          (appInfo != nil && state.mediaPosition == nil && state.mediaDuration == nil)
         if let position = state.mediaPosition {
           HStack(spacing: 12) {
             Image(systemName: "clock")
@@ -391,6 +389,7 @@ extension InfoBottomPanel {
               .foregroundStyle(.white.opacity(AppOpacity.primary))
               .font(.caption.monospaced())
             Spacer()
+            if attachAppInfoToPositionRow { appInfo }
           }
         }
         if let duration = state.mediaDuration {
@@ -402,6 +401,13 @@ extension InfoBottomPanel {
               .foregroundStyle(.white.opacity(AppOpacity.primary))
               .font(.caption.monospaced())
             Spacer()
+            if attachAppInfoToDurationRow { appInfo }
+          }
+        }
+        if showStandaloneAppInfoRow, let appInfo {
+          HStack(spacing: 12) {
+            Spacer()
+            appInfo
           }
         }
       }

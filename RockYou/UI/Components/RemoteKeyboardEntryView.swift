@@ -32,9 +32,7 @@ struct RemoteKeyboardEntryView: View {
 
   var body: some View {
     bodyContent
-#if !os(iOS)
-    .presentationDetents([.height(180), .medium])
-#endif
+    .presentationDetents(RemoteControlPlatform.keyboardEntryPresentationDetents)
     .task {
       guard !isPrimed else { return }
       isPrimed = true

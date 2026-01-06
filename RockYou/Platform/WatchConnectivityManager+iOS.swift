@@ -634,8 +634,8 @@ extension WatchConnectivityManager {
         configurationIssue = .watchAppNotEmbedded
       }
     }
-    // Not paired at all
-    else if !session.isPaired {
+    // Not paired at all - only alert on Simulator (on real devices, no watch is a normal situation)
+    else if !session.isPaired && PlatformSecurityPolicy.isSimulator {
       configurationIssue = .notPaired
     }
     // Everything looks good - clear any previous issue

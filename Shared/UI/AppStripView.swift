@@ -477,7 +477,7 @@ struct AppStripView: View {
 
   // MARK: - Size Calculations
 
-  fileprivate struct IconSizes {
+  struct IconSizes {
     let iconWidth: CGFloat
     let iconHeight: CGFloat
     let labelFont: CGFloat
@@ -501,87 +501,149 @@ struct AppStripView: View {
     return haloVerticalPadding.top + haloVerticalPadding.bottom
   }
 
-  private func resolvedLayout() -> (lanes: Int, sizes: IconSizes) {
-    let initialLanes = max(1, lanes)
-    let initialSizes = calculateSizes(lanes: initialLanes)
-    if shouldCollapseToSingleLane(initialLanes: initialLanes, initialSizes: initialSizes) {
-      let single = 1
-      return (single, calculateSizes(lanes: single))
+  // MARK: - Shared sizing/metrics (used by AppStripView and shell policy)
+
+  struct LayoutMetrics: Sendable {
+    let requestedLanes: Int
+    let effectiveLanes: Int
+    let sizes: IconSizes
+    /// Cross-axis length as rendered by `scrollableGrid` (includes macOS halo extra height).
+    let crossAxisLength: CGFloat
+  }
+
+  static func layoutMetrics(
+    direction: AppStripDirection,
+    lanes: Int,
+    sizing: AppStripSizing,
+    showLabels: Bool,
+    spacing: CGFloat = 8,
+    laneSpacing: CGFloat? = nil
+  ) -> LayoutMetrics {
+    let effectiveLaneSpacing = laneSpacing ?? spacing
+
+    func screenDimension() -> CGFloat {
+      let bounds = PlatformScreen.mainBounds
+      let dim = direction == .horizontal ? bounds.height : bounds.width
+      return dim > 0 ? dim : 400
     }
-    return (initialLanes, initialSizes)
+
+    func calculateSizes(lanes laneCount: Int) -> IconSizes {
+      let iconWidth: CGFloat
+      let iconHeight: CGFloat
+      let stripSize: CGFloat
+      let laneCount = max(1, laneCount)
+
+      switch sizing {
+      case .fixed(let w, let h):
+        if let width = w, let height = h {
+          iconWidth = width
+          iconHeight = height
+        } else if let width = w {
+          iconWidth = width
+          iconHeight = width * 0.75
+        } else if let height = h {
+          iconHeight = height
+          iconWidth = height * (4.0 / 3.0)
+        } else {
+          let d = AppStripPlatformPolicy.defaultFixedIconSize
+          iconWidth = d.width
+          iconHeight = d.height
+        }
+        let labelHeight: CGFloat = showLabels ? 20 : 0
+        let cellSize = (direction == .horizontal ? iconHeight : iconWidth) + labelHeight
+        stripSize = cellSize * CGFloat(laneCount) + effectiveLaneSpacing * CGFloat(laneCount - 1) + 8
+
+      case .percent(let pct):
+        let screenDim = screenDimension()
+        stripSize = screenDim * (pct / 100.0)
+        let singleLaneSize =
+          (stripSize - effectiveLaneSpacing * CGFloat(laneCount - 1)) / CGFloat(laneCount)
+        let iconHeightRatio: CGFloat = showLabels ? 0.70 : 0.90
+        iconHeight = singleLaneSize * iconHeightRatio
+        iconWidth = iconHeight * (4.0 / 3.0)
+      }
+
+      let labelFont = max(8, iconHeight * 0.20)
+      let cornerRadius = max(4, iconHeight * 0.15)
+      let labelHeight: CGFloat = showLabels ? labelFont + 4 : 0
+
+      let cellSize: CGFloat
+      if direction == .horizontal {
+        cellSize = iconHeight + labelHeight
+      } else {
+        cellSize = iconWidth
+      }
+
+      return IconSizes(
+        iconWidth: iconWidth,
+        iconHeight: iconHeight,
+        labelFont: labelFont,
+        cornerRadius: cornerRadius,
+        cellSize: cellSize,
+        stripSize: stripSize
+      )
+    }
+
+    func haloExtraHeight() -> CGFloat {
+      guard direction == .horizontal else { return 0 }
+      let padding = AppStripPlatformPolicy.haloVerticalPadding(showLabels: showLabels, scrollAxis: .horizontal)
+      return padding.top + padding.bottom
+    }
+
+    let requested = max(1, lanes)
+    let initialSizes = calculateSizes(lanes: requested)
+    let threshold = AppStripPlatformPolicy.minIconHeightForMultiLane
+    let effectiveLanes: Int = {
+      guard direction == .horizontal else { return requested }
+      guard requested > 1 else { return requested }
+      guard threshold > 0 else { return requested }
+      return initialSizes.iconHeight < threshold ? 1 : requested
+    }()
+    let sizes = (effectiveLanes == requested) ? initialSizes : calculateSizes(lanes: effectiveLanes)
+
+    let crossAxisLength: CGFloat = {
+      guard direction == .horizontal else { return sizes.stripSize }
+      // AppStripView's scrollableGrid uses sizes.stripSize + platformExtraHeight in its frame.
+      return sizes.stripSize + haloExtraHeight()
+    }()
+
+    return LayoutMetrics(
+      requestedLanes: requested,
+      effectiveLanes: effectiveLanes,
+      sizes: sizes,
+      crossAxisLength: crossAxisLength
+    )
+  }
+
+  private func resolvedLayout() -> (lanes: Int, sizes: IconSizes) {
+    let metrics = Self.layoutMetrics(
+      direction: direction,
+      lanes: lanes,
+      sizing: sizing,
+      showLabels: showLabels,
+      spacing: spacing,
+      laneSpacing: laneSpacing
+    )
+    return (metrics.effectiveLanes, metrics.sizes)
   }
 
   private func shouldCollapseToSingleLane(initialLanes: Int, initialSizes: IconSizes) -> Bool {
-    guard direction == .horizontal else { return false }
-    guard initialLanes > 1 else { return false }
-    let threshold = AppStripPlatformPolicy.minIconHeightForMultiLane
-    guard threshold > 0 else { return false }
-    return initialSizes.iconHeight < threshold
+    _ = initialLanes
+    _ = initialSizes
+    // Consolidated in `layoutMetrics`.
+    return false
   }
 
   private func calculateSizes(lanes laneCount: Int) -> IconSizes {
-    let iconWidth: CGFloat
-    let iconHeight: CGFloat
-    let stripSize: CGFloat
-    let laneCount = max(1, laneCount)
-
-    switch sizing {
-    case .fixed(let w, let h):
-      // Handle optional parameters with smart defaults
-      if let width = w, let height = h {
-        // Both specified - use as-is
-        iconWidth = width
-        iconHeight = height
-      } else if let width = w {
-        // Only width specified - compute height at 4:3 ratio (height = width * 3/4)
-        iconWidth = width
-        iconHeight = width * 0.75
-      } else if let height = h {
-        // Only height specified - compute width at 4:3 ratio (width = height * 4/3)
-        iconHeight = height
-        iconWidth = height * (4.0 / 3.0)
-      } else {
-        // Both nil - use platform default
-        let d = AppStripPlatformPolicy.defaultFixedIconSize
-        iconWidth = d.width
-        iconHeight = d.height
-      }
-      let labelHeight: CGFloat = showLabels ? 20 : 0
-      let cellSize = (direction == .horizontal ? iconHeight : iconWidth) + labelHeight
-      stripSize =
-        cellSize * CGFloat(laneCount) + effectiveLaneSpacing * CGFloat(laneCount - 1) + 8
-
-    case .percent(let pct):
-      let screenDim = screenDimension
-      stripSize = screenDim * (pct / 100.0)
-      let singleLaneSize =
-        (stripSize - effectiveLaneSpacing * CGFloat(laneCount - 1)) / CGFloat(laneCount)
-      let iconHeightRatio: CGFloat = showLabels ? 0.70 : 0.90
-      iconHeight = singleLaneSize * iconHeightRatio
-      iconWidth = iconHeight * (4.0 / 3.0)
-    }
-
-    let labelFont = max(8, iconHeight * 0.20)
-    let cornerRadius = max(4, iconHeight * 0.15)
-    let labelHeight: CGFloat = showLabels ? labelFont + 4 : 0
-
-    // For horizontal grids: cellSize is row HEIGHT (icon + label)
-    // For vertical grids: cellSize is column WIDTH (just icon width)
-    let cellSize: CGFloat
-    if direction == .horizontal {
-      cellSize = iconHeight + labelHeight
-    } else {
-      cellSize = iconWidth
-    }
-
-    return IconSizes(
-      iconWidth: iconWidth,
-      iconHeight: iconHeight,
-      labelFont: labelFont,
-      cornerRadius: cornerRadius,
-      cellSize: cellSize,
-      stripSize: stripSize
+    let metrics = Self.layoutMetrics(
+      direction: direction,
+      lanes: laneCount,
+      sizing: sizing,
+      showLabels: showLabels,
+      spacing: spacing,
+      laneSpacing: laneSpacing
     )
+    return metrics.sizes
   }
 }
 

@@ -336,8 +336,13 @@ struct SweepableModifier: ViewModifier {
 
       case .quickTap:
         Log.gestureTimeline("Sweep", "quickTap", ["label": debugLabel, "policy": "\(quickTapPolicy)"])
-        HapticService.play(.click)
-        onQuickTap?()
+        if let onQuickTap {
+          HapticService.play(.click)
+          onQuickTap()
+        } else if delay <= 0 {
+          // Tap-ish mode: treat quick tap as the primary action.
+          onSweepComplete()
+        }
         // Overlay/task cleanup is handled by `.endCleanup`.
 
       case .showTooltip(let reason):

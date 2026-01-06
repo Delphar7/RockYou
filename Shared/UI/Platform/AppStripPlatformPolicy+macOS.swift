@@ -6,7 +6,9 @@ enum AppStripPlatformPolicy {
 
   /// When icons get very small, multi-lane strips become cramped and harder to read.
   /// Below this icon height we collapse to a single lane.
-  static var minIconHeightForMultiLane: CGFloat { 52 }
+  // macOS: mouse precision makes smaller targets viable; avoid collapsing lanes too aggressively
+  // (which creates large vertical slack/gap in portraitCompact when the strip shrinks).
+  static var minIconHeightForMultiLane: CGFloat { 24 }
 
   static var defaultFixedIconSize: (width: CGFloat, height: CGFloat) {
     switch defaultSizing {

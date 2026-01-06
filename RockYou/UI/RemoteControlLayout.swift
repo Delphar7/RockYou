@@ -35,10 +35,12 @@ struct AppStripConfig {
         isVisible: true,
         direction: .horizontal,
         lanes: 2,
-        sizing: .fixed(width: 96),
+        // Slightly smaller than the baseline strip so the portrait compact remote feels balanced.
+        sizing: .fixed(width: 88),
         // iPhone portrait: labels off by default; wide Roku icons render their labels inside the tile.
         showLabels: false,
-        padding: EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+        // Keep a tiny bottom padding so the active-app glow halo isn’t clipped by the edge.
+        padding: EdgeInsets(top: 0, leading: 0, bottom: 1, trailing: 0)
       )
 
     case .landscapeSplit:
@@ -48,7 +50,8 @@ struct AppStripConfig {
         lanes: 1,
         sizing: .fixed(width: 96),
         showLabels: true,
-        padding: EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0)
+        // Keep a little breathing room for the iPad grab handle, but don’t float the strip.
+        padding: EdgeInsets(top: 0, leading: 0, bottom: 4, trailing: 0)
       )
 
     case .landscapeCompact:
@@ -59,7 +62,9 @@ struct AppStripConfig {
         sizing: .fixed(width: 96),
         // Landscape compact: prioritize remote space; labels off by default.
         showLabels: false,
-        padding: EdgeInsets()
+        // Give the vertical strip a small gutter so the remote buttons don't visually collide
+        // with the strip (and so the outer edge isn't flush to the screen).
+        padding: EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8)
       )
 
     case .portraitExpanded:

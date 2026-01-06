@@ -8,7 +8,6 @@ RUNALL_LOG_ARCHIVE_DIR="$DERIVED_DATA_BASE/Logs/BuildRunall"
 
 RESET_SIM=0
 LINT_ONLY=0
-LAUNCH_CONSOLE=0
 NO_CONSOLE=0
 NO_LOG=0
 NO_BUILD_LOCK=0
@@ -89,37 +88,6 @@ if [ "${1:-}" = "--watchexec" ]; then
     fi
 
     cd "$PROJECT_DIR" || exit 1
-
-    # Auto-enable simulator console streaming under watchexec, unless explicitly disabled.
-    # Motivation: `iphone.log`/`ipad.log` are far more useful when they include runtime logs.
-    #
-    # Rules:
-    # - If user already passed --console, keep it.
-    # - If user passed --no-console, do NOT inject --console.
-    should_inject_console=1
-    for arg in "$@"; do
-        case "$arg" in
-            --console) should_inject_console=0 ;;
-            --no-console|--noconsole) should_inject_console=0 ;;
-        esac
-    done
-
-    if [ "$should_inject_console" -eq 1 ]; then
-        # Insert --console before the first non-flag argument so it is actually parsed.
-        NEW_ARGS=()
-        injected=0
-        for arg in "$@"; do
-            if [ "$injected" -eq 0 ] && [[ "$arg" != --* ]]; then
-                NEW_ARGS+=("--console")
-                injected=1
-            fi
-            NEW_ARGS+=("$arg")
-        done
-        if [ "$injected" -eq 0 ]; then
-            NEW_ARGS+=("--console")
-        fi
-        set -- "${NEW_ARGS[@]}"
-    fi
 
     exec watchexec -d "5 s" "${WATCH_ARGS[@]}" -r ./BuildRunAll.sh "$@"
 fi
@@ -415,6 +383,18 @@ run_with_target_log() {
     "$@" 2>&1 | tee "$log_path"
 }
 
+append_to_target_log() {
+    local target="$1"
+    shift
+    local log_path
+    log_path="$(log_file_for_target "$target")"
+    if [ -z "$log_path" ] || [ "$NO_LOG" -eq 1 ]; then
+        "$@"
+        return $?
+    fi
+    "$@" 2>&1 | tee -a "$log_path"
+}
+
 run_target_full() {
     local target="$1"
     case "$target" in
@@ -452,9 +432,9 @@ launch_sim_console() {
     local sim_id=$1
     local bundle_id=$2
 
-    # Default behavior: just launch and return (non-blocking).
-    # If you want to tail live logs, pass --console.
-    if [ "$LAUNCH_CONSOLE" -eq 0 ]; then
+    # Default behavior unless --no-console: stream console output (blocks).
+    # With --no-console: just launch and return (non-blocking).
+    if [ "$NO_CONSOLE" -eq 1 ]; then
         xcrun simctl launch --terminate-running-process "$sim_id" "$bundle_id" >/dev/null
         return 0
     fi
@@ -544,12 +524,7 @@ while [[ "${1:-}" == --* ]]; do
             LINT_ONLY=1
             shift
             ;;
-        --console)
-            LAUNCH_CONSOLE=1
-            shift
-            ;;
         --no-console|--noconsole)
-            LAUNCH_CONSOLE=0
             NO_CONSOLE=1
             shift
             ;;
@@ -866,15 +841,15 @@ if [ $# -eq 0 ]; then
     echo "Usage: $0 <target> [target...]"
     echo ""
     echo "Options:"
-    echo "  --watchexec - Must be first. Re-run this command on changes via watchexec."
-    echo "  --16e       - Use jtr iPhone 16e (small) + Watch SE 40mm (small) (default)"
-    echo "  --16pro     - Use jtr iPhone 16 Pro + Watch Series 10 46mm"
-    echo "  --ResetSim  - Terminate+uninstall before install (slower; fixes some sim launch flakiness)"
-    echo "  --lint      - Build only (no install/launch). If no targets given, builds phone+ipad+watch+mac."
-    echo "  --console   - Keep streaming simulator console output (blocks; useful in tmux panes)"
-    echo "  --archive   - For mac target: build a Release archive and launch the archived app"
-    echo "  --no-log    - Disable tee-to-log (intended for tmux mode where tmux pipe-pane handles logs)"
-    echo "  --no-lock   - Disable cross-process DerivedData locks (not recommended; can cause Xcode build DB lock errors)"
+    echo "  --watchexec    - Must be first. Re-run this command on changes via watchexec."
+    echo "  --16e          - Use jtr iPhone 16e (small) + Watch SE 40mm (small) (default)"
+    echo "  --16pro        - Use jtr iPhone 16 Pro + Watch Series 10 46mm"
+    echo "  --ResetSim     - Terminate+uninstall before install (slower; fixes some sim launch flakiness)"
+    echo "  --lint         - Build only (no install/launch). If no targets given, builds phone+ipad+watch+mac."
+    echo "  --no-console   - Disable simulator console streaming (just launch without capturing logs)"
+    echo "  --archive      - For mac target: build a Release archive and launch the archived app"
+    echo "  --no-log       - Disable tee-to-log (intended for tmux mode where tmux pipe-pane handles logs)"
+    echo "  --no-lock      - Disable cross-process DerivedData locks (not recommended; can cause Xcode build DB lock errors)"
     echo "  --always-build - Rebuild even if we had to wait on a concurrent build lock"
     echo "  --status-locks - Show any currently held build locks (best-effort via lsof)"
     echo "  --break-locks  - Remove unused lock files (does not kill running builds)"
@@ -995,9 +970,9 @@ case "$1" in
 
         # Replace any existing commands in-place (no pane accumulation).
         tmux respawn-pane -k -t "$WATCH_PANE" \
-          "$PROJECT_DIR/BuildRunAll.sh $SIM_PROFILE_FLAG --no-log --console watch"
+          "$PROJECT_DIR/BuildRunAll.sh $SIM_PROFILE_FLAG --no-log watch"
         tmux respawn-pane -k -t "$PHONE_PANE" \
-          "$PROJECT_DIR/BuildRunAll.sh $SIM_PROFILE_FLAG --no-log --console iphone"
+          "$PROJECT_DIR/BuildRunAll.sh $SIM_PROFILE_FLAG --no-log iphone"
 
         # Reset and reattach tmux pipes on each run (especially under watchexec).
         # Attach AFTER respawn so we also capture the very start of the build output.
@@ -1122,19 +1097,13 @@ case "$1" in
             fi
         done
 
-        if [ "$LAUNCH_CONSOLE" -eq 1 ] && [ $# -gt 1 ]; then
-            echo "❌ --console is only supported for a single target."
-            echo "   Use run-all-tmux for dual-pane console streaming."
-            exit 1
-        fi
-
-        # Single target: tee the *entire* run (build+install+launch), so --console output is captured.
+        # Single target: tee the *entire* run (build+install+launch), so console output is captured.
         if [ $# -eq 1 ]; then
             run_with_target_log "$1" run_target_full "$1"
             exit $?
         fi
 
-        # Multiple targets - build all, then run all
+        # Multiple targets - build all, then launch all
         echo "🚀 Building ${#@} target(s): $*"
 
         # Open Simulator if any target needs it
@@ -1156,20 +1125,21 @@ case "$1" in
         echo "Launching..."
 
         # Launch all targets (mac last since it takes over terminal)
+        # Each launch is wrapped to append output to its target log.
         HAS_MAC=false
         for target in "$@"; do
             case "$target" in
                 phone)
                     echo "📱 Launching iPhone..."
-                    launch_sim_console "$IPHONE_SIM" com.jtr.RockYou &
+                    append_to_target_log phone launch_sim_console "$IPHONE_SIM" com.jtr.RockYou &
                     ;;
                 watch)
                     echo "⌚ Launching Watch..."
-                    launch_sim_console "$WATCH_SIM" com.jtr.RockYou.watchkitapp &
+                    append_to_target_log watch launch_sim_console "$WATCH_SIM" com.jtr.RockYou.watchkitapp &
                     ;;
                 ipad)
                     echo "📱 Launching iPad..."
-                    launch_sim_console "$IPAD_SIM" com.jtr.RockYou &
+                    append_to_target_log ipad launch_sim_console "$IPAD_SIM" com.jtr.RockYou &
                     ;;
                 mac)
                     HAS_MAC=true
@@ -1177,13 +1147,13 @@ case "$1" in
             esac
         done
 
-        # Wait for simulator launches
+        # Wait for simulator launches to complete
         wait
 
         # Mac last (takes over terminal)
         if [ "$HAS_MAC" = true ]; then
             echo "🖥️  Launching Mac..."
-            run_with_target_log mac run_mac
+            append_to_target_log mac run_mac
         else
             echo ""
             echo "✅ All apps launched!"

@@ -7,6 +7,7 @@
 //  events to the topmost sweepable target under the touch.
 //
 
+import SwiftUI
 import UIKit
 
 @MainActor
@@ -37,6 +38,10 @@ final class SweepableTouchRouter: NSObject, UIGestureRecognizerDelegate {
   private weak var window: UIWindow?
   private let targets = NSHashTable<AnyObject>.weakObjects()
 
+  /// Blocking zones: rectangles where touches should NOT route to sweepables.
+  /// Used for overlay UI (e.g., keyboard input bar) that should absorb touches.
+  private var blockingZones: [ObjectIdentifier: CGRect] = [:]
+
   private var activeTarget: SweepableTouchTarget?
   private var startPoint: CGPoint = .zero
 
@@ -55,6 +60,26 @@ final class SweepableTouchRouter: NSObject, UIGestureRecognizerDelegate {
     if activeTarget === target {
       activeTarget = nil
     }
+  }
+
+  /// Register a blocking zone that prevents sweepable touches from routing through it.
+  func registerBlockingZone(id: ObjectIdentifier, frame: CGRect) {
+    blockingZones[id] = frame
+  }
+
+  /// Unregister a blocking zone.
+  func unregisterBlockingZone(id: ObjectIdentifier) {
+    blockingZones.removeValue(forKey: id)
+  }
+
+  /// Check if a point is inside any blocking zone.
+  private func isBlocked(at point: CGPoint) -> Bool {
+    for (_, frame) in blockingZones {
+      if frame.contains(point) {
+        return true
+      }
+    }
+    return false
   }
 
   // MARK: - Gesture recognizer
@@ -146,7 +171,12 @@ final class SweepableTouchRouter: NSObject, UIGestureRecognizerDelegate {
           "target": activeTarget?.sweepableDebugLabel ?? "nil",
         ]
       )
-      activeTarget?.sweepableTouchEnded(cancelled: false)
+      if let activeTarget {
+        // Match UIKit "touchUpInside" semantics more closely:
+        // a quick press/release should only fire if the finger lifts inside the original control.
+        let inside = activeTarget.sweepableFrame.contains(point)
+        activeTarget.sweepableTouchEnded(cancelled: !inside)
+      }
       activeTarget = nil
 
     case .cancelled, .failed:
@@ -166,6 +196,11 @@ final class SweepableTouchRouter: NSObject, UIGestureRecognizerDelegate {
   }
 
   private func pickTarget(at point: CGPoint) -> SweepableTouchTarget? {
+    // Check blocking zones first - these absorb touches without routing to any sweepable.
+    if isBlocked(at: point) {
+      return nil
+    }
+
     let candidates: [SweepableTouchTarget] = targets.allObjects.compactMap { $0 as? SweepableTouchTarget }
 
     // Make selection deterministic without relying on NSHashTable iteration order.
@@ -194,5 +229,60 @@ final class SweepableTouchRouter: NSObject, UIGestureRecognizerDelegate {
     _ = gestureRecognizer
     _ = otherGestureRecognizer
     return true
+  }
+}
+
+// MARK: - SwiftUI modifier for blocking zones
+
+/// View modifier that registers a blocking zone to prevent sweepable gestures from passing through.
+private struct SweepBlockingZoneModifier: ViewModifier {
+  @State private var zoneId = UUID()
+
+  func body(content: Content) -> some View {
+    content
+      .background(
+        GeometryReader { proxy in
+          Color.clear
+            .onAppear {
+              if let window = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .flatMap({ $0.windows })
+                .first(where: { $0.isKeyWindow })
+              {
+                let frame = proxy.frame(in: .global)
+                SweepableTouchRouter.shared(for: window)
+                  .registerBlockingZone(id: ObjectIdentifier(zoneId as AnyObject), frame: frame)
+              }
+            }
+            .onDisappear {
+              if let window = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .flatMap({ $0.windows })
+                .first(where: { $0.isKeyWindow })
+              {
+                SweepableTouchRouter.shared(for: window)
+                  .unregisterBlockingZone(id: ObjectIdentifier(zoneId as AnyObject))
+              }
+            }
+            .onChange(of: proxy.frame(in: .global)) { _, newFrame in
+              if let window = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .flatMap({ $0.windows })
+                .first(where: { $0.isKeyWindow })
+              {
+                SweepableTouchRouter.shared(for: window)
+                  .registerBlockingZone(id: ObjectIdentifier(zoneId as AnyObject), frame: newFrame)
+              }
+            }
+        }
+      )
+  }
+}
+
+extension View {
+  /// Marks this view as a "blocking zone" that absorbs sweepable gestures.
+  /// Touches on this view will not route to sweepable buttons behind it.
+  func sweepBlockingZone() -> some View {
+    modifier(SweepBlockingZoneModifier())
   }
 }

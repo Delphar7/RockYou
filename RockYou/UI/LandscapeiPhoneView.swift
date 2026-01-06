@@ -3,7 +3,6 @@
 //  RockYou
 //
 //  Landscape iPhone layout: Left 2x3 grid, D-Pad center, Right 2x3 grid
-//
 
 import SwiftUI
 
@@ -181,18 +180,14 @@ struct LandscapeiPhoneView: View {
         TopKeyButton(systemName: "chevron.left", width: 68 * s, height: 52 * s) {
           onAction(.back)
         }
-        if let homeDelay = settings.phoneHomeDelay, homeDelay > 0 {
-          TopKeyButton(systemName: "house.fill", width: 68 * s, height: 52 * s) {}
-            .sweepable(
-              icon: "house.fill",
-              color: .indigo,
-              delay: homeDelay,
-              tooltip: "Hold to go home",
-              onSweepComplete: { onAction(.home) }
-            )
-        } else {
-          TopKeyButton(systemName: "house.fill", width: 68 * s, height: 52 * s) { onAction(.home) }
-        }
+        TopKeyButton(systemName: "house.fill", width: 68 * s, height: 52 * s) {}
+          .sweepable(
+            icon: "house.fill",
+            color: .indigo,
+            delay: settings.phoneHomeDelay ?? 0,
+            tooltip: "Hold to go home",
+            onSweepComplete: { onAction(.home) }
+          )
         TopKeyButton(systemName: "gearshape.fill", width: 68 * s, height: 52 * s) {
           showingConfigure = true
         }

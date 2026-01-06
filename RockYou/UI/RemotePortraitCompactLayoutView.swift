@@ -7,6 +7,10 @@ import SwiftUI
 /// - Top row anchored; its buttons feel like "the same scale" as the main controls.
 /// - Bottom ticker (app strip) anchored; 2→1 lane pop with **no height jump**.
 /// - App icons clamp at a configurable minimum scale; below that, icons stop shrinking.
+///
+/// DEPRECATED FOR DELETION:
+/// This composite view owns the header + app strip. The new slot-based shell uses
+/// `RemotePortraitCompactControlsView` + a global strip slot.
 @MainActor
 struct RemotePortraitCompactLayoutView: View {
   let containerSize: CGSize
@@ -123,7 +127,7 @@ struct RemotePortraitCompactLayoutView: View {
     let minIconScale: CGFloat = max(configuredMinIconScale, minScaleFromStripPolicy)
 
     func bottomTickerHeight(forScale s: CGFloat) -> (height: CGFloat, bottomScale: CGFloat) {
-      guard renderBottomTicker else { return (0, s) }
+      guard renderBottomTicker else { return (0, s)  }
       let bottomScale = max(s, minIconScale)
 
       // Keep the region height stable across 2→1 lane pop:
@@ -252,7 +256,9 @@ struct RemotePortraitCompactLayoutView: View {
 
       GeometryReader { _ in
         controlCluster(scaleFactor: metrics.scale, spacingBoost: metrics.spacingBoost)
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+          // Align to bottom so controls stay close to the progress bar when scaled down.
+          // Any excess space (from width-constrained scaling) appears above the controls.
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
       }
       .background(
         // Natural-size probe (scale=1, spacingBoost=1) – does not affect layout.
@@ -410,26 +416,20 @@ private struct RemoteNavRowSpacingBoostView: View {
         height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
       ) { onAction(.back) }
 
-      if let phoneHomeDelay, phoneHomeDelay > 0 {
-        TopKeyButton(
-          systemName: "house.fill",
-          width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
-          height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
-        ) {}
-        .sweepable(
-          icon: "house.fill",
-          color: .indigo,
-          delay: phoneHomeDelay,
-          tooltip: "Hold to go home",
-          onSweepComplete: { onAction(.home) }
-        )
-      } else {
-        TopKeyButton(
-          systemName: "house.fill",
-          width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
-          height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
-        ) { onAction(.home) }
-      }
+      TopKeyButton(
+        systemName: "house.fill",
+        width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
+        height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
+      ) {}
+      .sweepable(
+        icon: "house.fill",
+        color: .indigo,
+        delay: phoneHomeDelay ?? 0,
+        tooltip: "Hold to go home",
+        onSweepComplete: { onAction(.home) }
+      )
+      // (This legacy composite layout is deprecated for deletion; keep behavior identical.)
+      // New shell layouts use a single `.sweepable(delay: phoneHomeDelay ?? 0, ...)` call.
 
       TopKeyButton(
         systemName: "gearshape.fill",

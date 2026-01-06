@@ -14,26 +14,18 @@ struct RemoteNavRowView: View {
         height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
       ) { onAction(.back) }
 
-      if let phoneHomeDelay, phoneHomeDelay > 0 {
-        TopKeyButton(
-          systemName: "house.fill",
-          width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
-          height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
-        ) {}
-        .sweepable(
-            icon: "house.fill",
-            color: .indigo,
-            delay: phoneHomeDelay,
-            tooltip: "Hold to go home",
-            onSweepComplete: { onAction(.home) }
-          )
-      } else {
-        TopKeyButton(
-          systemName: "house.fill",
-          width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
-          height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
-        ) { onAction(.home) }
-      }
+      TopKeyButton(
+        systemName: "house.fill",
+        width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor,
+        height: RemoteCoreButtonMetrics.topKeyHeight * scaleFactor
+      ) {}
+      .sweepable(
+        icon: "house.fill",
+        color: .indigo,
+        delay: phoneHomeDelay ?? 0,
+        tooltip: "Hold to go home",
+        onSweepComplete: { onAction(.home) }
+      )
 
       TopKeyButton(
         systemName: "gearshape.fill",

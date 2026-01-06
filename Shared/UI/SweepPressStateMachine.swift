@@ -130,8 +130,15 @@ struct SweepPressStateMachine {
     resetPressState()
     isPressed = true
     pressBeganAt = now
-    overlayAt = now + max(0, config.overlayDelay)
-    completeAt = now + max(0, config.delay)
+    // Tap-ish mode: delay <= 0 means "no sweep UI". A press+release is treated as a quick tap
+    // and should not emit a tooltip.
+    if config.delay <= 0 {
+      overlayAt = nil
+      completeAt = nil
+    } else {
+      overlayAt = now + max(0, config.overlayDelay)
+      completeAt = now + max(0, config.delay)
+    }
     return [.pressedChanged(true)]
   }
 
@@ -221,6 +228,13 @@ struct SweepPressStateMachine {
   private mutating func endActions(now: TimeInterval) -> [Action] {
     // Always request cleanup on non-completed release (even if no tooltip is shown).
     var out: [Action] = [.endCleanup]
+
+    // Tap-ish path: delay <= 0 treats release as a quick tap, even without an explicit handler.
+    // The caller can interpret this as "execute the action" and skip tooltips.
+    if config.delay <= 0 {
+      out.append(.quickTap)
+      return out
+    }
 
     // Quick-tap path.
     if config.hasQuickTapHandler {
