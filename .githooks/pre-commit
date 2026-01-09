@@ -1,0 +1,35 @@
+#!/usr/bin/env zsh
+#
+# If this hook lives outside .git/hooks (e.g. in .githooks/), run once per clone:
+#   git config core.hooksPath .githooks
+#
+
+# Protected branches - supports exact names and glob patterns (e.g. "Release/*")
+protected_branches=(
+    "Release/*"
+)
+
+# Support for the simplest single user, release model footgun
+# prevention.  main is open and the typical working branch. Feature
+# branches are fine, but done 'by convention', not enforcement.
+#
+# There are Release/* branches to support remote xcode cloud builds
+# automatically firing.  Main is merged to Release/* whenever desired.
+# This is the footgun prevention for 'ah crap, I forgot I was on the
+# Release branch' commit.  For when you don't want to mess with PR/MR
+# but also don't want to misalign with main or trigger random builds.
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+
+for pattern in "${protected_branches[@]}"; do
+    if [[ "$branch" == $~pattern ]]; then
+        echo "❌ Direct commits to '$branch' are not allowed."
+        echo ""
+        echo "   This branch is protected (matches: $pattern)"
+        echo "   Work in main or a feature branch and merge when ready:"
+        echo "     # Works on clean --ff-only merges:"
+        echo "     git fetch . [work-branch]:$branch"
+        echo ""
+        exit 1
+    fi
+done

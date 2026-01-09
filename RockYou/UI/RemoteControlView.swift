@@ -10,12 +10,6 @@ import SwiftUI
 
 @MainActor
 struct RemoteControlView: View {
-  /// Toggle between the new slot-based shell renderer and the legacy composite layout renderer.
-  ///
-  /// Default is the new shell. If you need to temporarily compare behaviors or bisect UI issues,
-  /// flip this to `false` to use the legacy renderer.
-  private static let useSlotShellRenderer: Bool = true
-
   private static let docsURL: URL = {
     guard let url = URL(string: "https://jtr.sh/RockYou/docs/") else {
       preconditionFailure("Invalid docs URL")
@@ -105,14 +99,9 @@ struct RemoteControlView: View {
   var body: some View {
     GeometryReader { geometry in
       let textEditStatus = RokuTextEditStateManager.shared.status(for: selection.selectedDeviceId)
-      ZStack(alignment: .top) {
-        if Self.useSlotShellRenderer {
-          shellLayout(in: geometry)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-          legacyMainLayout(in: geometry)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+      ZStack(alignment: .top)  {
+        shellLayout(in: geometry)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         // Sweep overlays (tooltip + sweep animation)
         TooltipOverlayView()
@@ -579,135 +568,6 @@ struct RemoteControlView: View {
       // Consider switching back to 2 lanes using hysteresis.
       if scaleNow >= (minCluster + hysteresis) {
         horizontalStripLanesOverride = nil
-      }
-    }
-  }
-
-  // MARK: - Legacy composite renderer (deprecated)
-
-  /// Legacy renderer preserved for short-term comparison/bisection.
-  ///
-  /// DEPRECATED FOR DELETION:
-  /// Once the new shell has fully replaced the old behavior, delete this and the composite layout views.
-  @ViewBuilder
-  private func legacyMainLayout(in geometry: GeometryProxy) -> some View {
-    VStack(spacing: 0) {
-      switch layoutMode {
-      case .portraitExpanded:
-        RemotePortraitExpandedLayoutView(
-          fullHeight: geometry.size.height,
-          selectedDeviceId: selection.selectedDeviceId,
-          selectedTVName: selection.selectedTVName,
-          selectedStreamerName: selection.selectedStreamerName,
-          showingConfigure: $showingConfigure,
-          showingTVSelector: $showingTVSelector,
-          onAction: onAction,
-          onKeyboard: keyboardTapped,
-          isKeyboardShown: showingKeyboard,
-          onLaunchApp: { app in launchApp(app) },
-          hardwareControlsAvailable: selection.hardwareControlsAvailable
-        )
-
-      case .landscapeCompact:
-        RemoteLandscapeCompactLayoutView(
-          selectedDeviceId: selection.selectedDeviceId,
-          selectedTVName: selection.selectedTVName,
-          selectedStreamerName: selection.selectedStreamerName,
-          showingConfigure: $showingConfigure,
-          showingTVSelector: $showingTVSelector,
-          onAction: onAction,
-          onKeyboard: keyboardTapped,
-          isKeyboardShown: showingKeyboard,
-          onLaunchApp: { app in launchApp(app) },
-          hardwareControlsAvailable: selection.hardwareControlsAvailable
-        )
-
-      case .landscapeSplit:
-        VStack(spacing: 0) {
-          legacySplitLayoutView(deviceId: selection.selectedDeviceId)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-          legacyBottomAppStripContent()
-        }
-
-      case .portraitCompact:
-        let shouldRenderBottomTicker = true
-        RemotePortraitCompactLayoutView(
-          containerSize: geometry.size,
-          renderBottomTicker: shouldRenderBottomTicker,
-          selectedTVName: selection.selectedTVName,
-          selectedStreamerName: selection.selectedStreamerName,
-          selectedDeviceId: selection.selectedDeviceId,
-          hardwareControlsAvailable: selection.hardwareControlsAvailable,
-          showingConfigure: $showingConfigure,
-          showingTVSelector: $showingTVSelector,
-          isKeyboardShown: showingKeyboard,
-          onKeyboard: keyboardTapped,
-          phonePowerDelay: settings.phonePowerDelay,
-          phoneHomeDelay: settings.phoneHomeDelay,
-          appLaunchDelay: settings.phoneAppLaunchDelay,
-          onAction: onAction,
-          onLaunchApp: { app in launchApp(app) }
-        )
-      }
-    }
-  }
-
-  /// Legacy split layout: remote controls on left, Now Playing on right; bottom strip spans both panes.
-  @ViewBuilder
-  private func legacySplitLayoutView(deviceId: String?) -> some View {
-    HStack(spacing: 0) {
-      RemotePortraitCompactLayoutView(
-        containerSize: containerSize,
-        renderBottomTicker: false,
-        selectedTVName: selection.selectedTVName,
-        selectedStreamerName: selection.selectedStreamerName,
-        selectedDeviceId: selection.selectedDeviceId,
-        hardwareControlsAvailable: selection.hardwareControlsAvailable,
-        showingConfigure: $showingConfigure,
-        showingTVSelector: $showingTVSelector,
-        isKeyboardShown: showingKeyboard,
-        onKeyboard: keyboardTapped,
-        phonePowerDelay: settings.phonePowerDelay,
-        phoneHomeDelay: settings.phoneHomeDelay,
-        appLaunchDelay: settings.phoneAppLaunchDelay,
-        onAction: onAction,
-        onLaunchApp: { app in launchApp(app) }
-      )
-      .frame(maxWidth: .infinity)
-
-      Divider()
-        .background(Color.white.opacity(0.1))
-
-      NowPlayingPanel(deviceId: deviceId)
-        .frame(maxWidth: .infinity)
-    }
-  }
-
-  @ViewBuilder
-  private func legacyBottomAppStripContent() -> some View {
-    if let deviceId = selection.selectedDeviceId {
-      let config = AppStripConfig.config(for: layoutMode)
-      if config.isVisible {
-        let stripScale =
-          RemoteControlPlatform.appStripScaleFactor(
-            containerSize: containerSize, layoutMode: layoutMode)
-        let scaledSizing = config.sizing?.scaled(by: stripScale)
-        let horizontalInset = RemoteControlPlatform.appStripHorizontalInset(layoutMode: layoutMode)
-
-        AppStripView(
-          deviceId: deviceId,
-          direction: config.direction,
-          lanes: RemoteControlPlatform.appStripLanesOverride(
-            layoutMode: layoutMode,
-            direction: config.direction
-          ) ?? config.lanes,
-          sizing: scaledSizing,
-          showLabels: config.showLabels,
-          appLaunchDelay: settings.phoneAppLaunchDelay,
-          onLaunch: { app in launchApp(app) }
-        )
-        .padding(config.padding)
-        .padding(.horizontal, horizontalInset)
       }
     }
   }
