@@ -85,7 +85,8 @@ struct RemotePortraitCompactControlsView: View {
       }
       .background(
         // Natural-size probe (scale=1, spacingBoost=1) – does not affect layout.
-        controlCluster(scaleFactor: 1.0, spacingBoost: 1.0)
+        // Uses forMeasurement=true to avoid RealityKit in hidden views (breaks Metal rendering).
+        controlCluster(scaleFactor: 1.0, spacingBoost: 1.0, forMeasurement: true)
           .background(
             GeometryReader { proxy in
               Color.clear.preference(key: SizePreferenceKey.self, value: proxy.size)
@@ -108,7 +109,7 @@ struct RemotePortraitCompactControlsView: View {
 
   // MARK: - Controls cluster
 
-  private func controlCluster(scaleFactor: CGFloat, spacingBoost: CGFloat) -> some View {
+  private func controlCluster(scaleFactor: CGFloat, spacingBoost: CGFloat, forMeasurement: Bool = false) -> some View {
     return VStack(spacing: 0) {
       RemoteNavRowSpacingBoostView(
         scaleFactor: scaleFactor,
@@ -121,7 +122,8 @@ struct RemotePortraitCompactControlsView: View {
       RemoteDPadClusterView(
         scaleFactor: scaleFactor,
         onAction: onAction,
-        topRowToDPadSpacing: 6
+        topRowToDPadSpacing: 6,
+        forMeasurement: forMeasurement
       )
       .padding(.bottom, 10 * scaleFactor)
 

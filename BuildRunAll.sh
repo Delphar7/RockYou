@@ -114,6 +114,34 @@ bundle_dir_for() {
     echo "$(derived_data_root_for "$platform_tag")/BuildResults"
 }
 
+# Sentinel file indicates a successful build completion.
+# Used to avoid skipping builds when a previous build was killed mid-way.
+build_sentinel_for() {
+    local platform_tag=$1
+    echo "$(derived_data_root_for "$platform_tag")/.build_complete"
+}
+
+clear_build_sentinel() {
+    local platform_tag=$1
+    local sentinel
+    sentinel="$(build_sentinel_for "$platform_tag")"
+    if [ -f "$sentinel" ]; then
+        if ! rm -f "$sentinel" 2>/dev/null; then
+            echo "⚠️  Failed to clear build sentinel: $sentinel"
+            # Force remove with retry after brief pause (macOS flakiness workaround)
+            sleep 0.1
+            rm -f "$sentinel" 2>/dev/null || true
+        fi
+    fi
+}
+
+mark_build_complete() {
+    local platform_tag=$1
+    local sentinel
+    sentinel="$(build_sentinel_for "$platform_tag")"
+    touch "$sentinel"
+}
+
 ensure_platform_dirs() {
     local platform_tag=$1
     local dd
@@ -617,13 +645,21 @@ _build_ios_locked() {
     local bundle_suffix=$3
     local derived_data_root=$4
     local bundle_dir=$5
+    local platform_tag="iossim"
 
     local app_path
-    app_path="$(build_products_root_for iossim)/Debug-iphonesimulator/RockYou.app"
-    if [ "${LOCK_WAS_CONTENDED:-0}" -eq 1 ] && [ "$ALWAYS_BUILD" -eq 0 ] && [ -d "$app_path" ]; then
-        echo "✅ Skipping $name build (another process already built iossim)"
+    app_path="$(build_products_root_for "$platform_tag")/Debug-iphonesimulator/RockYou.app"
+    local sentinel
+    sentinel="$(build_sentinel_for "$platform_tag")"
+
+    # Only skip if: we waited for lock, app exists, AND sentinel exists (previous build completed)
+    if [ "${LOCK_WAS_CONTENDED:-0}" -eq 1 ] && [ "$ALWAYS_BUILD" -eq 0 ] && [ -d "$app_path" ] && [ -f "$sentinel" ]; then
+        echo "✅ Skipping $name build (another process already built $platform_tag)"
         return 0
     fi
+
+    # Clear sentinel before building (so interrupted builds don't leave stale state)
+    clear_build_sentinel "$platform_tag"
 
     echo "📱 Building $name app..."
     rm -rf "$bundle_dir/RockYou$bundle_suffix" "$bundle_dir/RockYou$bundle_suffix.xcresult"
@@ -632,7 +668,10 @@ _build_ios_locked() {
         -derivedDataPath "$derived_data_root" \
         -destination "platform=iOS Simulator,id=$sim_id" \
         -resultBundlePath "$bundle_dir/RockYou$bundle_suffix.xcresult" \
-        -allowProvisioningUpdates build | xcbeautify
+        -allowProvisioningUpdates build | xcbeautify || return $?
+
+    # Mark build complete only on success
+    mark_build_complete "$platform_tag"
 }
 
 build_watch() {
@@ -651,13 +690,21 @@ _build_watch_locked() {
     local watch_sim_id=$1
     local derived_data_root=$2
     local bundle_dir=$3
+    local platform_tag="watchsim"
 
     local app_path
-    app_path="$(build_products_root_for watchsim)/Debug-watchsimulator/RockYou Watch App.app"
-    if [ "${LOCK_WAS_CONTENDED:-0}" -eq 1 ] && [ "$ALWAYS_BUILD" -eq 0 ] && [ -d "$app_path" ]; then
-        echo "✅ Skipping Watch build (another process already built watchsim)"
+    app_path="$(build_products_root_for "$platform_tag")/Debug-watchsimulator/RockYou Watch App.app"
+    local sentinel
+    sentinel="$(build_sentinel_for "$platform_tag")"
+
+    # Only skip if: we waited for lock, app exists, AND sentinel exists (previous build completed)
+    if [ "${LOCK_WAS_CONTENDED:-0}" -eq 1 ] && [ "$ALWAYS_BUILD" -eq 0 ] && [ -d "$app_path" ] && [ -f "$sentinel" ]; then
+        echo "✅ Skipping Watch build (another process already built $platform_tag)"
         return 0
     fi
+
+    # Clear sentinel before building (so interrupted builds don't leave stale state)
+    clear_build_sentinel "$platform_tag"
 
     echo "⌚ Building Watch app..."
     rm -rf "$bundle_dir/RockYou Watch App" "$bundle_dir/RockYou Watch App.xcresult"
@@ -666,7 +713,10 @@ _build_watch_locked() {
         -derivedDataPath "$derived_data_root" \
         -destination "platform=watchOS Simulator,id=$watch_sim_id" \
         -resultBundlePath "$bundle_dir/RockYou Watch App.xcresult" \
-        -allowProvisioningUpdates build | xcbeautify
+        -allowProvisioningUpdates build | xcbeautify || return $?
+
+    # Mark build complete only on success
+    mark_build_complete "$platform_tag"
 }
 
 build_mac() {
@@ -701,13 +751,21 @@ mac_app_bin_path() {
 _build_mac_locked() {
     local derived_data_root=$1
     local bundle_dir=$2
+    local platform_tag="macos"
 
     local app_path
     app_path="$(mac_app_bundle_path)"
-    if [ "${LOCK_WAS_CONTENDED:-0}" -eq 1 ] && [ "$ALWAYS_BUILD" -eq 0 ] && [ -d "$app_path" ]; then
-        echo "✅ Skipping Mac build (another process already built macos)"
+    local sentinel
+    sentinel="$(build_sentinel_for "$platform_tag")"
+
+    # Only skip if: we waited for lock, app exists, AND sentinel exists (previous build completed)
+    if [ "${LOCK_WAS_CONTENDED:-0}" -eq 1 ] && [ "$ALWAYS_BUILD" -eq 0 ] && [ -d "$app_path" ] && [ -f "$sentinel" ]; then
+        echo "✅ Skipping Mac build (another process already built $platform_tag)"
         return 0
     fi
+
+    # Clear sentinel before building (so interrupted builds don't leave stale state)
+    clear_build_sentinel "$platform_tag"
 
     if [ "$MAC_ARCHIVE" -eq 1 ]; then
         local archive_path="$bundle_dir/RockYou-mac.xcarchive"
@@ -719,7 +777,7 @@ _build_mac_locked() {
             -destination "generic/platform=macOS" \
             -archivePath "$archive_path" \
             -resultBundlePath "$bundle_dir/RockYou-Mac-Archive.xcresult" \
-            -allowProvisioningUpdates archive | xcbeautify
+            -allowProvisioningUpdates archive | xcbeautify || return $?
     else
         echo "🖥️  Building Mac app..."
         rm -rf "$bundle_dir/RockYou-Mac" "$bundle_dir/RockYou-Mac.xcresult"
@@ -728,8 +786,11 @@ _build_mac_locked() {
             -derivedDataPath "$derived_data_root" \
             -destination "$MAC_DEST" \
             -resultBundlePath "$bundle_dir/RockYou-Mac.xcresult" \
-            -allowProvisioningUpdates build | xcbeautify
+            -allowProvisioningUpdates build | xcbeautify || return $?
     fi
+
+    # Mark build complete only on success
+    mark_build_complete "$platform_tag"
 }
 
 # Run iOS app on a simulator (iPhone or iPad)

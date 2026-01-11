@@ -156,7 +156,7 @@ public enum PlatformImage {
 #endif
   }
 
-  private static func swiftUIImage(from native: PlatformNativeImage) -> Image {
+  public static func swiftUIImage(from native: PlatformNativeImage) -> Image {
 #if canImport(AppKit)
     return Image(nsImage: native)
 #else

@@ -13,6 +13,7 @@
 		D8DAD100000000000000003 /* Stick.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000003 /* Stick.png */; };
 		D8DAD100000000000000004 /* StickShadow.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000004 /* StickShadow.png */; };
 		D8DAD100000000000000005 /* PlasticTexture.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000005 /* PlasticTexture.png */; };
+		D8DAD100000000000000006 /* breaker.usdz in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000006 /* breaker.usdz */; };
 		D8DAD200000000000000001 /* DPad-Ring.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000001 /* DPad-Ring.png */; };
 		D8DAD200000000000000003 /* Stick.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000003 /* Stick.png */; };
 		D8DAD200000000000000004 /* StickShadow.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000004 /* StickShadow.png */; };
@@ -96,10 +97,11 @@
 		D89F41422EB7FC3D00D66A14 /* RockYouTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RockYouTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D89F414C2EB7FC3D00D66A14 /* RockYouUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RockYouUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8AA01002F1C000100000001 /* RockYou Watch Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "RockYou Watch Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
-		D8DAD000000000000000001 /* DPad-Ring.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "DPad-Ring.png"; path = "Resources/DPad-Ring.png"; sourceTree = "<group>"; };
-		D8DAD000000000000000003 /* Stick.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Stick.png; path = Resources/Stick.png; sourceTree = "<group>"; };
-		D8DAD000000000000000004 /* StickShadow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = StickShadow.png; path = Resources/StickShadow.png; sourceTree = "<group>"; };
-		D8DAD000000000000000005 /* PlasticTexture.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = PlasticTexture.png; path = Resources/PlasticTexture.png; sourceTree = "<group>"; };
+		D8DAD000000000000000001 /* DPad-Ring.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "DPad-Ring.png"; path = "Resources/Shipping/DPad-Ring.png"; sourceTree = "<group>"; };
+		D8DAD000000000000000003 /* Stick.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Stick.png; path = Resources/Shipping/Stick.png; sourceTree = "<group>"; };
+		D8DAD000000000000000004 /* StickShadow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = StickShadow.png; path = Resources/Shipping/StickShadow.png; sourceTree = "<group>"; };
+		D8DAD000000000000000005 /* PlasticTexture.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = PlasticTexture.png; path = Resources/Shipping/PlasticTexture.png; sourceTree = "<group>"; };
+		D8DAD000000000000000006 /* breaker.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; name = breaker.usdz; path = Resources/Shipping/breaker.usdz; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -247,6 +249,7 @@
 				D8DAD000000000000000003 /* Stick.png */,
 				D8DAD000000000000000004 /* StickShadow.png */,
 				D8DAD000000000000000005 /* PlasticTexture.png */,
+				D8DAD000000000000000006 /* breaker.usdz */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -544,6 +547,7 @@
 				D8DAD100000000000000003 /* Stick.png in Resources */,
 				D8DAD100000000000000004 /* StickShadow.png in Resources */,
 				D8DAD100000000000000005 /* PlasticTexture.png in Resources */,
+				D8DAD100000000000000006 /* breaker.usdz in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1025,10 +1029,10 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYou;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1142,10 +1146,10 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYou;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1294,8 +1298,8 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TEAMID;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYouTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1321,8 +1325,8 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TEAMID;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYouTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1347,8 +1351,8 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TEAMID;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYouUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1373,8 +1377,8 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TEAMID;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jtr.RockYouUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
