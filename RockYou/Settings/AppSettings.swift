@@ -52,6 +52,14 @@ final class AppSettings {
     set { setDelay(newValue, key: "phoneAppLaunchDelay") }
   }
 
+  // MARK: - D-Pad Lock Timeout (iOS)
+
+  /// D-Pad lock timeout. nil = Off.
+  var dpadLockTimeout: TimeInterval? {
+    get { loadDelay(key: "dpadLockTimeout", defaultValue: 5.0) }
+    set { setDelay(newValue, key: "dpadLockTimeout") }
+  }
+
   // MARK: - Launch Screen (Watch only)
 
   var watchLaunchScreen: LaunchScreen {
@@ -102,7 +110,7 @@ final class AppSettings {
     syncToWatch()
   }
 
-  private func loadDelay(key: String, defaultValue: TimeInterval) -> TimeInterval? {
+  func loadDelay(key: String, defaultValue: TimeInterval) -> TimeInterval? {
     guard let object = readDefaultsObject(key: key) else {
       return defaultValue
     }
@@ -123,7 +131,7 @@ final class AppSettings {
     return value
   }
 
-  private func setDelay(_ value: TimeInterval?, key: String) {
+  func setDelay(_ value: TimeInterval?, key: String) {
     // Represent "Off" explicitly so it survives restarts.
     UserDefaults.standard.set(value ?? 0.0, forKey: key)
     flushDefaultsIfDebug()

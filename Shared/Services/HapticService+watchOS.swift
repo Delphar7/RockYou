@@ -9,6 +9,7 @@ extension HapticType {
     case .success: return .success
     case .warning: return .notification
     case .start: return .start
+    case .rigid: return .directionUp  // Strong haptic for heavy impact
     }
   }
 }

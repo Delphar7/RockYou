@@ -10,6 +10,7 @@
 
 import Foundation
 import SwiftUI
+import CoreGraphics
 import os.lock
 
 #if canImport(AppKit)
@@ -161,6 +162,18 @@ public enum PlatformImage {
     return Image(nsImage: native)
 #else
     return Image(uiImage: native)
+#endif
+  }
+
+  /// Best-effort extraction of a `CGImage` from a platform-native image.
+  ///
+  /// Useful for debug pixel inspection and other cross-platform image analysis.
+  public static func cgImage(from native: PlatformNativeImage) -> CGImage? {
+#if canImport(AppKit)
+    var rect = CGRect(origin: .zero, size: native.size)
+    return native.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+#else
+    return native.cgImage
 #endif
   }
 }

@@ -5,7 +5,6 @@
 //  Observes iOS keyboard show/hide notifications and exposes height for layout.
 //
 
-#if os(iOS)
 import Combine
 import UIKit
 
@@ -49,4 +48,3 @@ final class KeyboardVisibilityMonitor: ObservableObject {
     height = 0
   }
 }
-#endif

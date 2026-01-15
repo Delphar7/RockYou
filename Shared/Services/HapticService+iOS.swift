@@ -9,6 +9,7 @@ extension HapticType {
     case .success: return .medium
     case .warning: return .heavy
     case .start: return .soft
+    case .rigid: return .rigid
     }
   }
 }

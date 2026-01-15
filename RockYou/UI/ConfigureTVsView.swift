@@ -6,107 +6,89 @@
 //
 
 import SwiftUI
+import Observation
 
 // MARK: - Configure Devices View (TV-Centric)
 
-struct ConfigureTVsView: View {
-  @State private var expandedTVId: String?
-  @State private var confirmAction: ConfirmAction?
-  @State private var shareURL: URL?
-  @State private var showShareSheet: Bool = false
-  @State private var showShareError: String?
-  @State private var showCloudKitBlockedAlert: Bool = false
+@MainActor
+@Observable
+final class ConfigureTVsState {
+  var expandedTVId: String?
+  var confirmAction: ConfigureTVsConfirmAction?
+  var shareURL: URL?
+  var showShareSheet: Bool = false
+  var showShareError: String?
+  var showCloudKitBlockedAlert: Bool = false
 
-  private var discovery: RokuDiscoveryService { RokuDiscoveryService.shared }
-  private var pairingStore: PairingStore { PairingStore.shared }
+  var discovery: RokuDiscoveryService { RokuDiscoveryService.shared }
+  var pairingStore: PairingStore { PairingStore.shared }
+
+  func handleManualRefresh() {
+    discovery.refresh()
+
+    let cache = AppCacheManager.shared
+    for deviceId in cache.appsByDevice.keys {
+      cache.requestForcedIconRefreshAfterNextAppsFetch(for: deviceId, fallbackDelay: 10)
+    }
+  }
+
+  func createAndShare() async {
+    if let blocked = pairingStore.cloudKitBlockedMessage {
+      showShareError = blocked
+      return
+    }
+    do {
+      shareURL = try await pairingStore.createShareURL()
+      showShareSheet = true
+    } catch {
+      showShareError = error.localizedDescription
+    }
+  }
+}
+
+/// A non-scrolling header row meant to live under the Settings nav bar.
+struct ConfigureTVsHeaderRow: View {
+  @Bindable var model: ConfigureTVsState
 
   var body: some View {
-    Group {
-      Section {
-        tvListPanel
-          .listRowInsets(EdgeInsets())
-          .listRowSeparator(.hidden)
-      } header: {
-        ConfigureTVsSectionHeader(
-          isScanning: discovery.isScanning,
-          isSyncing: pairingStore.isSyncing,
-          isShared: pairingStore.isShared,
-          onRefresh: { handleManualRefresh() },
-          onShare: { Task { await createAndShare() } }
-        )
-        .textCase(nil)
-      }
-    }
-    .confirmationDialog(
-      confirmAction?.title ?? "",
-      isPresented: .init(
-        get: { confirmAction != nil },
-        set: { if !$0 { confirmAction = nil } }
-      ),
-      titleVisibility: .visible
-    ) {
-      if let action = confirmAction {
-        Button("Re-assign") {
-          executeReassign(action)
-        }
-        if action.canSwap {
-          Button("Swap") {
-            executeSwap(action)
-          }
-        }
-        Button("Cancel", role: .cancel) {}
-      }
-    } message: {
-      if let action = confirmAction {
-        Text(action.message)
-      }
-    }
-    .sheet(isPresented: $showShareSheet) {
-      if let url = shareURL {
-        ShareSheet(items: [url])
-      }
-    }
-    .alert("Share Error", isPresented: .init(
-      get: { showShareError != nil },
-      set: { if !$0 { showShareError = nil } }
-    )) {
-      Button("OK") { showShareError = nil }
-    } message: {
-      Text(showShareError ?? "")
-    }
-    .alert(
-      "iCloud Sync Disabled",
-      isPresented: $showCloudKitBlockedAlert
-    ) {
-      Button("OK") { showCloudKitBlockedAlert = false }
-    } message: {
-      Text(pairingStore.cloudKitBlockedMessage ?? "")
-    }
-    .onChange(of: pairingStore.cloudKitBlockedMessage) { _, newValue in
-      // Important: tie alert presentation to a local state.
-      // If we bind isPresented directly to `cloudKitBlockedMessage != nil`,
-      // SwiftUI will try to dismiss by setting the binding false, but since the
-      // message remains non-nil, the alert immediately re-presents and "OK" looks broken.
-      showCloudKitBlockedAlert = (newValue != nil)
-    }
+    ConfigureTVsSectionHeader(
+      isScanning: model.discovery.isScanning,
+      isSyncing: model.pairingStore.isSyncing,
+      isShared: model.pairingStore.isShared,
+      onRefresh: { model.handleManualRefresh() },
+      onShare: { Task { await model.createAndShare() } }
+    )
+    .textCase(nil)
+    .background(.ultraThinMaterial)
+  }
+}
+
+/// The scrollable content (TV list panel) used inside a parent List.
+struct ConfigureTVsPanel: View {
+  @Bindable var model: ConfigureTVsState
+
+  var body: some View {
+    tvListPanel
+      .listRowInsets(EdgeInsets())
+      .listRowSeparator(.hidden)
   }
 
   // MARK: - Section Content
 
   private var tvListPanel: some View {
     VStack(spacing: 6) {
-      if discovery.tvs.isEmpty && !discovery.isScanning {
+      if model.discovery.tvs.isEmpty && !model.discovery.isScanning {
         emptyState
       }
-      ForEach(discovery.tvs) { tv in
+      ForEach(model.discovery.tvs) { tv in
         TVRow(
           tv: tv,
           mode: .configure,
           pairedStreamer: pairedStreamer(for: tv),
-          isExpanded: expandedTVId == tv.id,
-          streamers: discovery.streamingDevices,
-          allTVs: discovery.tvs,
-          pairings: pairingStore.asDictionary,
+          isExpanded: model.expandedTVId == tv.id,
+          streamers: model.discovery.streamingDevices,
+          allTVs: model.discovery.tvs,
+          pairings: model.pairingStore.asDictionary,
           onExpandToggle: { toggleExpanded(tv) },
           onSelectStreamer: { streamer in
             handleStreamerSelection(tv: tv, streamer: streamer)
@@ -127,35 +109,21 @@ struct ConfigureTVsView: View {
   private func removeTVDevice(_ tv: DeviceInfo) {
     // Removing a TV from the discovery cache should not remove other devices.
     // If it has a pairing, unpair first.
-    if pairingStore.streamerIdForTV(tv.id) != nil {
-      pairingStore.unpairTV(tv.id)
+    if model.pairingStore.streamerIdForTV(tv.id) != nil {
+      model.pairingStore.unpairTV(tv.id)
     }
-    discovery.removeDeviceFromCache(deviceId: tv.id)
+    model.discovery.removeDeviceFromCache(deviceId: tv.id)
   }
 
   private func removeStreamerDevice(_ streamer: DeviceInfo) {
     // Removing a streamer from the discovery cache should not remove TVs.
     // If the streamer is currently paired to a TV, unpair first.
-    if let tvId = pairingStore.tvIdForStreamer(streamer.id) {
-      pairingStore.unpairTV(tvId)
+    if let tvId = model.pairingStore.tvIdForStreamer(streamer.id) {
+      model.pairingStore.unpairTV(tvId)
     }
-    discovery.removeDeviceFromCache(deviceId: streamer.id)
+    model.discovery.removeDeviceFromCache(deviceId: streamer.id)
   }
 
-  private func createAndShare() async {
-    if let blocked = pairingStore.cloudKitBlockedMessage {
-      showShareError = blocked
-      return
-    }
-    do {
-      shareURL = try await pairingStore.createShareURL()
-      showShareSheet = true
-    } catch {
-      showShareError = error.localizedDescription
-    }
-  }
-
-  // MARK: - Empty State
   private var emptyState: some View {
     VStack(spacing: 12) {
       Image(systemName: "tv.slash")
@@ -163,9 +131,9 @@ struct ConfigureTVsView: View {
         .foregroundStyle(.secondary)
       Text("No Roku TVs found")
         .foregroundStyle(.secondary)
-      if !discovery.isScanning {
+      if !model.discovery.isScanning {
         Button("Refresh") {
-          handleManualRefresh()
+          model.handleManualRefresh()
         }
       }
     }
@@ -173,47 +141,35 @@ struct ConfigureTVsView: View {
     .padding(.vertical, 40)
   }
 
-  /// Manual network refresh (Settings → Configure): also request a one-shot forced icon refresh
-  /// after apps arrive (or 10s fallback), for all devices we already have cached app lists for.
-  private func handleManualRefresh() {
-    discovery.refresh()
-
-    let cache = AppCacheManager.shared
-    for deviceId in cache.appsByDevice.keys {
-      cache.requestForcedIconRefreshAfterNextAppsFetch(for: deviceId, fallbackDelay: 10)
-    }
-  }
-
   // MARK: - Helpers
   private func pairedStreamer(for tv: DeviceInfo) -> DeviceInfo? {
-    guard let streamerId = pairingStore.streamerIdForTV(tv.id) else { return nil }
-    return discovery.streamingDevices.first { $0.id == streamerId }
+    guard let streamerId = model.pairingStore.streamerIdForTV(tv.id) else { return nil }
+    return model.discovery.streamingDevices.first { $0.id == streamerId }
   }
 
   private func tvForStreamer(_ streamer: DeviceInfo) -> DeviceInfo? {
-    guard let tvId = pairingStore.tvIdForStreamer(streamer.id) else { return nil }
-    return discovery.tvs.first { $0.id == tvId }
+    guard let tvId = model.pairingStore.tvIdForStreamer(streamer.id) else { return nil }
+    return model.discovery.tvs.first { $0.id == tvId }
   }
 
   private func toggleExpanded(_ tv: DeviceInfo) {
     withAnimation(.easeInOut(duration: 0.2)) {
-      expandedTVId = (expandedTVId == tv.id) ? nil : tv.id
+      model.expandedTVId = (model.expandedTVId == tv.id) ? nil : tv.id
     }
   }
 
-  // MARK: - Selection Logic
   private func handleStreamerSelection(tv: DeviceInfo, streamer: DeviceInfo?) {
     // Unpair
     guard let streamer = streamer else {
-      pairingStore.unpairTV(tv.id)
+      model.pairingStore.unpairTV(tv.id)
       collapseAndClose()
       return
     }
 
     // Check if streamer is already bound elsewhere
     if let existingTV = tvForStreamer(streamer), existingTV.id != tv.id {
-      let currentlyHasStreamer = pairingStore.streamerIdForTV(tv.id) != nil
-      confirmAction = ConfirmAction(
+      let currentlyHasStreamer = model.pairingStore.streamerIdForTV(tv.id) != nil
+      model.confirmAction = ConfigureTVsConfirmAction(
         targetTV: tv,
         streamer: streamer,
         existingTV: existingTV,
@@ -221,16 +177,16 @@ struct ConfigureTVsView: View {
       )
     } else {
       // Simple assignment
-      pairingStore.pair(
+      model.pairingStore.pair(
         tvId: tv.id, streamerId: streamer.id, tvName: tv.name, streamerName: streamer.name)
       collapseAndClose()
     }
   }
 
-  private func executeReassign(_ action: ConfirmAction) {
+  private func executeReassign(_ action: ConfigureTVsConfirmAction) {
     // Remove from existing TV, assign to target TV
-    pairingStore.unpairTV(action.existingTV.id)
-    pairingStore.pair(
+    model.pairingStore.unpairTV(action.existingTV.id)
+    model.pairingStore.pair(
       tvId: action.targetTV.id,
       streamerId: action.streamer.id,
       tvName: action.targetTV.name,
@@ -239,15 +195,112 @@ struct ConfigureTVsView: View {
     collapseAndClose()
   }
 
-  private func executeSwap(_ action: ConfirmAction) {
-    pairingStore.swap(tv1: action.targetTV.id, tv2: action.existingTV.id)
+  private func executeSwap(_ action: ConfigureTVsConfirmAction) {
+    model.pairingStore.swap(tv1: action.targetTV.id, tv2: action.existingTV.id)
     collapseAndClose()
   }
 
   private func collapseAndClose() {
     withAnimation(.easeInOut(duration: 0.2)) {
-      expandedTVId = nil
+      model.expandedTVId = nil
     }
+  }
+}
+
+struct ConfigureTVsView: View {
+  @State private var model = ConfigureTVsState()
+
+  var body: some View {
+    Group {
+      Section {
+        ConfigureTVsPanel(model: model)
+      } header: {
+        ConfigureTVsHeaderRow(model: model)
+          .textCase(nil)
+      }
+    }
+    .configureTVsDialogs(model: model)
+  }
+}
+
+extension View {
+  /// Shared presentation plumbing for Configure TVs (dialogs/sheets/alerts).
+  /// Keeping this centralized avoids duplicating UI state wiring across presentations.
+  func configureTVsDialogs(model: ConfigureTVsState) -> some View {
+    modifier(ConfigureTVsDialogsModifier(model: model))
+  }
+}
+
+private struct ConfigureTVsDialogsModifier: ViewModifier {
+  @Bindable var model: ConfigureTVsState
+
+  func body(content: Content) -> some View {
+    content
+      .confirmationDialog(
+        model.confirmAction?.title ?? "",
+        isPresented: .init(
+          get: { model.confirmAction != nil },
+          set: { if !$0 { model.confirmAction = nil } }
+        ),
+        titleVisibility: .visible
+      ) {
+        if let action = model.confirmAction {
+          Button("Re-assign") {
+            model.pairingStore.unpairTV(action.existingTV.id)
+            model.pairingStore.pair(
+              tvId: action.targetTV.id,
+              streamerId: action.streamer.id,
+              tvName: action.targetTV.name,
+              streamerName: action.streamer.name
+            )
+            withAnimation(.easeInOut(duration: 0.2)) { model.expandedTVId = nil }
+            model.confirmAction = nil
+          }
+          if action.canSwap {
+            Button("Swap") {
+              model.pairingStore.swap(tv1: action.targetTV.id, tv2: action.existingTV.id)
+              withAnimation(.easeInOut(duration: 0.2)) { model.expandedTVId = nil }
+              model.confirmAction = nil
+            }
+          }
+          Button("Cancel", role: .cancel) { model.confirmAction = nil }
+        }
+      } message: {
+        if let action = model.confirmAction {
+          Text(action.message)
+        }
+      }
+      .sheet(isPresented: $model.showShareSheet) {
+        if let url = model.shareURL {
+          ShareSheet(items: [url])
+        }
+      }
+      .alert(
+        "Share Error",
+        isPresented: .init(
+          get: { model.showShareError != nil },
+          set: { if !$0 { model.showShareError = nil } }
+        )
+      ) {
+        Button("OK") { model.showShareError = nil }
+      } message: {
+        Text(model.showShareError ?? "")
+      }
+      .alert(
+        "iCloud Sync Disabled",
+        isPresented: $model.showCloudKitBlockedAlert
+      ) {
+        Button("OK") { model.showCloudKitBlockedAlert = false }
+      } message: {
+        Text(model.pairingStore.cloudKitBlockedMessage ?? "")
+      }
+      .onChange(of: model.pairingStore.cloudKitBlockedMessage) { _, newValue in
+        // Important: tie alert presentation to a local state.
+        // If we bind isPresented directly to `cloudKitBlockedMessage != nil`,
+        // SwiftUI will try to dismiss by setting the binding false, but since the
+        // message remains non-nil, the alert immediately re-presents and "OK" looks broken.
+        model.showCloudKitBlockedAlert = (newValue != nil)
+      }
   }
 }
 
@@ -284,13 +337,14 @@ private struct ConfigureTVsSectionHeader: View {
     }
     .font(.subheadline.weight(.semibold))
     .foregroundStyle(.primary)
-    .padding(.top, 6)
+    .padding(.horizontal, 24)
+    .padding(.bottom, 12)
   }
 }
 
 // MARK: - Confirm Action Model
 
-private struct ConfirmAction {
+struct ConfigureTVsConfirmAction {
   let targetTV: DeviceInfo
   let streamer: DeviceInfo
   let existingTV: DeviceInfo

@@ -15,6 +15,7 @@ enum HapticType {
   case success    // Completion feedback
   case warning    // Alert/caution
   case start      // Beginning of an interaction
+  case rigid  // Strong impact (heavy/hard collision)
 }
 
 // MARK: - Haptic Service

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		D89F41602EB7FC3D00D66A14 /* RockYou Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D81AB0E92EC2C06400DA3A6E /* RockYou Watch App.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D8AA01062F1C000100000001 /* RockYou Watch Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D8AA01002F1C000100000001 /* RockYou Watch Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D8DAD100000000000000007 /* DPad-Refracted.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000007 /* DPad-Refracted.png */; };
 		D8DAD100000000000000001 /* DPad-Ring.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000001 /* DPad-Ring.png */; };
 		D8DAD100000000000000003 /* Stick.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000003 /* Stick.png */; };
 		D8DAD100000000000000004 /* StickShadow.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000004 /* StickShadow.png */; };
@@ -97,6 +98,7 @@
 		D89F41422EB7FC3D00D66A14 /* RockYouTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RockYouTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D89F414C2EB7FC3D00D66A14 /* RockYouUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RockYouUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8AA01002F1C000100000001 /* RockYou Watch Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "RockYou Watch Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D8DAD000000000000000007 /* DPad-Refracted.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "DPad-Refracted.png"; path = "Resources/Shipping/DPad-Refracted.png"; sourceTree = "<group>"; };
 		D8DAD000000000000000001 /* DPad-Ring.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "DPad-Ring.png"; path = "Resources/Shipping/DPad-Ring.png"; sourceTree = "<group>"; };
 		D8DAD000000000000000003 /* Stick.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = Stick.png; path = Resources/Shipping/Stick.png; sourceTree = "<group>"; };
 		D8DAD000000000000000004 /* StickShadow.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = StickShadow.png; path = Resources/Shipping/StickShadow.png; sourceTree = "<group>"; };
@@ -245,6 +247,7 @@
 		D813B6ED2EF9038300262449 /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
+				D8DAD000000000000000007 /* DPad-Refracted.png */,
 				D8DAD000000000000000001 /* DPad-Ring.png */,
 				D8DAD000000000000000003 /* Stick.png */,
 				D8DAD000000000000000004 /* StickShadow.png */,
@@ -543,6 +546,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D8DAD100000000000000007 /* DPad-Refracted.png in Resources */,
 				D8DAD100000000000000001 /* DPad-Ring.png in Resources */,
 				D8DAD100000000000000003 /* Stick.png in Resources */,
 				D8DAD100000000000000004 /* StickShadow.png in Resources */,

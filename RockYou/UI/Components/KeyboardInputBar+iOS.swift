@@ -6,7 +6,6 @@
 //  Uses ECP-2 set-textedit-text for efficient text sync with Roku.
 //
 
-#if os(iOS)
   import SwiftUI
 
   /// Floating capsule text input bar for iOS keyboard integration.
@@ -209,6 +208,5 @@
         charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
       let encoded = character.addingPercentEncoding(withAllowedCharacters: allowed) ?? character
       return "Lit_\(encoded)"
-    }
   }
-#endif
+}

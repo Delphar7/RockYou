@@ -12,22 +12,21 @@ struct SettingsWatchSection {
 }
 
 struct SettingsViewCore: View {
-  @Binding var isPresented: Bool
-
   let hasWatch: Bool
   let watchSection: SettingsWatchSection?
-  let listStylePlain: Bool
-  let includeSweepOverlay: Bool
+  let showSafetyDelays: Bool
 
   @State private var settings = AppSettings.shared
+  @State private var watchSectionExpanded = false
+  @State private var safetyDelaysSectionExpanded = false
 
   var body: some View {
-    ZStack {
-      List {
-        ConfigureTVsView()
-
+    Group {
         if let watchSection, watchSection.isPaired {
-          Section("Watch Settings") {
+        PlatformSettingsSection(
+          title: "Watch Settings",
+          isExpanded: $watchSectionExpanded
+        ) {
             if watchSection.isWatchAppInstalled {
               SettingRow(
                 label: "Launch Screen",
@@ -67,7 +66,11 @@ struct SettingsViewCore: View {
           }
         }
 
-        Section("Button Press Safety Delays") {
+      if showSafetyDelays {
+        PlatformSettingsSection(
+          title: "Button Press Safety Delays",
+          isExpanded: $safetyDelaysSectionExpanded
+        ) {
           SafetyDelaysGrid(
             hasWatch: hasWatch,
             watchPowerDelay: $settings.watchPowerDelay,
@@ -75,19 +78,10 @@ struct SettingsViewCore: View {
             watchHomeDelay: $settings.watchHomeDelay,
             phoneHomeDelay: $settings.phoneHomeDelay,
             watchAppLaunchDelay: $settings.watchAppLaunchDelay,
-            phoneAppLaunchDelay: $settings.phoneAppLaunchDelay
+            phoneAppLaunchDelay: $settings.phoneAppLaunchDelay,
+            phoneDPadLockTimeout: $settings.dpadLockTimeout
           )
         }
-      }
-      .applyIf(listStylePlain) { view in
-        view.listStyle(.plain)
-      }
-
-      // iOS: Settings is presented as a sheet above the main root, so we need the overlay
-      // mounted inside this host. macOS: Settings is often an inspector in the same window,
-      // and the main root already mounts SweepOverlayView(), so mounting it here duplicates it.
-      if includeSweepOverlay {
-        SweepOverlayView()
       }
     }
   }
@@ -130,7 +124,9 @@ struct SettingRow<Content: View>: View {
       Spacer()
       content()
     }
-    .padding(.vertical, 6)
+    .padding(.vertical, 4)
+    // Give rows some thickness without turning them into opaque bars.
+    .listRowBackground(Rectangle().fill(.regularMaterial))
   }
 }
 

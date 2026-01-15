@@ -40,7 +40,7 @@ final class SweepableTouchRouter: NSObject, UIGestureRecognizerDelegate {
 
   /// Blocking zones: rectangles where touches should NOT route to sweepables.
   /// Used for overlay UI (e.g., keyboard input bar) that should absorb touches.
-  private var blockingZones: [ObjectIdentifier: CGRect] = [:]
+  private var blockingZones: [UUID: CGRect] = [:]
 
   private var activeTarget: SweepableTouchTarget?
   private var startPoint: CGPoint = .zero
@@ -63,12 +63,12 @@ final class SweepableTouchRouter: NSObject, UIGestureRecognizerDelegate {
   }
 
   /// Register a blocking zone that prevents sweepable touches from routing through it.
-  func registerBlockingZone(id: ObjectIdentifier, frame: CGRect) {
+  func registerBlockingZone(id: UUID, frame: CGRect) {
     blockingZones[id] = frame
   }
 
   /// Unregister a blocking zone.
-  func unregisterBlockingZone(id: ObjectIdentifier) {
+  func unregisterBlockingZone(id: UUID) {
     blockingZones.removeValue(forKey: id)
   }
 
@@ -251,7 +251,7 @@ private struct SweepBlockingZoneModifier: ViewModifier {
               {
                 let frame = proxy.frame(in: .global)
                 SweepableTouchRouter.shared(for: window)
-                  .registerBlockingZone(id: ObjectIdentifier(zoneId as AnyObject), frame: frame)
+                  .registerBlockingZone(id: zoneId, frame: frame)
               }
             }
             .onDisappear {
@@ -261,7 +261,7 @@ private struct SweepBlockingZoneModifier: ViewModifier {
                 .first(where: { $0.isKeyWindow })
               {
                 SweepableTouchRouter.shared(for: window)
-                  .unregisterBlockingZone(id: ObjectIdentifier(zoneId as AnyObject))
+                  .unregisterBlockingZone(id: zoneId)
               }
             }
             .onChange(of: proxy.frame(in: .global)) { _, newFrame in
@@ -271,7 +271,7 @@ private struct SweepBlockingZoneModifier: ViewModifier {
                 .first(where: { $0.isKeyWindow })
               {
                 SweepableTouchRouter.shared(for: window)
-                  .registerBlockingZone(id: ObjectIdentifier(zoneId as AnyObject), frame: newFrame)
+                  .registerBlockingZone(id: zoneId, frame: newFrame)
               }
             }
         }

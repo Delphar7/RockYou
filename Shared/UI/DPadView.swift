@@ -9,6 +9,29 @@
 
 import SwiftUI
 
+// MARK: - Render-only support (no gestures)
+//
+// Used by debug tooling (e.g. baking a refracted DPad image) to snapshot visuals without
+// attaching drag gestures that could interfere with `ImageRenderer`.
+private struct DPadInteractionEnabledKey: EnvironmentKey {
+  static let defaultValue: Bool = true
+}
+
+extension EnvironmentValues {
+  fileprivate var dpadInteractionEnabled: Bool {
+    get { self[DPadInteractionEnabledKey.self] }
+    set { self[DPadInteractionEnabledKey.self] = newValue }
+  }
+}
+
+extension DPadView {
+  /// Render-only DPad (no gestures). Useful for snapshot/baking tools.
+  static func renderOnly(size: CGFloat) -> some View {
+    DPadView(onDirection: { _ in }, onOK: {}, size: size)
+      .environment(\.dpadInteractionEnabled, false)
+  }
+}
+
 struct DPadView: View {
   let onDirection: (RemoteAction) -> Void
   let onOK: () -> Void
@@ -69,6 +92,7 @@ struct DPadView: View {
   @State private var isInDragMode = false
   @State private var hasFiredDirection = false  // Track if any direction was sent
   @State private var isPressingOK = false  // Visual-only: stick press should only occur for OK-region touches
+  @Environment(\.dpadInteractionEnabled) private var interactionEnabled
 
   var body: some View {
     if let explicitSize = size {
@@ -106,12 +130,12 @@ struct DPadView: View {
 
     return ZStack {
       // Base layers (these are aligned relative to each other in the PNGs)
-      dpadLayer(named: "DPad-Ring", size: size)
+      DPadAssets.layer(named: "DPad-Ring", size: size)
 
       // Shadow directly under the stick.
       // Render under the stick. The stick being drawn above naturally occludes/clips it.
       // (Masking by the stick silhouette can fully hide this asset, since it's a "ground shadow".)
-      dpadLayer(named: "StickShadow", size: size)
+      DPadAssets.layer(named: "StickShadow", size: size)
         .offset(shadowOffset)
         .blendMode(.multiply)
         .opacity(stickPressed ? 1.0 : 0.95)
@@ -124,7 +148,7 @@ struct DPadView: View {
 
       // Stick on top (with "OK" label baked into the same offset group, so it moves exactly with the stick).
       ZStack {
-        dpadLayer(named: "Stick", size: size)
+        DPadAssets.layer(named: "Stick", size: size)
         Text("OK")
           .font(.system(size: okLabelFontSize, weight: .bold, design: .rounded))
           .foregroundStyle(Color.black.opacity(0.8))
@@ -145,7 +169,8 @@ struct DPadView: View {
         tapRegionDebugOverlay(size: size)
       }
     }
-    .modifier(platformDPadInteraction(size: size))
+    // Interaction is platform-routed, but can be disabled for render-only snapshots.
+    .modifier(PlatformDPadInteractionGate(dPad: self, size: size, enabled: interactionEnabled))
     .appButtonShadow(radius: 8, opacity: 0.2)
   }
 
@@ -574,41 +599,6 @@ struct DPadView: View {
     }
     .frame(width: size, height: size)
   }
-
-  private func dpadLayer(named name: String, size: CGFloat) -> some View {
-    // Prefer explicit bundle file lookup so we don't depend on Asset Catalog behavior.
-    if let path = Bundle.main.path(forResource: name, ofType: "png"),
-      let image = PlatformImage.cachedContentsOfFile(path)
-    {
-      return AnyView(
-        image
-          .resizable()
-          .scaledToFit()
-          .frame(width: size, height: size)
-      )
-    }
-
-    // Debug fallback: if an image can't be found, show something visible and log.
-    DebugBuild.run {
-      Log.warn(
-        "DPad",
-        "Missing DPad image resource: \(name).png (bundle=\(Bundle.main.bundleIdentifier ?? "nil"))"
-      )
-    }
-
-    return AnyView(
-      Circle()
-        .fill(Color.red.opacity(0.18))
-        .overlay(Circle().stroke(Color.red.opacity(0.9), lineWidth: 1))
-        .frame(width: size, height: size)
-        .overlay(
-          Text("Missing\n\(name)")
-            .font(.system(size: max(10, size * 0.09), weight: .semibold))
-            .foregroundStyle(.red)
-            .multilineTextAlignment(.center)
-        )
-    )
-  }
 }
 
 // MARK: - Platform interaction (implementation detail)
@@ -621,6 +611,22 @@ extension DPadView {
   /// Implemented in the single `#if os(watchOS)` block below so the main DPad code stays clean.
   fileprivate func platformDPadInteraction(size: CGFloat) -> some ViewModifier {
     PlatformDPadInteraction(dPad: self, size: size)
+  }
+}
+
+extension DPadView {
+  fileprivate struct PlatformDPadInteractionGate: ViewModifier {
+    let dPad: DPadView
+    let size: CGFloat
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+      if enabled {
+        content.modifier(dPad.platformDPadInteraction(size: size))
+      } else {
+        content
+      }
+    }
   }
 }
 

@@ -1,17 +1,23 @@
 import SwiftUI
 
+@MainActor
+enum AppSettingsPlatform {
+  static func syncToWatch() {}
+}
 struct SettingsView: View {
   @Binding var isPresented: Bool
   var doneButtonPlacement: DoneButtonPlacement = .trailing
 
   var body: some View {
+    List {
+      ConfigureTVsView()
+
     SettingsViewCore(
-      isPresented: $isPresented,
       hasWatch: false,
       watchSection: nil,
-      listStylePlain: false,
-      includeSweepOverlay: false
+      showSafetyDelays: false
     )
+    }
     .toolbar {
       if isPresented {
         ToolbarItem(placement: .primaryAction) {

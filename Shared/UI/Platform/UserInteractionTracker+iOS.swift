@@ -8,7 +8,7 @@ import Foundation
 final class UserInteractionTracker: ObservableObject {
   static let shared = UserInteractionTracker()
 
-  @Published private(set) var lastInteractionAt: Date = .distantPast
+  @Published private(set) var lastInteractionAt: Date = Date()
 
   private init() {}
 
