@@ -8,11 +8,12 @@ import SwiftUI
 
 struct DomeIrisMaskDebugView: View {
   @State private var t: Double = 0
-  @State private var bladeCount: Double = 8
+  @State private var bladeCount: Double = Double(DomeSceneConfig.bladeCount)
   @State private var maskImage: CGImage?
 
-  private let config = DomeIrisConfig.default
-  private let imageSize = 512
+  // Source from DomeSceneConfig to stay in sync with actual rendering
+  private let config = DomeSceneConfig.irisConfig
+  private var imageSize: Int { DomeSceneConfig.maskTextureSize }
 
   var body: some View {
     VStack(spacing: 16) {
@@ -54,14 +55,24 @@ struct DomeIrisMaskDebugView: View {
   private func refreshImage() {
     let n = max(3, Int(bladeCount.rounded()))
     let tt = Float(t)
-    let tUnlock = DomeIrisAnimation.tUnlock(tt, unlockEnd: config.unlockEnd)
-    maskImage = DomeIrisMaskRenderer.makeMaskImage(
-      size: imageSize,
-      t: tUnlock,
-      bladeCount: n,
-      config: config,
-      flipY: false
-    )
+    // Use GPU renderer to match actual dome rendering
+    if DomeSceneConfig.useGPU {
+      maskImage = DomeGPURenderer.makeGlassMaskImage(
+        size: imageSize,
+        t: tt,
+        bladeCount: n,
+        config: config,
+        flipY: false
+      )
+    } else {
+      maskImage = DomeIrisMaskRenderer.makeGlassMaskImage(
+        size: imageSize,
+        t: tt,
+        bladeCount: n,
+        config: config,
+        flipY: false
+      )
+    }
   }
 }
 

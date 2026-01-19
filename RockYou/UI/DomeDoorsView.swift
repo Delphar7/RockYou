@@ -6,6 +6,7 @@
 
 import CoreGraphics
 import Foundation
+import Metal
 import RealityKit
 import SwiftUI
 
@@ -21,137 +22,174 @@ struct DomeDoorsView: View {
   /// Optional debug override for the camera orbit.
   var debugCameraOrbit: DomeDebugCameraOrbit? = nil
 
+  // Debug: 3D reference plane showing the actual DPad for size comparison
+  var showDPadReferencePlane: Bool = false
+  var dpadReferencePlaneAbove: Bool = true
+  var dpadReferencePlaneOpacity: Float = 0.5
+
   @State private var camera: PerspectiveCamera?
   @State private var cameraAnchor: AnchorEntity?
   @State private var surfaceEntity: ModelEntity?
+  @State private var dpadReferenceEntity: ModelEntity?
   @State private var lastMaskKey: DomeMaskKey?
 
   var body: some View {
-    RealityView { content in
-      // Camera (fixed during validation)
-      let camAnchor = AnchorEntity(world: .zero)
-      let cam = PerspectiveCamera()
-      cam.camera.fieldOfViewInDegrees = DomeSceneConfig.cameraFovDegrees
+    GeometryReader { _ in
+      RealityView { content in
+        // Camera: animated based on openProgress (or debug override)
+        let camAnchor = AnchorEntity(world: .zero)
+        let cam = PerspectiveCamera()
+        cam.camera.fieldOfViewInDegrees = DomeSceneConfig.cameraFovDegrees
 
-      let orbit =
-        debugCameraOrbit
-        ?? DomeDebugCameraOrbit(
-          yawDegrees: DomeSceneConfig.cameraYawDegrees,
-          pitchDegrees: DomeSceneConfig.cameraPitchDegrees,
-          distance: DomeSceneConfig.cameraDistance
-        )
+        // Initial camera position based on current progress
+        if let orbit = debugCameraOrbit {
+          // Debug override
+          let yawRadians = orbit.yawDegrees * .pi / 180
+          let pitchRadians = orbit.pitchDegrees * .pi / 180
+          let distance = max(0.1, orbit.distance)
+          let x = sin(yawRadians) * cos(pitchRadians) * distance
+          let z = cos(yawRadians) * cos(pitchRadians) * distance
+          let y = sin(pitchRadians) * distance
+          cam.position = [x, y, z]
+        } else {
+          // Animated position based on progress
+          cam.position = cameraPositionForProgress(Float(openProgress))
+        }
+        cam.look(at: .zero, from: cam.position, relativeTo: camAnchor)
 
-      let yawRadians = orbit.yawDegrees * .pi / 180
-      let pitchRadians = orbit.pitchDegrees * .pi / 180
-      let distance = max(0.1, orbit.distance)
+        camAnchor.addChild(cam)
+        content.add(camAnchor)
+        camera = cam
+        cameraAnchor = camAnchor
 
-      let x = sin(yawRadians) * cos(pitchRadians) * distance
-      let z = cos(yawRadians) * cos(pitchRadians) * distance
-      let y = sin(pitchRadians) * distance
+        // Lights: key light positioned to match app's implied lighting
+        // (~45° elevation, ~30° to the right, toward viewer)
+        let lightAnchor = AnchorEntity(world: .zero)
+        let key = DirectionalLight()
+        key.light.intensity = 2600
+        key.look(at: .zero, from: [0.8, 0.6, 0.5], relativeTo: nil)
+        lightAnchor.addChild(key)
 
-      cam.position = [x, y, z]
-      cam.look(at: .zero, from: cam.position, relativeTo: camAnchor)
+        let fill = PointLight()
+        fill.light.intensity = 520
+        fill.position = [0.4, 0.3, 0.2]
+        lightAnchor.addChild(fill)
+        content.add(lightAnchor)
 
-      camAnchor.addChild(cam)
-      content.add(camAnchor)
-      camera = cam
-      cameraAnchor = camAnchor
+        // Backdrop plane disabled - DPad textures now composited directly in surface shader
+        // if let backdrop = makeRefractedBackdropEntity(opacity: Float(backdropOpacity)) {
+        //   backdrop.position = [0, -0.01, 0]
+        //   backdrop.scale = [backdropScale, 1, backdropScale]
+        //   backdrop.transform.rotation = simd_quatf(angle: backdropYawRadians, axis: [0, 1, 0])
+        //   content.add(backdrop)
+        // }
 
-      // Lights (simple)
-      let lightAnchor = AnchorEntity(world: .zero)
-      let key = DirectionalLight()
-      key.light.intensity = 2600
-      key.look(at: .zero, from: [0.55, 1.0, -0.55], relativeTo: nil)
-      lightAnchor.addChild(key)
-
-      let fill = PointLight()
-      fill.light.intensity = 520
-      fill.position = [0.25, 0.25, -0.15]
-      lightAnchor.addChild(fill)
-      content.add(lightAnchor)
-
-      // Backdrop
-      if let backdrop = makeRefractedBackdropEntity(opacity: Float(backdropOpacity)) {
-        backdrop.position = [0, -0.01, 0]
-        backdrop.scale = [backdropScale, 1, backdropScale]
-        backdrop.transform.rotation = simd_quatf(angle: backdropYawRadians, axis: [0, 1, 0])
-        content.add(backdrop)
-      }
-
-      if showDebugAxes, let axes = makeDebugAxesAlways() {
-        content.add(axes)
-      }
-
-      // Surface: dome or flat plane with iris mask as debug color.
-      do {
-        let mesh: MeshResource
-        switch renderSurface {
-        case .dome:
-          mesh = try makeDomeMesh(radius: DomeSceneConfig.domeRadius)
-        case .flat:
-          mesh = MeshResource.generatePlane(
-            width: DomeSceneConfig.backdropSize,
-            depth: DomeSceneConfig.backdropSize
-          )
+        if showDebugAxes, let axes = makeDebugAxesAlways() {
+          content.add(axes)
         }
 
+        // Debug: 3D reference plane showing actual DPad for size comparison
+        if showDPadReferencePlane,
+          let refPlane = makeDPadReferenceEntity(opacity: dpadReferencePlaneOpacity)
+        {
+          let yOffset: Float = dpadReferencePlaneAbove ? 0.02 : -0.02
+          refPlane.position = [0, yOffset, 0]
+          // Match the backdrop scale
+          refPlane.scale = [backdropScale, 1, backdropScale]
+          content.add(refPlane)
+          dpadReferenceEntity = refPlane
+        }
+
+        // Surface: dome or flat plane with iris mask as debug color.
+        do {
+          let mesh: MeshResource
+          switch renderSurface {
+          case .dome:
+            mesh = try makeDomeMesh(radius: DomeSceneConfig.domeRadius)
+          case .flat:
+            mesh = MeshResource.generatePlane(
+              width: DomeSceneConfig.backdropSize,
+              depth: DomeSceneConfig.backdropSize
+            )
+          }
+
+          let tRaw = Float(min(1, max(0, openProgress)))
+
+          let material = makeDomeMaskMaterial(
+            t: tRaw,
+            bladeCount: DomeSceneConfig.bladeCount,
+            config: DomeSceneConfig.irisConfig,
+            textureSize: DomeSceneConfig.maskTextureSize,
+            cameraPosition: cam.position
+          )
+
+          let entity = ModelEntity(mesh: mesh, materials: [material])
+          entity.position = [0, 0.01, 0]
+
+          // Scale dome to fit within the ellipse (match ellipse height)
+          let s = DomeSceneConfig.domeEntityScale
+          entity.scale = [s, s, s]
+
+          content.add(entity)
+
+          surfaceEntity = entity
+          lastMaskKey = DomeMaskKey(
+            tBucket: DomeMaskKey.bucket(for: tRaw),
+            bladeCount: DomeSceneConfig.bladeCount,
+            textureSize: DomeSceneConfig.maskTextureSize
+          )
+        } catch {
+          Log.error("DomeDoors", "Failed to build dome entities: \(error)")
+        }
+      } update: { _ in
+        // Update camera position based on progress (or debug override)
+        if let camera, let cameraAnchor {
+          if let orbit = debugCameraOrbit {
+            // Debug override
+            let yawRadians = orbit.yawDegrees * .pi / 180
+            let pitchRadians = orbit.pitchDegrees * .pi / 180
+            let distance = max(0.1, orbit.distance)
+            let x = sin(yawRadians) * cos(pitchRadians) * distance
+            let z = cos(yawRadians) * cos(pitchRadians) * distance
+            let y = sin(pitchRadians) * distance
+            camera.position = [x, y, z]
+          } else {
+            // Animated position based on progress
+            camera.position = cameraPositionForProgress(Float(openProgress))
+          }
+          camera.look(at: .zero, from: camera.position, relativeTo: cameraAnchor)
+        }
+
+        guard let surfaceEntity else { return }
+
         let tRaw = Float(min(1, max(0, openProgress)))
+
+        // Check if we need to update the mask texture (t changed)
+        let key = DomeMaskKey(
+          tBucket: DomeMaskKey.bucket(for: tRaw),
+          bladeCount: DomeSceneConfig.bladeCount,
+          textureSize: DomeSceneConfig.maskTextureSize
+        )
+        // Always update material to pass current camera position for parallax
+        guard key != lastMaskKey else { return }
+
+        // Get current camera position for ray-plane intersection
+        let camPos = camera?.position ?? cameraPositionForProgress(Float(openProgress))
 
         let material = makeDomeMaskMaterial(
           t: tRaw,
           bladeCount: DomeSceneConfig.bladeCount,
           config: DomeSceneConfig.irisConfig,
-          textureSize: DomeSceneConfig.maskTextureSize
+          textureSize: DomeSceneConfig.maskTextureSize,
+          cameraPosition: camPos
         )
 
-        let entity = ModelEntity(mesh: mesh, materials: [material])
-        entity.position = [0, 0.01, 0]
-        content.add(entity)
-
-        surfaceEntity = entity
-        lastMaskKey = DomeMaskKey(
-          tBucket: DomeMaskKey.bucket(for: tRaw),
-          bladeCount: DomeSceneConfig.bladeCount,
-          textureSize: DomeSceneConfig.maskTextureSize
-        )
-      } catch {
-        Log.error("DomeDoors", "Failed to build dome entities: \(error)")
+        surfaceEntity.model?.materials = [material]
+        lastMaskKey = key
       }
-    } update: { _ in
-      if let camera, let cameraAnchor, let orbit = debugCameraOrbit {
-        let yawRadians = orbit.yawDegrees * .pi / 180
-        let pitchRadians = orbit.pitchDegrees * .pi / 180
-        let distance = max(0.1, orbit.distance)
-        let x = sin(yawRadians) * cos(pitchRadians) * distance
-        let z = cos(yawRadians) * cos(pitchRadians) * distance
-        let y = sin(pitchRadians) * distance
-        camera.position = [x, y, z]
-        camera.look(at: .zero, from: camera.position, relativeTo: cameraAnchor)
-      }
-
-      guard let surfaceEntity else { return }
-
-      let tRaw = Float(min(1, max(0, openProgress)))
-
-      let key = DomeMaskKey(
-        tBucket: DomeMaskKey.bucket(for: tRaw),
-        bladeCount: DomeSceneConfig.bladeCount,
-        textureSize: DomeSceneConfig.maskTextureSize
-      )
-      guard key != lastMaskKey else { return }
-
-      let material = makeDomeMaskMaterial(
-        t: tRaw,
-        bladeCount: DomeSceneConfig.bladeCount,
-        config: DomeSceneConfig.irisConfig,
-        textureSize: DomeSceneConfig.maskTextureSize
-      )
-
-      surfaceEntity.model?.materials = [material]
-      lastMaskKey = key
+      .allowsHitTesting(false)
     }
-    .allowsHitTesting(false)
-    .id(renderSurface)
+    .id("\(renderSurface)-\(showDPadReferencePlane)-\(dpadReferencePlaneAbove)")
   }
 }
 
@@ -169,6 +207,30 @@ struct DomeDebugCameraOrbit {
   var yawDegrees: Float
   var pitchDegrees: Float
   var distance: Float
+}
+
+/// Computes camera position for a given progress (0=closed, 1=open).
+/// Orbits from startYaw by orbitDegrees while lifting from startPitch to endPitch.
+private func cameraPositionForProgress(_ progress: Float) -> SIMD3<Float> {
+  let t = min(1, max(0, progress))
+
+  // Yaw: linear, but reversed direction (subtract instead of add)
+  let yawDegrees = DomeSceneConfig.cameraStartYawDegrees - DomeSceneConfig.cameraOrbitDegrees * t
+
+  // Pitch: ease-in (t²) so lift accelerates toward the end
+  let tEased = t * t
+  let pitchDegrees = DomeSceneConfig.cameraStartPitchDegrees +
+    (DomeSceneConfig.cameraEndPitchDegrees - DomeSceneConfig.cameraStartPitchDegrees) * tEased
+
+  let yawRadians = yawDegrees * .pi / 180
+  let pitchRadians = pitchDegrees * .pi / 180
+  let distance = DomeSceneConfig.cameraDistance
+
+  let x = sin(yawRadians) * cos(pitchRadians) * distance
+  let z = cos(yawRadians) * cos(pitchRadians) * distance
+  let y = sin(pitchRadians) * distance
+
+  return [x, y, z]
 }
 
 enum DomeRenderSurface: Hashable {
@@ -208,6 +270,74 @@ private func makeRefractedBackdropEntity(opacity: Float) -> ModelEntity? {
   return ModelEntity(mesh: mesh, materials: [mat])
 }
 
+/// Creates backdrop plane with regular (non-refracted) DPad texture.
+/// This shows through the aperture opening.
+@MainActor
+private func makeRegularBackdropEntity(opacity: Float) -> ModelEntity? {
+  guard let path = Bundle.main.path(forResource: "DPad-Regular", ofType: "png"),
+    let native = PlatformImage.cachedNativeContentsOfFile(path),
+    let cg = PlatformImage.cgImage(from: native)
+  else {
+    DebugBuild.run { Log.warn("DomeDoors", "Missing DPad-Regular.png for dome backdrop") }
+    return nil
+  }
+
+  let tex: TextureResource
+  do {
+    tex = try TextureResource(
+      image: cg, withName: "DPad-Regular", options: .init(semantic: .color))
+  } catch {
+    Log.error("DomeDoors", "TextureResource(image:) failed: \(error)")
+    return nil
+  }
+
+  let mesh = MeshResource.generatePlane(
+    width: DomeSceneConfig.backdropSize,
+    depth: DomeSceneConfig.backdropSize
+  )
+  var mat = UnlitMaterial()
+  mat.color = .init(texture: .init(tex))
+  mat.blending = .transparent(opacity: .init(floatLiteral: opacity))
+  mat.opacityThreshold = 0.02
+  mat.faceCulling = .none
+
+  return ModelEntity(mesh: mesh, materials: [mat])
+}
+
+/// Creates a 3D plane showing the DPad ring image for size comparison.
+@MainActor
+private func makeDPadReferenceEntity(opacity: Float) -> ModelEntity? {
+  // Use DPad-Ring.png as reference (the actual DPad's ring component)
+  guard let path = Bundle.main.path(forResource: "DPad-Ring", ofType: "png"),
+    let native = PlatformImage.cachedNativeContentsOfFile(path),
+    let cg = PlatformImage.cgImage(from: native)
+  else {
+    Log.warn("DomeDoors", "Missing DPad-Ring.png for reference plane")
+    return nil
+  }
+
+  let tex: TextureResource
+  do {
+    tex = try TextureResource(
+      image: cg, withName: "DPad-Reference", options: .init(semantic: .color))
+  } catch {
+    Log.error("DomeDoors", "TextureResource for DPad reference failed: \(error)")
+    return nil
+  }
+
+  let mesh = MeshResource.generatePlane(
+    width: DomeSceneConfig.backdropSize,
+    depth: DomeSceneConfig.backdropSize
+  )
+  var mat = UnlitMaterial()
+  mat.color = .init(texture: .init(tex))
+  mat.blending = .transparent(opacity: .init(floatLiteral: opacity))
+  mat.opacityThreshold = 0.02
+  mat.faceCulling = .none
+
+  return ModelEntity(mesh: mesh, materials: [mat])
+}
+
 enum DomeSceneConfig {
   static let refractedOverscan: Float = 1.00
   static let baseDomeRadius: Float = 0.5
@@ -217,20 +347,38 @@ enum DomeSceneConfig {
   /// Used by LockableDPadView to size the dome render canvas relative to the DPad.
   static let renderCanvasScale: Float = 1.25
 
+  /// Ellipse height scale (from LockableDPadView: dpadSize * 1.1)
+  static let ellipseHeightScale: Float = 1.24
+
+  /// Scale factor for dome entity to fit within ellipse
+  static let domeEntityScale: Float = ellipseHeightScale / renderCanvasScale
+
   /// Base pixel size used by RockYouApp+macOS to compute render backing size.
   /// This is a UI/layout constant, not part of the iris math.
   static let dpadRenderSize: Float = 520
 
-  static let bladeCount: Int = 6
+  static let bladeCount: Int = 9
   static let defaultBackdropOpacity: Float = 1.0
   static let defaultBackdropScale: Float = 1.0
   static let defaultBackdropYawRadians: Float = 0
-  static let maskTextureSize: Int = 512
+  static let maskTextureSize: Int = 2048
 
   static let cameraFovDegrees: Float = 50
-  static let cameraYawDegrees: Float = 0
-  static let cameraPitchDegrees: Float = 50
-  static let cameraDistance: Float = 1.25
+
+  // Camera animation: orbits 180° while lifting from angled to top-down
+  static let cameraStartYawDegrees: Float = 180    // Starting yaw (progress=0)
+  static let cameraOrbitDegrees: Float = 180       // Amount to orbit during animation
+  static let cameraStartPitchDegrees: Float = 45   // Starting pitch (angled view)
+  static let cameraEndPitchDegrees: Float = 90     // Ending pitch (straight down)
+  static let cameraDistance: Float = 1.25          // Constant distance from center
+
+  // Glass material properties
+  static let glassRoughness: Float = 0.08
+  static let glassClearcoat: Float = 0.5
+  static let glassClearcoatRoughness: Float = 0.03
+
+  /// Use GPU compute shader for mask generation (vs CPU fallback)
+  static let useGPU: Bool = true
 
   static let irisConfig: DomeIrisConfig = .default
 }
@@ -355,24 +503,208 @@ private func makeMaskUV(for normal: SIMD3<Float>) -> SIMD2<Float> {
   return SIMD2<Float>(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5)
 }
 
+/// Cached Metal library for custom material shader
+private var cachedMetalLibrary: MTLLibrary?
+
+@MainActor
 private func makeDomeMaskMaterial(
   t: Float,
   bladeCount: Int,
   config: DomeIrisConfig,
-  textureSize: Int
+  textureSize: Int,
+  cameraPosition: SIMD3<Float>
 ) -> RealityKit.Material {
-  var material = UnlitMaterial()
-  if let texture = makeIrisMaskTexture(
+  guard let maskTexture = makeIrisGlassTexture(
     t: t,
     bladeCount: bladeCount,
     config: config,
     textureSize: textureSize
-  ) {
-    material.color = .init(texture: .init(texture))
+  ) else {
+    // Fallback to solid gray if texture fails
+    var fallback = PhysicallyBasedMaterial()
+    fallback.baseColor = .init(tint: .init(red: 0.1, green: 0.1, blue: 0.12, alpha: 0.35))
+    return fallback
   }
-  material.blending = .transparent(opacity: 1.0)
+
+  // Try CustomMaterial for per-pixel ray-traced DPad blending
+  if let customMaterial = makeCustomGlassMaterial(
+    maskTexture: maskTexture,
+    cameraPosition: cameraPosition,
+    backdropSize: DomeSceneConfig.backdropSize
+  ) {
+    return customMaterial
+  }
+
+  // Fallback to PhysicallyBasedMaterial if CustomMaterial fails
+  return makePBRGlassMaterial(texture: maskTexture)
+}
+
+/// Cached DPad textures for screen-space sampling
+private var cachedRegularDPadTexture: TextureResource?
+private var cachedRefractedDPadTexture: TextureResource?
+
+@MainActor
+private func loadDPadTextures() -> (regular: TextureResource, refracted: TextureResource)? {
+  // Return cached if available
+  if let regular = cachedRegularDPadTexture, let refracted = cachedRefractedDPadTexture {
+    return (regular, refracted)
+  }
+
+  // Load regular DPad texture
+  guard let regularPath = Bundle.main.path(forResource: "DPad-Regular", ofType: "png"),
+    let regularNative = PlatformImage.cachedNativeContentsOfFile(regularPath),
+    let regularCG = PlatformImage.cgImage(from: regularNative)
+  else {
+    Log.warn("DomeDoors", "Missing DPad-Regular.png")
+    return nil
+  }
+
+  // Load refracted DPad texture
+  guard let refractedPath = Bundle.main.path(forResource: "DPad-Refracted", ofType: "png"),
+    let refractedNative = PlatformImage.cachedNativeContentsOfFile(refractedPath),
+    let refractedCG = PlatformImage.cgImage(from: refractedNative)
+  else {
+    Log.warn("DomeDoors", "Missing DPad-Refracted.png")
+    return nil
+  }
+
+  do {
+    let regularTex = try TextureResource(
+      image: regularCG, withName: "DPad-Regular-Shader", options: .init(semantic: .color))
+    let refractedTex = try TextureResource(
+      image: refractedCG, withName: "DPad-Refracted-Shader", options: .init(semantic: .color))
+    cachedRegularDPadTexture = regularTex
+    cachedRefractedDPadTexture = refractedTex
+    return (regularTex, refractedTex)
+  } catch {
+    Log.error("DomeDoors", "Failed to create DPad textures: \(error)")
+    return nil
+  }
+}
+
+@MainActor
+private func makeCustomGlassMaterial(
+  maskTexture: TextureResource,
+  cameraPosition: SIMD3<Float>,
+  backdropSize: Float
+) -> CustomMaterial? {
+  do {
+    // Get or create Metal library
+    let library: MTLLibrary
+    if let cached = cachedMetalLibrary {
+      library = cached
+    } else {
+      guard let device = MTLCreateSystemDefaultDevice() else {
+        Log.warn("DomeDoors", "No Metal device available")
+        return nil
+      }
+      library = try device.makeDefaultLibrary(bundle: .main)
+      cachedMetalLibrary = library
+    }
+
+    // Load DPad textures for screen-space sampling
+    guard let dpadTextures = loadDPadTextures() else {
+      Log.warn("DomeDoors", "Failed to load DPad textures")
+      return nil
+    }
+
+    // Create surface shader
+    let surfaceShader = CustomMaterial.SurfaceShader(
+      named: "domeSurfaceShader",
+      in: library
+    )
+
+    // Create custom material with clearcoat lighting model
+    var material = try CustomMaterial(
+      surfaceShader: surfaceShader,
+      lightingModel: .clearcoat
+    )
+
+    // Pass textures to shader:
+    // - custom: iris glass mask (dome UV mapping)
+    // - baseColor: regular DPad (shown through aperture)
+    // - emissiveColor: refracted DPad (shown through glass)
+    material.custom.texture = .init(maskTexture)
+    material.baseColor.texture = .init(dpadTextures.regular)
+    material.emissiveColor.texture = .init(dpadTextures.refracted)
+
+    // Pass camera position (xyz) + backdrop size (w) for ray-plane intersection
+    material.custom.value = [
+      cameraPosition.x,
+      cameraPosition.y,
+      cameraPosition.z,
+      backdropSize
+    ]
+
+    // Enable transparency
+    material.blending = .transparent(opacity: 1.0)
+    material.faceCulling = .back
+
+    return material
+  } catch {
+    Log.warn("DomeDoors", "CustomMaterial creation failed: \(error)")
+    return nil
+  }
+}
+
+private func makePBRGlassMaterial(texture: TextureResource) -> PhysicallyBasedMaterial {
+  var material = PhysicallyBasedMaterial()
+
+  // Base color from RGBA texture (tint + alpha baked in)
+  material.baseColor = .init(tint: .white, texture: .init(texture))
+
+  // Low roughness for glossy glass-like specular reflections
+  material.roughness = .init(floatLiteral: DomeSceneConfig.glassRoughness)
+
+  // Glass is dielectric (non-metallic)
+  material.metallic = .init(floatLiteral: 0.0)
+
+  // Clearcoat for extra glossy layer
+  material.clearcoat = .init(floatLiteral: DomeSceneConfig.glassClearcoat)
+  material.clearcoatRoughness = .init(floatLiteral: DomeSceneConfig.glassClearcoatRoughness)
+
+  // Transparent blending using texture alpha
+  material.blending = .transparent(opacity: .init(floatLiteral: 1.0))
+
+  // Back-face culling
   material.faceCulling = .back
+
   return material
+}
+
+private func makeIrisGlassTexture(
+  t: Float,
+  bladeCount: Int,
+  config: DomeIrisConfig,
+  textureSize: Int
+) -> TextureResource? {
+  // Choose GPU or CPU renderer
+  let cg: CGImage?
+  if DomeSceneConfig.useGPU {
+    cg = DomeGPURenderer.makeGlassMaskImage(
+      size: textureSize,
+      t: t,
+      bladeCount: bladeCount,
+      config: config
+    )
+  } else {
+    cg = DomeIrisMaskRenderer.makeGlassMaskImage(
+      size: textureSize,
+      t: t,
+      bladeCount: bladeCount,
+      config: config
+    )
+  }
+
+  guard let cgImage = cg else { return nil }
+
+  do {
+    return try TextureResource(
+      image: cgImage, withName: "Dome-Iris-Glass", options: .init(semantic: .color))
+  } catch {
+    Log.error("DomeDoors", "TextureResource(image:) failed: \(error)")
+    return nil
+  }
 }
 
 private func makeIrisMaskTexture(

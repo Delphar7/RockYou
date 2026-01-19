@@ -21,6 +21,7 @@ struct LockableDPadView: View {
   let onOK: () -> Void
   var size: CGFloat? = nil
 
+  @Environment(\.scenePhase) private var scenePhase
   @ObservedObject private var interactionTracker = UserInteractionTracker.shared
   @ObservedObject private var snapshotManager = BreakerSwitchSnapshotManager.shared
   @State private var settings = AppSettings.shared
@@ -29,7 +30,8 @@ struct LockableDPadView: View {
 
   // Single "source of truth" for lever position (0=locked, 1=unlocked).
   @State private var progress: CGFloat = 0
-  @State private var domeOpacity: Double = 0
+  @State private var domeIsActive: Bool = false
+  @State private var domeOpenProgress: CGFloat = 0
   @State private var domeNonce: UInt64 = 0
 
   // Explicit interaction state (who owns progress).
@@ -119,6 +121,10 @@ struct LockableDPadView: View {
       idleCheckTimer = nil
       leverFallAnimator.stop()
     }
+    .onChange(of: scenePhase) { _, newValue in
+      guard newValue == .active else { return }
+      handleAppBecameActive()
+    }
     .modifier(
       DebugCrashAlertModifier(title: "Invariant Violation") {
         guard DebugBuild.isEnabled else { return nil }
@@ -144,73 +150,85 @@ struct LockableDPadView: View {
       size: dpadSize
     )
     .allowsHitTesting(!isLocked)
+    .opacity(domeIsActive ? 0 : 1)
     .onAppear {
       requestSnapshot(dpadSize: dpadSize)
     }
     .overlay {
       if isLocked {
         lockOverlay(dpadSize: dpadSize)
-      } else if domeOpacity > 0.0001 {
+      } else if domeIsActive {
         domeOverlay(dpadSize: dpadSize)
       }
     }
   }
 
   private func domeOverlay(dpadSize: CGFloat) -> some View {
-    // First-pass 2D "dome": show the baked refracted DPad image under a circular mask,
-    // with a subtle rim highlight, then fade it out (as if theциа dome opens).
-    let domeSize = dpadSize * 1.02
+    // Dome sequence (RealityKit):
+    // - Shader blends regular/refracted DPad textures based on iris mask.
+    // - No black ellipse needed - shader handles masking.
+    let domeSize = dpadSize * CGFloat(DomeSceneConfig.renderCanvasScale)
+    let p = min(1, max(0, domeOpenProgress))
 
-    return ZStack {
-      DPadAssets.layer(named: "DPad-Refracted", size: domeSize)
-        .mask(Circle().frame(width: domeSize, height: domeSize))
-
-      Circle()
-        .strokeBorder(
-          AngularGradient(
-            gradient: Gradient(colors: [
-              .white.opacity(0.20),
-              .white.opacity(0.02),
-              .white.opacity(0.14),
-              .white.opacity(0.04),
-              .white.opacity(0.20),
-            ]),
-            center: .center
-          ),
-          lineWidth: max(1, dpadSize * 0.01)
-        )
-        .frame(width: domeSize, height: domeSize)
-        .blendMode(.screen)
-        .opacity(0.8)
-    }
-    .frame(width: dpadSize, height: dpadSize, alignment: .center)
-    .opacity(domeOpacity)
-    .allowsHitTesting(false)
-    .transaction { $0.animation = nil }
+    return DomeDoorsView(openProgress: p)
+      .frame(width: domeSize, height: domeSize)
+      .frame(width: dpadSize, height: dpadSize, alignment: .center)
+      .allowsHitTesting(false)
   }
 
   @MainActor
-  private func showAndFadeDome() {
+  private func showAndOpenDome() {
     domeNonce &+= 1
     let nonce = domeNonce
+    let openDurationSeconds: TimeInterval = 8.0
+    let teardownDelaySeconds: TimeInterval = 0.25
+    let frameIntervalSeconds: TimeInterval = 1.0 / 60.0
 
     withTransaction(Transaction(animation: nil)) {
-      domeOpacity = 1.0
+      domeIsActive = true
+      domeOpenProgress = 0
     }
 
     Task { @MainActor in
-      // Debug-tuning: keep the dome around long enough to evaluate the look/feel.
-      try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1.0s hold
-      guard domeNonce == nonce else { return }
-
-      withAnimation(.easeOut(duration: 2.5)) {
-        domeOpacity = 0.0
+      Log.debug(
+        "DomeDoors",
+        "Start dome open: duration=\(String(format: "%.2f", openDurationSeconds))s nonce=\(nonce)"
+      )
+      // Allow the dome view to mount before animating progress.
+      await Task.yield()
+      guard domeNonce == nonce else {
+        Log.debug("DomeDoors", "Canceled before start: nonce changed")
+        return
       }
 
-      // Ensure it's fully gone even if the system skips animation completion.
-      try? await Task.sleep(nanoseconds: 2_700_000_000)  // 2.5s fade + slack
+      let start = Date()
+      while domeNonce == nonce {
+        let elapsed = Date().timeIntervalSince(start)
+        let progress = min(1.0, max(0, elapsed / openDurationSeconds))
+        domeOpenProgress = progress
+        if progress >= 1.0 { break }
+        try? await Task.sleep(nanoseconds: UInt64(frameIntervalSeconds * 1_000_000_000))
+      }
+
+      let elapsedTotal = Date().timeIntervalSince(start)
+      if domeNonce != nonce {
+        Log.debug(
+          "DomeDoors",
+          "Canceled mid-open: elapsed=\(String(format: "%.2f", elapsedTotal))s nonce=\(nonce)"
+        )
+        return
+      }
+
+      Log.debug(
+        "DomeDoors",
+        "Open complete: elapsed=\(String(format: "%.2f", elapsedTotal))s nonce=\(nonce)"
+      )
+
+      // Remove shortly after open completes.
+      try? await Task.sleep(nanoseconds: UInt64(teardownDelaySeconds * 1_000_000_000))
       guard domeNonce == nonce else { return }
-      domeOpacity = 0
+      Log.debug("DomeDoors", "Teardown dome: nonce=\(nonce)")
+      domeIsActive = false
     }
   }
 
@@ -226,10 +244,7 @@ struct LockableDPadView: View {
     let breakerFrameMultiplier: CGFloat = 1.33
     let breakerSize = dpadSize * breakerFrameMultiplier
     let breakerVerticalShift = -dpadSize * 0.0
-
-    let ellipseWidth = dpadSize * 1.05
-    let ellipseHeight = dpadSize * 1.1
-    let ellipseVerticalShift = (ellipseHeight - ellipseWidth) / 4
+    let ellipse = lockEllipseMetrics(dpadSize: dpadSize)
 
     return GeometryReader { geo in
       let hasSnapshot = (snapshotManager.snapshot != nil)
@@ -250,9 +265,9 @@ struct LockableDPadView: View {
       ZStack {
         Ellipse()
           .fill(Color.black.opacity(0.95))
-          .frame(width: ellipseWidth, height: ellipseHeight)
+          .frame(width: ellipse.width, height: ellipse.height)
           .contentShape(Rectangle())
-          .offset(y: ellipseVerticalShift)
+          .offset(y: ellipse.verticalShift)
           .gesture(unlockGesture(dpadSize: dpadSize))
 
         if let snapshot = snapshotManager.snapshot {
@@ -374,12 +389,13 @@ struct LockableDPadView: View {
       if targetProgress >= 1.0 {
         HapticService.notifySuccess()
         interactionTracker.noteInteraction()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+        // No animation - dome transition handles the visual continuity
+        withTransaction(Transaction(animation: nil)) {
           isLocked = false
           progress = 0
         }
         phase = .idle
-        showAndFadeDome()
+        showAndOpenDome()
         return
       }
 
@@ -469,18 +485,45 @@ struct LockableDPadView: View {
 
   private func checkIdleTimeout() {
     guard let timeout = lockTimeout else { return }
+    guard !domeIsActive else { return }
     let timeSinceInteraction = Date().timeIntervalSince(interactionTracker.lastInteractionAt)
     if timeSinceInteraction >= timeout && !isLocked {
       withAnimation(.easeInOut(duration: 0.5)) {
         isLocked = true
       }
       // Reset state for new lock session.
-      progress = 0
-      phase = .idle
-      liveReady = false
-      domeOpacity = 0
-      domeNonce &+= 1
+      resetLockSessionState()
       HapticService.play(.warning)
     }
   }
+
+  private func handleAppBecameActive() {
+    interactionTracker.noteInteraction()
+    guard isLocked else { return }
+
+    withAnimation(.easeInOut(duration: 0.3)) {
+      isLocked = false
+    }
+    resetLockSessionState()
+  }
+
+  private func resetLockSessionState() {
+    settleToken &+= 1
+    leverFallAnimator.stop()
+    progress = 0
+    phase = .idle
+    liveReady = false
+    domeIsActive = false
+    domeOpenProgress = 0
+    domeNonce &+= 1
+  }
+}
+
+private func lockEllipseMetrics(dpadSize: CGFloat) -> (
+  width: CGFloat, height: CGFloat, verticalShift: CGFloat
+) {
+  let width = dpadSize * 1.05
+  let height = dpadSize * 1.1
+  let verticalShift = (height - width) / 4
+  return (width, height, verticalShift)
 }

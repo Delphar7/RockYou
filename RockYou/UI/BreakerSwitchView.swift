@@ -9,6 +9,12 @@
 import RealityKit
 import SwiftUI
 
+struct BreakerDebugCameraOrbit {
+  var yawDegrees: Float
+  var pitchDegrees: Float
+  var distance: Float
+}
+
 // MARK: - View
 
 struct BreakerSwitchView: View {
@@ -17,6 +23,8 @@ struct BreakerSwitchView: View {
   /// Additional camera yaw (degrees) applied on top of `BreakerSceneConfig.cameraYawDegrees`.
   /// Used to orbit the camera during the unlock drag without touching the lever transform.
   var cameraYawDegreesOffset: Float = 0
+  /// Debug-only manual camera orbit. When set, overrides the default camera rig.
+  var debugCameraOrbit: BreakerDebugCameraOrbit? = nil
   /// Called once after the RealityView has loaded and added the model entity.
   var onReady: (() -> Void)? = nil
 
@@ -71,16 +79,26 @@ struct BreakerSwitchView: View {
       lever.transform.rotation = simd_quatf(
         angle: angle, axis: BreakerSceneConfig.leverRotationAxis)
 
-      // Update camera orbit yaw (if we captured the camera from the rig).
+      // Update camera orbit (if we captured the camera from the rig).
       if let camera, let cameraAnchor {
-        let yawDegrees = BreakerSceneConfig.cameraYawDegrees + cameraYawDegreesOffset
-        let yawRadians = yawDegrees * .pi / 180
-        let distance = BreakerSceneConfig.cameraDistance
-        camera.position = [
-          sin(yawRadians) * distance,
-          0,
-          cos(yawRadians) * distance,
-        ]
+        if let orbit = debugCameraOrbit {
+          let yawRadians = orbit.yawDegrees * .pi / 180
+          let pitchRadians = orbit.pitchDegrees * .pi / 180
+          let distance = max(0.1, orbit.distance)
+          let x = sin(yawRadians) * cos(pitchRadians) * distance
+          let z = cos(yawRadians) * cos(pitchRadians) * distance
+          let y = sin(pitchRadians) * distance
+          camera.position = [x, y, z]
+        } else {
+          let yawDegrees = BreakerSceneConfig.cameraYawDegrees + cameraYawDegreesOffset
+          let yawRadians = yawDegrees * .pi / 180
+          let distance = BreakerSceneConfig.cameraDistance
+          camera.position = [
+            sin(yawRadians) * distance,
+            0,
+            cos(yawRadians) * distance,
+          ]
+        }
         camera.look(
           at: BreakerSceneConfig.position, from: camera.position, relativeTo: cameraAnchor)
       }

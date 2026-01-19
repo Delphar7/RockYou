@@ -25,42 +25,75 @@ struct RockYouApp: App {
     // Note: `contentMinSize` inference is unreliable with GeometryReader-heavy layouts.
     // We enforce the minimum in `MacAppDelegate` via NSWindow.contentMinSize.
     .handlesExternalEvents(matching: ["*"])
-    .commands {
-      CommandGroup(replacing: .newItem) {}
-
-      CommandGroup(after: .windowArrangement) {
-        Divider()
-        OpenProtocolExplorerButton()
-          .keyboardShortcut("P", modifiers: [.command, .option])
-      }
-
-      if DebugBuild.isEnabled {
-        CommandMenu("Debug") {
-          Button("Inject Test Roku TV") {
-            RokuDiscoveryService.shared.debugInjectTestRokuTV()
-          }
-
-          Button("Expire Test Roku TV") {
-            RokuDiscoveryService.shared.debugExpireTestRokuTV()
-          }
-
-          Divider()
-
-          Button("Generate Refracted DPad (Metal)") {
-            Task { @MainActor in
-              await DebugRefractedDPadGenerator.generateAndRevealInFinder()
-            }
-          }
-        }
-      }
-    }
+    .commands { appCommands }
 
     // Protocol Explorer window (dev tool)
     Window("Protocol Explorer", id: "protocol-explorer") {
       ProtocolExplorerView()
     }
     .defaultSize(width: 1100, height: 700)
+
+    #if DEBUG
+      Window("Debug Render — Dome", id: "debug-render-dome") {
+        DomeRenderDebugView()
+      }
+      .defaultSize(width: 1000, height: 760)
+
+      Window("Debug Render — Breaker", id: "debug-render-breaker") {
+        BreakerRenderDebugView()
+      }
+      .defaultSize(width: 900, height: 720)
+
+      Window("Debug — Iris Configurable", id: "debug-iris-configurable") {
+        IrisKinematicsConfigurableView()
+      }
+      .defaultSize(width: 950, height: 700)
+    #endif
   }
+}
+
+extension RockYouApp {
+  @CommandsBuilder
+  private var appCommands: some Commands {
+    CommandGroup(replacing: .newItem) {}
+
+    CommandGroup(after: .windowArrangement) {
+      Divider()
+      OpenProtocolExplorerButton()
+        .keyboardShortcut("P", modifiers: [.command, .option])
+    }
+
+    if DebugBuild.isEnabled {
+      CommandMenu("Debug") {
+        Button("Inject Test Roku TV") {
+          RokuDiscoveryService.shared.debugInjectTestRokuTV()
+        }
+
+        Button("Expire Test Roku TV") {
+          RokuDiscoveryService.shared.debugExpireTestRokuTV()
+        }
+
+        Divider()
+
+        Button("Generate Refracted DPad (Metal)") {
+          Task { @MainActor in
+            await DebugRefractedDPadGenerator.generateAndRevealInFinder()
+          }
+        }
+
+        Divider()
+
+        OpenDebugRenderWindowButton(title: "Render: Dome", windowId: "debug-render-dome")
+        OpenDebugRenderWindowButton(title: "Render: Breaker", windowId: "debug-render-breaker")
+
+        Divider()
+
+        OpenDebugRenderWindowButton(title: "Iris: Configurable", windowId: "debug-iris-configurable")
+      }
+    }
+  }
+
+  // Debug Render window is guarded with #if DEBUG in body.
 }
 
 /// Button to open Protocol Explorer window (needs separate struct to use @Environment).
@@ -70,6 +103,396 @@ private struct OpenProtocolExplorerButton: View {
   var body: some View {
     Button("Protocol Explorer") {
       openWindow(id: "protocol-explorer")
+    }
+  }
+}
+
+/// Button to open a debug render window.
+private struct OpenDebugRenderWindowButton: View {
+  let title: String
+  let windowId: String
+  @Environment(\.openWindow) private var openWindow
+
+  var body: some View {
+    Button(title) {
+      openWindow(id: windowId)
+    }
+  }
+}
+
+private struct RealityDebugViewConfig {
+  let title: String
+  let durationSeconds: Double
+  let distanceRange: ClosedRange<Double>
+  let defaultYawDegrees: Double
+  let defaultPitchDegrees: Double
+  let defaultDistance: Double
+
+  static let dome = RealityDebugViewConfig(
+    title: "Dome Debug",
+    durationSeconds: 8.0,
+    distanceRange: 0.6...1.6,
+    defaultYawDegrees: 0,
+    defaultPitchDegrees: 70,
+    defaultDistance: 0.95
+  )
+
+  static let breaker = RealityDebugViewConfig(
+    title: "Breaker Debug",
+    durationSeconds: 1.0,
+    distanceRange: 0.6...1.6,
+    defaultYawDegrees: 0,
+    defaultPitchDegrees: 0,
+    defaultDistance: Double(BreakerSceneConfig.cameraDistance)
+  )
+}
+
+private struct DomeRenderDebugView: View {
+  private let config = RealityDebugViewConfig.dome
+  @State private var timeSeconds: Double
+  @State private var yawDegrees: Double
+  @State private var pitchDegrees: Double
+  @State private var cameraDistance: Double
+  @State private var useFreeCamera: Bool = true
+  @State private var renderFlat: Bool = false
+  // 3D reference plane (in RealityKit scene)
+  @State private var showDPadReferencePlane: Bool = false
+  @State private var dpadReferencePlaneAbove: Bool = true
+  @State private var dpadReferencePlaneOpacity: Double = 0.5
+
+  init() {
+    let config = RealityDebugViewConfig.dome
+    _timeSeconds = State(initialValue: 0)
+    _yawDegrees = State(initialValue: config.defaultYawDegrees)
+    _pitchDegrees = State(initialValue: config.defaultPitchDegrees)
+    _cameraDistance = State(initialValue: config.defaultDistance)
+  }
+
+  var body: some View {
+    let progress = CGFloat(timeSeconds / config.durationSeconds)
+    let renderSize = CGFloat(DomeSceneConfig.dpadRenderSize * DomeSceneConfig.renderCanvasScale)
+
+    HStack(spacing: 20) {
+      DomeDoorsView(
+        openProgress: progress,
+        backdropOpacity: CGFloat(DomeSceneConfig.defaultBackdropOpacity),
+        showDebugAxes: true,
+        renderSurface: renderFlat ? .flat : .dome,
+        debugCameraOrbit: useFreeCamera
+          ? DomeDebugCameraOrbit(
+            yawDegrees: Float(yawDegrees),
+            pitchDegrees: Float(pitchDegrees),
+            distance: Float(cameraDistance)
+          )
+          : nil,
+        showDPadReferencePlane: showDPadReferencePlane,
+        dpadReferencePlaneAbove: dpadReferencePlaneAbove,
+        dpadReferencePlaneOpacity: Float(dpadReferencePlaneOpacity)
+      )
+      .frame(width: renderSize, height: renderSize)
+
+      DebugRenderControlPanel(
+        config: config,
+        timeSeconds: $timeSeconds,
+        yawDegrees: $yawDegrees,
+        pitchDegrees: $pitchDegrees,
+        distance: $cameraDistance,
+        onReset: {
+          yawDegrees = config.defaultYawDegrees
+          pitchDegrees = config.defaultPitchDegrees
+          cameraDistance = config.defaultDistance
+          timeSeconds = 0
+        },
+        cameraControlsDisabled: !useFreeCamera,
+        extras: {
+          Toggle("Free Camera", isOn: $useFreeCamera)
+          Toggle("Render Flat", isOn: $renderFlat)
+          Toggle("Show DPad Reference (3D)", isOn: $showDPadReferencePlane)
+          if showDPadReferencePlane {
+            Toggle("Reference Above Backdrop", isOn: $dpadReferencePlaneAbove)
+            LabeledContent("Reference Opacity") {
+              Text("\(dpadReferencePlaneOpacity, specifier: "%.2f")")
+                .frame(width: 64, alignment: .trailing)
+            }
+            Slider(value: $dpadReferencePlaneOpacity, in: 0...1)
+          }
+        }
+      )
+      .frame(width: 220)
+    }
+    .padding(20)
+  }
+}
+
+private struct BreakerRenderDebugView: View {
+  private let config = RealityDebugViewConfig.breaker
+  @State private var timeSeconds: Double
+  @State private var yawDegrees: Double
+  @State private var pitchDegrees: Double
+  @State private var cameraDistance: Double
+
+  init() {
+    let config = RealityDebugViewConfig.breaker
+    _timeSeconds = State(initialValue: 0)
+    _yawDegrees = State(initialValue: config.defaultYawDegrees)
+    _pitchDegrees = State(initialValue: config.defaultPitchDegrees)
+    _cameraDistance = State(initialValue: config.defaultDistance)
+  }
+
+  var body: some View {
+    let progressValue = CGFloat(timeSeconds / config.durationSeconds)
+    let debugOrbit = BreakerDebugCameraOrbit(
+      yawDegrees: Float(yawDegrees),
+      pitchDegrees: Float(pitchDegrees),
+      distance: Float(cameraDistance)
+    )
+
+    HStack(spacing: 20) {
+      BreakerSwitchView(
+        progress: progressValue,
+        debugCameraOrbit: debugOrbit
+      )
+      .frame(width: 520, height: 520)
+      .background(Color.black.opacity(0.06))
+      .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+      DebugRenderControlPanel(
+        config: config,
+        timeSeconds: $timeSeconds,
+        yawDegrees: $yawDegrees,
+        pitchDegrees: $pitchDegrees,
+        distance: $cameraDistance,
+        onReset: {
+          yawDegrees = config.defaultYawDegrees
+          pitchDegrees = config.defaultPitchDegrees
+          cameraDistance = config.defaultDistance
+          timeSeconds = 0
+        }
+      )
+      .frame(width: 220)
+    }
+    .padding(20)
+  }
+}
+
+private struct DebugRenderControlPanel<Extras: View>: View {
+  let config: RealityDebugViewConfig
+  @Binding var timeSeconds: Double
+  @Binding var yawDegrees: Double
+  @Binding var pitchDegrees: Double
+  @Binding var distance: Double
+  let onReset: () -> Void
+  let cameraControlsDisabled: Bool
+  let displayYawText: String?
+  let displayPitchText: String?
+  let displayPositionText: String?
+  let displayDistanceText: String?
+  /// Optional scene-specific controls (keep empty unless truly needed).
+  @ViewBuilder var extras: () -> Extras
+
+  private var cameraPosition: (x: Double, y: Double, z: Double) {
+    let yawRadians = yawDegrees * .pi / 180
+    let pitchRadians = pitchDegrees * .pi / 180
+    let r = max(0.1, distance)
+    let x = sin(yawRadians) * cos(pitchRadians) * r
+    let z = cos(yawRadians) * cos(pitchRadians) * r
+    let y = sin(pitchRadians) * r
+    return (x, y, z)
+  }
+
+  private var cameraPositionText: String {
+    String(format: "%.2f, %.2f, %.2f", cameraPosition.x, cameraPosition.y, cameraPosition.z)
+  }
+
+  private var cameraOrientationText: String {
+    String(format: "yaw %.0f°, pitch %.0f°", yawDegrees, pitchDegrees)
+  }
+
+  init(
+    config: RealityDebugViewConfig,
+    timeSeconds: Binding<Double>,
+    yawDegrees: Binding<Double>,
+    pitchDegrees: Binding<Double>,
+    distance: Binding<Double>,
+    onReset: @escaping () -> Void,
+    cameraControlsDisabled: Bool = false,
+    displayYawText: String? = nil,
+    displayPitchText: String? = nil,
+    displayPositionText: String? = nil,
+    displayDistanceText: String? = nil,
+    @ViewBuilder extras: @escaping () -> Extras = { EmptyView() }
+  ) {
+    self.config = config
+    _timeSeconds = timeSeconds
+    _yawDegrees = yawDegrees
+    _pitchDegrees = pitchDegrees
+    _distance = distance
+    self.onReset = onReset
+    self.cameraControlsDisabled = cameraControlsDisabled
+    self.displayYawText = displayYawText
+    self.displayPitchText = displayPitchText
+    self.displayPositionText = displayPositionText
+    self.displayDistanceText = displayDistanceText
+    self.extras = extras
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text(config.title)
+        .font(.headline)
+
+      DebugCameraControlBlock(
+        yawDegrees: $yawDegrees,
+        pitchDegrees: $pitchDegrees,
+        distance: $distance,
+        distanceRange: config.distanceRange,
+        isDisabled: cameraControlsDisabled,
+        displayYawText: displayYawText,
+        displayPitchText: displayPitchText,
+        displayDistanceText: displayDistanceText
+      )
+
+      DebugCameraInfoBlock(
+        positionText: displayPositionText ?? cameraPositionText
+      )
+
+      DebugTimeControlBlock(
+        timeSeconds: $timeSeconds,
+        durationSeconds: config.durationSeconds
+      )
+
+      extras()
+
+      Button("Reset View") {
+        onReset()
+      }
+
+      Spacer()
+    }
+  }
+}
+
+private struct DebugCameraControlBlock: View {
+  @Binding var yawDegrees: Double
+  @Binding var pitchDegrees: Double
+  @Binding var distance: Double
+  let distanceRange: ClosedRange<Double>
+  let isDisabled: Bool
+  let displayYawText: String?
+  let displayPitchText: String?
+  let displayDistanceText: String?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      DomeOrbitControl(yawDegrees: $yawDegrees, pitchDegrees: $pitchDegrees)
+        .frame(width: 180, height: 180)
+
+      LabeledContent("Yaw") {
+        Text(displayYawText ?? String(format: "%.0f°", yawDegrees))
+          .frame(width: 64, alignment: .trailing)
+      }
+
+      LabeledContent("Pitch") {
+        Text(displayPitchText ?? String(format: "%.0f°", pitchDegrees))
+          .frame(width: 64, alignment: .trailing)
+      }
+
+      LabeledContent("Distance") {
+        Text(displayDistanceText ?? String(format: "%.2f", distance))
+          .frame(width: 64, alignment: .trailing)
+      }
+
+      Slider(value: $distance, in: distanceRange)
+    }
+    .opacity(isDisabled ? 0.4 : 1.0)
+    .disabled(isDisabled)
+  }
+}
+
+private struct DebugCameraInfoBlock: View {
+  let positionText: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Divider()
+
+      Text("Camera (look at 0,0,0)")
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+
+      LabeledContent("Position") {
+        Text(positionText)
+      }
+
+    }
+  }
+}
+
+private struct DebugTimeControlBlock: View {
+  @Binding var timeSeconds: Double
+  let durationSeconds: Double
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Divider()
+
+      LabeledContent("Time") {
+        Text("\(timeSeconds, specifier: "%.2f")s")
+          .frame(width: 64, alignment: .trailing)
+      }
+      Slider(value: $timeSeconds, in: 0...durationSeconds)
+    }
+  }
+}
+
+private struct DomeOrbitControl: View {
+  @Binding var yawDegrees: Double
+  @Binding var pitchDegrees: Double
+  @State private var startYaw: Double = 0
+  @State private var startPitch: Double = 0
+
+  var body: some View {
+    GeometryReader { geo in
+      let size = min(geo.size.width, geo.size.height)
+      let center = CGPoint(x: size / 2, y: size / 2)
+      ZStack {
+        Circle()
+          .strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1)
+        Path { path in
+          path.move(to: CGPoint(x: center.x, y: 0))
+          path.addLine(to: CGPoint(x: center.x, y: size))
+          path.move(to: CGPoint(x: 0, y: center.y))
+          path.addLine(to: CGPoint(x: size, y: center.y))
+        }
+        .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
+
+        Text("X")
+          .font(.caption)
+          .foregroundStyle(Color.red)
+          .position(x: size - 12, y: center.y)
+        Text("Y")
+          .font(.caption)
+          .foregroundStyle(Color.green)
+          .position(x: center.x, y: 12)
+        Text("Z")
+          .font(.caption)
+          .foregroundStyle(Color.blue)
+          .position(x: center.x + 26, y: center.y + 26)
+      }
+      .contentShape(Rectangle())
+      .gesture(
+        DragGesture(minimumDistance: 0)
+          .onChanged { value in
+            if value.startLocation == value.location {
+              startYaw = yawDegrees
+              startPitch = pitchDegrees
+            }
+            let dx = Double(value.translation.width)
+            let dy = Double(value.translation.height)
+            yawDegrees = startYaw + dx * 0.6
+            pitchDegrees = min(89, max(0, startPitch - dy * 0.6))
+          }
+      )
     }
   }
 }

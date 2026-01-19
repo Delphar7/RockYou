@@ -19,8 +19,8 @@ struct DomeIrisConfig {
   // ------------------------------------------------------------
   // Seams (divider lines) styling
   // ------------------------------------------------------------
-  var seamWidth: Float = 0.02
-  var seamSoftness: Float = 0.01
+  var seamWidth: Float = 0.002
+  var seamSoftness: Float = 0.005
 
   // ------------------------------------------------------------
   // Seams: RIGID BLADE EDGE MODEL
