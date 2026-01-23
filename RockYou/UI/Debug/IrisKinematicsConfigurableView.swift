@@ -3,8 +3,7 @@
 //
 // Configurable iris kinematics debug view.
 // All geometry derived from basic inputs: Rin, Rout, Length, bladeCount.
-
-#if os(macOS)
+// macOS-only (excluded from iOS via build settings)
 
 import SwiftUI
 
@@ -352,7 +351,7 @@ struct IrisKinematicsConfigurableView: View {
     let hue = Double(bladeIndex) / Double(bladeCount)
     let bladeColor = Color(hue: hue, saturation: 0.8, brightness: 0.9)
 
-    let fillAlpha = isValid ? 0.2 : 0.05
+      let fillAlpha = isValid ? 0.25 : 0.05
     context.fill(bladePath, with: .color(bladeColor.opacity(fillAlpha)))
     context.stroke(bladePath, with: .color(bladeColor), lineWidth: 1.5)
 
@@ -611,5 +610,3 @@ struct IrisKinematicsConfigurableView: View {
   IrisKinematicsConfigurableView()
     .frame(width: 950, height: 700)
 }
-
-#endif  // os(macOS)

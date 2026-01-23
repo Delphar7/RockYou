@@ -48,6 +48,16 @@ struct RockYouApp: App {
         IrisKinematicsConfigurableView()
       }
       .defaultSize(width: 950, height: 700)
+
+      Window("Debug — Iris Seam Equations", id: "debug-iris-seam-equations") {
+        IrisSeamEquationsDebugView()
+      }
+      .defaultSize(width: 950, height: 700)
+
+      Window("Debug — Playground: Dome", id: "debug-playground-dome") {
+        DomePlaygroundView()
+      }
+      .defaultSize(width: 950, height: 700)
     #endif
   }
 }
@@ -89,6 +99,17 @@ extension RockYouApp {
         Divider()
 
         OpenDebugRenderWindowButton(title: "Iris: Configurable", windowId: "debug-iris-configurable")
+        OpenDebugRenderWindowButton(
+          title: "Iris: Seam Equations",
+          windowId: "debug-iris-seam-equations"
+        )
+
+        Divider()
+
+        OpenDebugRenderWindowButton(
+          title: "Playground: Dome",
+          windowId: "debug-playground-dome"
+        )
       }
     }
   }

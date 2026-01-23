@@ -430,23 +430,23 @@ actor RokuWebSocketClient {
   private func handleReceivedData(_ data: Data) async {
     guard let json = String(data: data, encoding: .utf8) else { return }
 
-    // Logging note:
-    // Many ECP2 responses include a `"content-data"` field which is base64-encoded. When we print
-    // `json.prefix/suffix`, we end up effectively dumping the *base64 string* head/tail, which is
-    // not what we want when debugging actual payload bytes. Prefer logging the decoded head/tail.
+    // Many ECP2 responses include base64-encoded `content-data`. Log decoded content, not base64.
     if json.contains("\"content-data\""),
       let response = try? JSONDecoder().decode(ECPResponseMsg.self, from: data),
       let decoded = response.decodedContentData
     {
-      let head = Self.hexPrefix(decoded, maxBytes: 12)
-      let tail = Self.hexSuffix(decoded, maxBytes: 12)
       let contentType = response.contentType ?? ""
-      Log.noisy(
-        "RokuWS",
-        "⬅️ resp=\(response.response) id=\(response.responseId) status=\(response.status) type=\(contentType) content(decoded)=\(decoded.count)B head=\(head) tail=\(tail)"
-      )
+      let isText = contentType.hasPrefix("text/") || contentType.hasPrefix("application/json")
+      if isText, let text = String(data: decoded, encoding: .utf8) {
+        let head = String(text.prefix(30))
+        let tail = String(text.suffix(20))
+        Log.noisy("RokuWS", "⬅️ resp=\(response.response) id=\(response.responseId) \(decoded.count)B: \(head)...\(tail)")
+      } else {
+        let hex = decoded.prefix(24).map { String(format: "%02x", $0) }.joined(separator: " ")
+        Log.noisy("RokuWS", "⬅️ resp=\(response.response) id=\(response.responseId) \(decoded.count)B (binary): \(hex)...")
+      }
     } else {
-      Log.noisy("RokuWS", "⬅️ \(json.prefix(40))...\(json.suffix(10))")
+      Log.noisy("RokuWS", "⬅️ \(json.prefix(50))...\(json.suffix(15))")
     }
 
     // Try to parse as response (has "response-id")
@@ -484,18 +484,6 @@ actor RokuWebSocketClient {
       }
       return
     }
-  }
-
-  private static func hexPrefix(_ data: Data, maxBytes: Int) -> String {
-    Self.hexBytes(data.prefix(maxBytes))
-  }
-
-  private static func hexSuffix(_ data: Data, maxBytes: Int) -> String {
-    Self.hexBytes(data.suffix(maxBytes))
-  }
-
-  private static func hexBytes(_ bytes: Data.SubSequence) -> String {
-    bytes.map { String(format: "%02x", $0) }.joined()
   }
 
   private func parseNotification(json: String, data: Data) -> RokuNotification? {

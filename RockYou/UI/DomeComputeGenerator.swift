@@ -1,0 +1,173 @@
+// DomeComputeGenerator.swift
+// RockYou
+//
+// GPU-based dome vertex generation using Metal compute shaders.
+// Generates vertices entirely on GPU - no CPU loops, no RAM bloat.
+// Returns a LowLevelMesh that can be used with RealityKit entities.
+
+import Foundation
+import Metal
+import os
+import RealityKit
+
+#if os(macOS)
+
+  private let computeLog = Logger(subsystem: "com.rockyou", category: "DomeCompute")
+
+  /// Parameters passed to the compute shader (must match DomeComputeParams in Metal)
+  struct DomeComputeParams {
+    var radius: Float
+    var latSegments: UInt32
+    var lonSegments: UInt32
+    var totalTriangles: UInt32
+  }
+
+  /// GPU-based dome mesh generator
+  /// Generates tessellated dome vertices using Metal compute shaders
+  @MainActor
+  class DomeComputeGenerator {
+    private let device: MTLDevice
+    private let commandQueue: MTLCommandQueue
+    private let computePipeline: MTLComputePipelineState
+
+    // Vertex stride must match DomeVertex in Metal (float3 + float3 + float2 = 32 bytes)
+    private static let vertexStride = 32
+
+    init?() {
+      guard let device = MTLCreateSystemDefaultDevice() else {
+        computeLog.error("No Metal device available")
+        return nil
+      }
+      self.device = device
+
+      guard let commandQueue = device.makeCommandQueue() else {
+        computeLog.error("Failed to create command queue")
+        return nil
+      }
+      self.commandQueue = commandQueue
+
+      guard let library = device.makeDefaultLibrary() else {
+        computeLog.error("Failed to load default Metal library")
+        return nil
+      }
+
+      guard let computeFunction = library.makeFunction(name: "generateDomeVertices") else {
+        computeLog.error("Failed to find generateDomeVertices function")
+        return nil
+      }
+
+      do {
+        self.computePipeline = try device.makeComputePipelineState(function: computeFunction)
+      } catch {
+        computeLog.error("Failed to create compute pipeline: \(error)")
+        return nil
+      }
+    }
+
+    /// Generate dome mesh using GPU compute - NO COPY, direct GPU buffer usage
+    /// - Parameters:
+    ///   - latSegments: Number of latitude segments (rings from pole to equator)
+    ///   - lonSegments: Number of longitude segments (slices around the dome)
+    ///   - radius: Dome radius
+    /// - Returns: MeshResource ready for use with ModelEntity, or nil on failure
+    func generateMesh(
+      latSegments: Int,
+      lonSegments: Int,
+      radius: Float
+    ) -> MeshResource? {
+      // Calculate triangle count (same formula as CPU path)
+      let poleTriangles = lonSegments
+      let bandTriangles = (latSegments - 1) * lonSegments * 2
+      let totalTriangles = poleTriangles + bandTriangles
+      let totalVertices = totalTriangles * 3
+
+      // Set up compute parameters
+      var params = DomeComputeParams(
+        radius: radius,
+        latSegments: UInt32(latSegments),
+        lonSegments: UInt32(lonSegments),
+        totalTriangles: UInt32(totalTriangles)
+      )
+
+      // Create LowLevelMesh first - RealityKit manages the buffers
+      var descriptor = LowLevelMesh.Descriptor()
+      descriptor.vertexCapacity = totalVertices
+      descriptor.vertexAttributes = [
+        .init(semantic: .position, format: .float3, offset: 0),
+        .init(semantic: .normal, format: .float3, offset: 12),
+        .init(semantic: .uv0, format: .float2, offset: 24),
+      ]
+      descriptor.vertexLayouts = [
+        .init(bufferIndex: 0, bufferStride: Self.vertexStride),
+      ]
+      descriptor.indexCapacity = totalVertices
+      descriptor.indexType = .uint32
+
+      do {
+        let mesh = try LowLevelMesh(descriptor: descriptor)
+
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
+          computeLog.error("Failed to create command buffer")
+          return nil
+        }
+
+        // Get buffer from LowLevelMesh and dispatch compute to fill it directly (zero-copy)
+        let vertexBuffer = mesh.replace(bufferIndex: 0, using: commandBuffer)
+
+        guard let computeEncoder = commandBuffer.makeComputeCommandEncoder() else {
+          computeLog.error("Failed to create compute encoder")
+          return nil
+        }
+
+        computeEncoder.setComputePipelineState(computePipeline)
+        computeEncoder.setBuffer(vertexBuffer, offset: 0, index: 0)
+        computeEncoder.setBytes(&params, length: MemoryLayout<DomeComputeParams>.size, index: 1)
+
+        // Dispatch threads - one per vertex
+        let threadsPerGroup = min(computePipeline.maxTotalThreadsPerThreadgroup, 256)
+        computeEncoder.dispatchThreads(
+          MTLSize(width: totalVertices, height: 1, depth: 1),
+          threadsPerThreadgroup: MTLSize(width: threadsPerGroup, height: 1, depth: 1)
+        )
+        computeEncoder.endEncoding()
+
+        // Commit and wait for completion
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
+        if let error = commandBuffer.error {
+          computeLog.error("Compute failed: \(error)")
+          return nil
+        }
+
+        // Generate sequential indices (CPU side - but this is just integers, fast)
+        mesh.withUnsafeMutableIndices { indexBuffer in
+          let indices = indexBuffer.bindMemory(to: UInt32.self)
+          for i in 0..<totalVertices {
+            indices[i] = UInt32(i)
+          }
+        }
+
+        // Set the mesh part
+        let part = LowLevelMesh.Part(
+          indexCount: totalVertices,
+          topology: .triangle,
+          bounds: BoundingBox(
+            min: SIMD3<Float>(-radius, 0, -radius) * 1.1,
+            max: SIMD3<Float>(radius, radius, radius) * 1.1
+          )
+        )
+        mesh.parts.replaceAll([part])
+
+        // Convert to MeshResource for use with ModelEntity
+        return try MeshResource(from: mesh)
+
+      } catch {
+        computeLog.error("Failed to create LowLevelMesh: \(error)")
+        return nil
+      }
+    }
+
+  }
+
+#endif
