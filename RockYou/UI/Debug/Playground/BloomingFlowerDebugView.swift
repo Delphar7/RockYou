@@ -61,7 +61,7 @@ struct BloomingFlowerDebugView: View {
 
           // Engine config (auto-generated)
           GroupBox("Blade Configuration") {
-            EngineConfigPanel(engine: engine, width: 240)
+            ConfigPanel(engine: engine, config: BloomingFlowerEngine.config, width: 240)
               .frame(maxWidth: .infinity, alignment: .leading)
           }
 

@@ -17,6 +17,40 @@ import simd
 
   private let gpuLog = Logger(subsystem: "com.rockyou", category: "GPUShatter")
 
+  /// Algorithm for dome collapse animation
+  enum DomeCollapseAlgorithm: Int, CaseIterable {
+    case explode = 0   // Fragments fly outward with gravity
+    case confetti = 1  // Fragments flutter down like confetti
+    case ripple = 2    // Wave motion, random detach, collapse wave
+
+    /// Metal geometry modifier function name for this algorithm
+    var geometryModifierName: String {
+      switch self {
+      case .explode: return "explodeGeometryModifier"
+      case .confetti: return "confettiGeometryModifier"
+      case .ripple: return "rippleGeometryModifier"
+      }
+    }
+
+    /// Metal surface shader function name for this algorithm
+    var surfaceShaderName: String {
+      switch self {
+      case .explode: return "fragmentSurfaceShader"
+      case .confetti: return "confettiSurfaceShader"
+      case .ripple: return "rippleSurfaceShader"
+      }
+    }
+
+    /// Metal visibility kernel function name for this algorithm
+    var visibilityKernelName: String {
+      switch self {
+      case .explode: return "explodeVisibilityKernel"
+      case .confetti: return "confettiVisibilityKernel"
+      case .ripple: return "rippleVisibilityKernel"
+      }
+    }
+  }
+
   /// GPU-based shatter simulation - all physics on GPU, single mesh/draw call
   @MainActor
   class DomeShatterGPU: ObservableObject {
@@ -32,6 +66,7 @@ import simd
     private var entity: ModelEntity?
     private var currentCameraPosition: SIMD3<Float> = .zero
     private var currentTime: Float = 0
+    private var currentAlgorithm: DomeCollapseAlgorithm = .explode
 
     // Physics data texture (stores initial conditions for each fragment)
     private var dataTexture: TextureResource?
@@ -44,20 +79,27 @@ import simd
     // GPU compute mesh generator (lazy initialized)
     private lazy var computeGenerator: DomeComputeGenerator? = DomeComputeGenerator()
 
-    /// Start GPU-driven shatter - NEW: shader computes everything from header!
+    /// Start GPU-driven shatter with specified algorithm
     func start(
       fragmentCount targetCount: Int,
       radius: Float,
       in anchor: Entity,
       config: DomeShatterConfig,
+      algorithm: DomeCollapseAlgorithm = .explode,
       waveOrigin: SIMD3<Float>?,
       waveSpeed: Float,
+      cannonPower: Float = 0.0,
+      rippleFrequency: Float = 5.0,
+      rippleAmplitude: Float = 0.03,
+      rippleSpeed: Float = 0.2,
+      collapseSpeed: Float = 0.3,
       cameraPosition: SIMD3<Float>,
       doubleSided: Bool = true
     ) {
       guard !isActive else { return }
 
       isActive = true
+      currentAlgorithm = algorithm
 
       // Compute tessellation segments (same formula as generateTessellatedDome)
       let segments = max(4, Int(sqrt(Double(targetCount))))
@@ -89,14 +131,20 @@ import simd
         return
       }
 
-      // Create header-only texture (lookup tables + dome/wave params)
+      // Create header-only texture (lookup tables + dome/wave params + algorithm ID)
       guard let dataTex = createDataTexture(
         config: config,
+        algorithm: algorithm,
         radius: radius,
         latSegments: latSegments,
         lonSegments: lonSegments,
         waveOrigin: waveOrigin,
-        waveSpeed: waveSpeed
+        waveSpeed: waveSpeed,
+        cannonPower: cannonPower,
+        rippleFrequency: rippleFrequency,
+        rippleAmplitude: rippleAmplitude,
+        rippleSpeed: rippleSpeed,
+        collapseSpeed: collapseSpeed
       ) else {
         gpuLog.error("Failed to create texture")
         isActive = false
@@ -107,6 +155,7 @@ import simd
       // Create material
       guard let material = createGPUMaterial(
         dataTexture: dataTex,
+        algorithm: algorithm,
         cameraPosition: cameraPosition,
         doubleSided: doubleSided
       ) else {
@@ -284,7 +333,7 @@ import simd
       // Use async check to avoid blocking main thread
       let count = fragmentCount
       checker.checkVisibilityAsync(
-        animation: DomeShatterVisibilityAdapter(texture: mtlTexture, fragmentCount: count),
+        animation: DomeShatterVisibilityAdapter(texture: mtlTexture, fragmentCount: count, algorithm: currentAlgorithm),
         time: time
       ) { [weak self] result in
         DispatchQueue.main.async {
@@ -340,11 +389,17 @@ import simd
     /// Shader computes center and spawnTime from fragmentIndex + header params.
     private func createDataTexture(
       config: DomeShatterConfig,
+      algorithm: DomeCollapseAlgorithm,
       radius: Float,
       latSegments: Int,
       lonSegments: Int,
       waveOrigin: SIMD3<Float>?,
-      waveSpeed: Float
+      waveSpeed: Float,
+      cannonPower: Float,
+      rippleFrequency: Float,
+      rippleAmplitude: Float,
+      rippleSpeed: Float,
+      collapseSpeed: Float
     ) -> TextureResource? {
       // Layout (16 x 4096):
       // Rows 0-4095: Lookup tables (4096 random parameter sets)
@@ -355,6 +410,7 @@ import simd
       //   Col 4 (row 0): lonSegments (RG), waveSpeed (BA)
       //   Col 5 (row 0): waveOrigin.x (RG), waveOrigin.y (BA)
       //   Col 6 (row 0): waveOrigin.z (RG), waveEnabled (BA: 0 or 1)
+      //   Col 7 (row 0): algorithmID (R channel)
 
       let width = Self.textureWidth
       let height = Self.lookupTableSize
@@ -442,8 +498,63 @@ import simd
           pixels.append(UInt8((waveEnabled >> 8) & 0xFF))
           pixels.append(UInt8(waveEnabled & 0xFF))
 
-          // Cols 7+: padding
-          for _ in 7..<width {
+          // Col 7: Algorithm ID (R), Cannon Power (GB as 16-bit)
+          let cannonPower16 = encode16bit(cannonPower, min: 0.0, max: 5.0)
+          pixels.append(UInt8(algorithm.rawValue))
+          pixels.append(UInt8((cannonPower16 >> 8) & 0xFF))
+          pixels.append(UInt8(cannonPower16 & 0xFF))
+          pixels.append(0)
+
+          // Col 8: baseGravity (RG), gravityMin (BA)
+          let baseGravity16 = encode16bit(config.baseGravity, min: 0.0, max: 2.0)
+          let gravityMin16 = encode16bit(config.gravityMin, min: 0.0, max: 2.0)
+          pixels.append(UInt8((baseGravity16 >> 8) & 0xFF))
+          pixels.append(UInt8(baseGravity16 & 0xFF))
+          pixels.append(UInt8((gravityMin16 >> 8) & 0xFF))
+          pixels.append(UInt8(gravityMin16 & 0xFF))
+
+          // Col 9: gravityMax (RG), spinRateMin (BA)
+          let gravityMax16 = encode16bit(config.gravityMax, min: 0.0, max: 2.0)
+          let spinRateMin16 = encode16bit(config.spinRateMin, min: 0.0, max: 20.0)
+          pixels.append(UInt8((gravityMax16 >> 8) & 0xFF))
+          pixels.append(UInt8(gravityMax16 & 0xFF))
+          pixels.append(UInt8((spinRateMin16 >> 8) & 0xFF))
+          pixels.append(UInt8(spinRateMin16 & 0xFF))
+
+          // Col 10: spinRateMax (RG), baseSpeed (BA)
+          let spinRateMax16 = encode16bit(config.spinRateMax, min: 0.0, max: 20.0)
+          let baseSpeed16 = encode16bit(config.baseSpeed, min: -2.0, max: 2.0)
+          pixels.append(UInt8((spinRateMax16 >> 8) & 0xFF))
+          pixels.append(UInt8(spinRateMax16 & 0xFF))
+          pixels.append(UInt8((baseSpeed16 >> 8) & 0xFF))
+          pixels.append(UInt8(baseSpeed16 & 0xFF))
+
+          // Col 11: spreadAngle (RG), upwardBias (BA)
+          let spreadAngle16 = encode16bit(config.spreadAngle, min: 0.0, max: 2.0)
+          let upwardBias16 = encode16bit(config.upwardBias, min: -2.0, max: 2.0)
+          pixels.append(UInt8((spreadAngle16 >> 8) & 0xFF))
+          pixels.append(UInt8(spreadAngle16 & 0xFF))
+          pixels.append(UInt8((upwardBias16 >> 8) & 0xFF))
+          pixels.append(UInt8(upwardBias16 & 0xFF))
+
+          // Col 12: waveFrequency (RG), waveAmplitude (BA) - for ripple algorithm
+          let waveFreq16 = encode16bit(rippleFrequency, min: 1.0, max: 10.0)
+          let waveAmp16 = encode16bit(rippleAmplitude, min: 0.0, max: 0.2)
+          pixels.append(UInt8((waveFreq16 >> 8) & 0xFF))
+          pixels.append(UInt8(waveFreq16 & 0xFF))
+          pixels.append(UInt8((waveAmp16 >> 8) & 0xFF))
+          pixels.append(UInt8(waveAmp16 & 0xFF))
+
+          // Col 13: collapseSpeed (RG), rippleSpeed (BA) - for ripple algorithm
+          let collapseSpeed16 = encode16bit(collapseSpeed, min: 0.0, max: 2.0)
+          let rippleSpeed16 = encode16bit(rippleSpeed, min: 0.0, max: 2.0)
+          pixels.append(UInt8((collapseSpeed16 >> 8) & 0xFF))
+          pixels.append(UInt8(collapseSpeed16 & 0xFF))
+          pixels.append(UInt8((rippleSpeed16 >> 8) & 0xFF))
+          pixels.append(UInt8(rippleSpeed16 & 0xFF))
+
+          // Cols 14+: padding
+          for _ in 14..<width {
             pixels.append(contentsOf: [128, 128, 128, 128])
           }
         } else {
@@ -512,6 +623,7 @@ import simd
     /// Create material with geometry modifier and surface shader
     private func createGPUMaterial(
       dataTexture: TextureResource,
+      algorithm: DomeCollapseAlgorithm,
       cameraPosition: SIMD3<Float>,
       doubleSided: Bool
     ) -> RealityKit.Material? {
@@ -534,15 +646,15 @@ import simd
       }
 
       do {
-        // Geometry modifier for physics
+        // Geometry modifier for physics - selected by algorithm
         let geometryModifier = CustomMaterial.GeometryModifier(
-          named: "fragmentGeometryModifier",
+          named: algorithm.geometryModifierName,
           in: library
         )
 
-        // Surface shader - simple glass (dual-sided shader has issues)
+        // Surface shader - selected by algorithm
         let surfaceShader = CustomMaterial.SurfaceShader(
-          named: "fragmentGPUSurfaceShader",
+          named: algorithm.surfaceShaderName,
           in: library
         )
 
@@ -585,8 +697,9 @@ import simd
   private struct DomeShatterVisibilityAdapter: VisibilityCheckable {
     let texture: MTLTexture
     let fragmentCount: Int
+    let algorithm: DomeCollapseAlgorithm
 
-    var visibilityKernelName: String { "domeShatter_visibility_texture" }
+    var visibilityKernelName: String { algorithm.visibilityKernelName }
 
     func encodeVisibilityParameters(encoder: MTLComputeCommandEncoder) {
       // Buffer 2: fragment count (buffer 0 = anyVisible, buffer 1 = time)

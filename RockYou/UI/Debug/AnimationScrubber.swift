@@ -155,9 +155,12 @@ struct AnimationScrubber: View {
 
   private func startTimer() {
     stopTimer()
-    timer = Timer.scheduledTimer(withTimeInterval: frameDuration, repeats: true) { _ in
+    // Use .common mode so timer fires during mouse event tracking (drag to rotate)
+    let newTimer = Timer(timeInterval: frameDuration, repeats: true) { _ in
       tick()
     }
+    RunLoop.current.add(newTimer, forMode: .common)
+    timer = newTimer
   }
 
   private func stopTimer() {

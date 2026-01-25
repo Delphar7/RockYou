@@ -4,8 +4,7 @@
 // Shared interface for fragment-based animations.
 // Every animation that wants visibility checking must return this struct.
 
-#ifndef FRAGMENT_STATE_H
-#define FRAGMENT_STATE_H
+#pragma once
 
 #include <metal_stdlib>
 using namespace metal;
@@ -20,5 +19,3 @@ struct FragmentState {
 
 /// Clip plane Y - fragments below this are considered invisible
 constant float FRAGMENT_CLIP_Y = -0.1f;
-
-#endif // FRAGMENT_STATE_H

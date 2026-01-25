@@ -2,57 +2,96 @@
 // RockYou
 //
 // Unified playground for dome-related algorithms and experiments.
-// Uses a dropdown to switch between different algorithm views.
+// Uses a button bar with sub-menus for algorithm categories.
 // macOS-only (excluded from iOS via build settings)
 
 import SwiftUI
 
 // MARK: - Algorithm Selection
 
-enum DomePlaygroundAlgorithm: String, CaseIterable, Identifiable {
-  case sampleGeometry = "Sample Geometry"
-  case bloomingFlower = "Blooming Flower"
-  case particleExplosion = "Particle Explosion"
+enum DomePlaygroundCategory: String, CaseIterable {
+  case sample = "Sample"
+  case flower = "Flower"
+  case shatter = "Shatter"
+}
 
-  var id: String { rawValue }
-
-  var description: String {
-    switch self {
-    case .sampleGeometry:
-      return "ConfigurableEngine pattern demo"
-    case .bloomingFlower:
-      return "Iris blade aperture animation"
-    case .particleExplosion:
-      return "GPU-driven fragment shatter"
-    }
-  }
+enum ShatterAlgorithm: String, CaseIterable {
+  case explode = "Explode"
+  case confetti = "Confetti"
+  case ripple = "Ripple"
 }
 
 // MARK: - Playground View
 
 struct DomePlaygroundView: View {
-  @State private var selectedAlgorithm: DomePlaygroundAlgorithm = .sampleGeometry
+  private static let selectionKey = "DomePlaygroundSelection"
+
+  @State private var selectedCategory: DomePlaygroundCategory = .sample
+  @State private var selectedShatter: ShatterAlgorithm = .explode
+
+  init() {
+    // Load saved selection
+    if let dict = UserDefaults.standard.dictionary(forKey: Self.selectionKey) {
+      if let catRaw = dict["category"] as? String,
+         let cat = DomePlaygroundCategory(rawValue: catRaw) {
+        _selectedCategory = State(initialValue: cat)
+      }
+      if let shatterRaw = dict["shatter"] as? String,
+         let shatter = ShatterAlgorithm(rawValue: shatterRaw) {
+        _selectedShatter = State(initialValue: shatter)
+      }
+    }
+  }
+
+  private func saveSelection() {
+    let dict: [String: String] = [
+      "category": selectedCategory.rawValue,
+      "shatter": selectedShatter.rawValue,
+    ]
+    UserDefaults.standard.set(dict, forKey: Self.selectionKey)
+  }
 
   var body: some View {
     VStack(spacing: 0) {
-      // Algorithm selector header
-      HStack {
-        Text("Algorithm:")
-          .foregroundStyle(.secondary)
-
-        Picker("", selection: $selectedAlgorithm) {
-          ForEach(DomePlaygroundAlgorithm.allCases) { algorithm in
-            Text(algorithm.rawValue).tag(algorithm)
+      // Category selector header
+      HStack(spacing: 12) {
+        ForEach(DomePlaygroundCategory.allCases, id: \.self) { category in
+          if category == .shatter {
+            // Shatter has a sub-menu
+            Menu {
+              ForEach(ShatterAlgorithm.allCases, id: \.self) { algo in
+                Button(algo.rawValue) {
+                  selectedCategory = .shatter
+                  selectedShatter = algo
+                }
+              }
+            } label: {
+              categoryButton(category)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+          } else {
+            Button {
+              selectedCategory = category
+            } label: {
+              categoryButton(category)
+            }
+            .buttonStyle(.plain)
           }
         }
-        .labelsHidden()
-        .frame(width: 180)
-
-        Text(selectedAlgorithm.description)
-          .font(.caption)
-          .foregroundStyle(.tertiary)
 
         Spacer()
+
+        // Show which shatter algorithm is selected
+        if selectedCategory == .shatter {
+          Text(selectedShatter.rawValue)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.accentColor.opacity(0.1))
+            .cornerRadius(4)
+        }
       }
       .padding(.horizontal)
       .padding(.vertical, 8)
@@ -60,22 +99,41 @@ struct DomePlaygroundView: View {
 
       Divider()
 
-      // Selected algorithm view
-      algorithmView
+      // Selected view
+      selectedView
     }
+    .onChange(of: selectedCategory) { _, _ in saveSelection() }
+    .onChange(of: selectedShatter) { _, _ in saveSelection() }
   }
 
   @ViewBuilder
-  private var algorithmView: some View {
-    switch selectedAlgorithm {
-    case .sampleGeometry:
+  private func categoryButton(_ category: DomePlaygroundCategory) -> some View {
+    Text(category.rawValue)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 6)
+      .background(selectedCategory == category ? Color.accentColor : Color.clear)
+      .foregroundStyle(selectedCategory == category ? .white : .primary)
+      .cornerRadius(6)
+  }
+
+  @ViewBuilder
+  private var selectedView: some View {
+    switch selectedCategory {
+    case .sample:
       SampleGeometryDebugView()
 
-    case .bloomingFlower:
+    case .flower:
       BloomingFlowerDebugView()
 
-    case .particleExplosion:
-      ParticleExplosionDebugView()
+    case .shatter:
+      switch selectedShatter {
+      case .explode:
+        ExplodeDebugView()
+      case .confetti:
+        ConfettiDebugView()
+      case .ripple:
+        RippleDebugView()
+      }
     }
   }
 }

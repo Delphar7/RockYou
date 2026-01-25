@@ -15,6 +15,7 @@ ALWAYS_BUILD=0
 BREAK_LOCKS=0
 STATUS_LOCKS=0
 MAC_ARCHIVE=0
+DEBUG_MODE=0
 
 mkdir -p "$DERIVED_DATA_BASE" "$RUNALL_LOG_ARCHIVE_DIR"
 
@@ -562,6 +563,11 @@ while [[ "${1:-}" == --* ]]; do
             MAC_ARCHIVE=1
             shift
             ;;
+        --debug)
+            # For the `mac` target: run under lldb with SWIFT_BACKTRACE for crash debugging.
+            DEBUG_MODE=1
+            shift
+            ;;
         --16pro)
             SIM_PROFILE="16pro"
             SIM_PROFILE_FLAG="--16pro"
@@ -830,7 +836,13 @@ run_mac() {
     fi
     pkill -f "$mac_bin" 2>/dev/null || true
     sleep 0.5
-    "$mac_bin"
+
+    if [ "$DEBUG_MODE" -eq 1 ]; then
+        echo "🐛 Running with SWIFT_BACKTRACE enabled (stack traces on crash)"
+        SWIFT_BACKTRACE=enable=yes "$mac_bin"
+    else
+        "$mac_bin"
+    fi
     # Tail the system log for our app
     #log stream --predicate 'subsystem == "com.jtr.RockYou" OR process == "RockYou"' --style compact
 }
@@ -909,6 +921,7 @@ if [ $# -eq 0 ]; then
     echo "  --lint         - Build only (no install/launch). If no targets given, builds phone+ipad+watch+mac."
     echo "  --no-console   - Disable simulator console streaming (just launch without capturing logs)"
     echo "  --archive      - For mac target: build a Release archive and launch the archived app"
+    echo "  --debug        - For mac target: enable SWIFT_BACKTRACE for stack traces on crash (logged to mac.log)"
     echo "  --no-log       - Disable tee-to-log (intended for tmux mode where tmux pipe-pane handles logs)"
     echo "  --no-lock      - Disable cross-process DerivedData locks (not recommended; can cause Xcode build DB lock errors)"
     echo "  --always-build - Rebuild even if we had to wait on a concurrent build lock"

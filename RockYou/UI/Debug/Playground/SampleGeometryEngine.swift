@@ -1,21 +1,20 @@
 // SampleGeometryEngine.swift
 // RockYou
 //
-// Example ConfigurableEngine demonstrating the pattern.
+// Example engine demonstrating the PropertyConfig pattern.
 // This file can be moved to RockYou/UI/ when ready for production.
-// The same code works in both debug panes and production.
 // macOS-only (excluded from iOS via build settings)
 
 import SwiftUI
 
-/// Sample geometry engine demonstrating ConfigurableEngine pattern.
+/// Sample geometry engine demonstrating PropertyConfig pattern.
 ///
-/// In Debug: EngineConfigPanel auto-generates sliders/toggles for experimentation.
+/// In Debug: ConfigPanel auto-generates sliders/toggles from the config array.
 /// In Production: Just set properties directly - `engine.radius = 0.5`
 @Observable
-final class SampleGeometryEngine: ConfigurableEngine {
+final class SampleGeometryEngine {
 
-  // MARK: - Configurable Properties
+  // MARK: - Properties
 
   var radius: Double = 0.5
   var segments: Int = 12
@@ -23,41 +22,17 @@ final class SampleGeometryEngine: ConfigurableEngine {
   var showOutline: Bool = true
   var fillColor: Color = .blue
 
-  // MARK: - Property Descriptors (metadata for UI generation)
+  // MARK: - Config (single source of truth for UI)
 
-  static let propertyDescriptors: [String: PropertyDescriptor] = [
-    "radius": .init("Radius", .slider(min: 0.1, max: 1.0, step: 0.01)),
-    "segments": .init("Segments", .intStepper(min: 3, max: 32, step: 1)),
-    "rotation": .init("Rotation", .slider(min: 0, max: .pi * 2, step: 0.01)),
-    "showOutline": .init("Show Outline", .toggle),
-    "fillColor": .init("Fill Color", .color),
+  static let config: [PropertyConfig<SampleGeometryEngine>] = [
+    .slider(\.radius, "Radius", 0.1...1.0, step: 0.01),
+    .stepper(\.segments, "Segments", 3...32, step: 1),
+    .slider(\.rotation, "Rotation", 0...(.pi * 2), step: 0.01),
+    .toggle(\.showOutline, "Show Outline"),
+    .color(\.fillColor, "Fill Color"),
   ]
 
-  // MARK: - Dynamic Accessors (required by protocol)
-
-  func getValue(forKey key: String) -> Any? {
-    switch key {
-    case "radius": return radius
-    case "segments": return segments
-    case "rotation": return rotation
-    case "showOutline": return showOutline
-    case "fillColor": return fillColor
-    default: return nil
-    }
-  }
-
-  func setValue(_ value: Any, forKey key: String) {
-    switch key {
-    case "radius": if let v = value as? Double { radius = v }
-    case "segments": if let v = value as? Int { segments = v }
-    case "rotation": if let v = value as? Double { rotation = v }
-    case "showOutline": if let v = value as? Bool { showOutline = v }
-    case "fillColor": if let v = value as? Color { fillColor = v }
-    default: break
-    }
-  }
-
-  // MARK: - Engine Logic (the actual algorithm)
+  // MARK: - Engine Logic
 
   /// Generate polygon points - this is what production code cares about
   func generatePolygonPoints(in size: CGSize) -> [CGPoint] {
@@ -77,7 +52,7 @@ final class SampleGeometryEngine: ConfigurableEngine {
   }
 }
 
-// MARK: - Canvas View (can be used in debug or production)
+// MARK: - Canvas View
 
 /// Renders the geometry - works the same whether engine is being tweaked or in production
 struct SampleGeometryCanvas: View {
@@ -105,7 +80,7 @@ struct SampleGeometryCanvas: View {
   }
 }
 
-// MARK: - Debug View (uses EngineConfigPanel)
+// MARK: - Debug View
 
 /// Debug harness - demonstrates auto-generated UI
 struct SampleGeometryDebugView: View {
@@ -116,7 +91,7 @@ struct SampleGeometryDebugView: View {
       SampleGeometryCanvas(engine: engine)
         .frame(minWidth: 400, minHeight: 400)
 
-      EngineConfigPanel(engine: engine)
+      ConfigPanel(engine: engine, config: SampleGeometryEngine.config)
     }
   }
 }

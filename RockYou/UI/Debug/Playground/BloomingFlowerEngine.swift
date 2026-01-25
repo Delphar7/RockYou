@@ -1,7 +1,7 @@
 // BloomingFlowerEngine.swift
 // RockYou
 //
-// ConfigurableEngine for dome iris blade geometry.
+// Engine for dome iris blade geometry.
 // Controls blade count, coverage, thickness, and display options.
 // macOS-only (excluded from iOS via build settings)
 
@@ -12,52 +12,25 @@ import SwiftUI
 /// Controls the geometry of iris blades that open/close like a flower.
 /// The aperture animation is handled separately via AnimationScrubber.
 @Observable
-final class BloomingFlowerEngine: ConfigurableEngine {
+final class BloomingFlowerEngine {
 
-  // MARK: - Blade Geometry
+  // MARK: - Properties
 
   var bladeCount: Int = 10
   var bladeCoverage: Double = 0.85
   var bladeOverlap: Double = 0.02
-
-  // MARK: - Display Options
-
   var showDpadTexture: Bool = true
   var showMetalLayer: Bool = true
 
-  // MARK: - Property Descriptors
+  // MARK: - Config
 
-  static let propertyDescriptors: [String: PropertyDescriptor] = [
-    "bladeCount": .init("Blade Count", .intStepper(min: 3, max: 24, step: 1)),
-    "bladeCoverage": .init("Coverage", .slider(min: 0.3, max: 1.0, step: 0.01)),
-    "bladeOverlap": .init("Overlap", .slider(min: 0, max: 0.1, step: 0.005)),
-    "showDpadTexture": .init("DPad Texture", .toggle),
-    "showMetalLayer": .init("Metal Layer", .toggle),
+  static let config: [PropertyConfig<BloomingFlowerEngine>] = [
+    .stepper(\.bladeCount, "Blade Count", 3...24, step: 1),
+    .slider(\.bladeCoverage, "Coverage", 0.3...1.0, step: 0.01),
+    .slider(\.bladeOverlap, "Overlap", 0...0.1, step: 0.005),
+    .toggle(\.showDpadTexture, "DPad Texture"),
+    .toggle(\.showMetalLayer, "Metal Layer"),
   ]
-
-  // MARK: - Dynamic Accessors
-
-  func getValue(forKey key: String) -> Any? {
-    switch key {
-    case "bladeCount": return bladeCount
-    case "bladeCoverage": return bladeCoverage
-    case "bladeOverlap": return bladeOverlap
-    case "showDpadTexture": return showDpadTexture
-    case "showMetalLayer": return showMetalLayer
-    default: return nil
-    }
-  }
-
-  func setValue(_ value: Any, forKey key: String) {
-    switch key {
-    case "bladeCount": if let v = value as? Int { bladeCount = v }
-    case "bladeCoverage": if let v = value as? Double { bladeCoverage = v }
-    case "bladeOverlap": if let v = value as? Double { bladeOverlap = v }
-    case "showDpadTexture": if let v = value as? Bool { showDpadTexture = v }
-    case "showMetalLayer": if let v = value as? Bool { showMetalLayer = v }
-    default: break
-    }
-  }
 
   // MARK: - Conversion to DomeBladeMeshConfig
 
