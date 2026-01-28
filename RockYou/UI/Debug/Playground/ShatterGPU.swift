@@ -1,8 +1,9 @@
-// DomeShatterGPU.swift
-// RockYou
+// ShatterGPU.swift
+// RockYou/UI/Debug/Playground
 //
-// GPU-driven fragment shatter system. All physics computed on GPU.
-// Single draw call for all fragments.
+// GPU-driven fragment shatter system for playground experimentation.
+// Supports multiple algorithms: explode, confetti, ripple, iris.
+// Production code uses SceneView + IrisContent instead.
 
 import Combine
 import CoreGraphics
@@ -12,16 +13,14 @@ import os
 import RealityKit
 import simd
 
-#if os(macOS)
-  import AppKit
-
-  private let gpuLog = Logger(subsystem: "com.rockyou", category: "GPUShatter")
+private let gpuLog = Logger(subsystem: "com.rockyou", category: "GPUShatter")
 
   /// Algorithm for dome collapse animation
   enum DomeCollapseAlgorithm: Int, CaseIterable {
     case explode = 0   // Fragments fly outward with gravity
     case confetti = 1  // Fragments flutter down like confetti
     case ripple = 2    // Wave motion, random detach, collapse wave
+    case iris = 3      // Iris mechanism blades fly off
 
     /// Metal geometry modifier function name for this algorithm
     var geometryModifierName: String {
@@ -29,6 +28,7 @@ import simd
       case .explode: return "explodeGeometryModifier"
       case .confetti: return "confettiGeometryModifier"
       case .ripple: return "rippleGeometryModifier"
+      case .iris: return "irisGeometryModifier"
       }
     }
 
@@ -38,6 +38,7 @@ import simd
       case .explode: return "fragmentSurfaceShader"
       case .confetti: return "confettiSurfaceShader"
       case .ripple: return "rippleSurfaceShader"
+      case .iris: return "irisSurfaceShader"
       }
     }
 
@@ -47,6 +48,7 @@ import simd
       case .explode: return "explodeVisibilityKernel"
       case .confetti: return "confettiVisibilityKernel"
       case .ripple: return "rippleVisibilityKernel"
+      case .iris: return "irisVisibilityKernel"
       }
     }
   }
@@ -60,10 +62,8 @@ import simd
     /// Published visibility result - updates when compute shader detects all fragments gone
     @Published var allFragmentsGone: Bool = false
 
-    /// Use GPU compute shader for mesh generation
-    @Published var useComputeGenerator: Bool = true
-
     private var entity: ModelEntity?
+    private var seamRibbonEntity: ModelEntity?  // Ribbon mesh for iris seams
     private var currentCameraPosition: SIMD3<Float> = .zero
     private var currentTime: Float = 0
     private var currentAlgorithm: DomeCollapseAlgorithm = .explode
@@ -77,7 +77,48 @@ import simd
     private var lastVisibilityCheckTime: Float = -1
 
     // GPU compute mesh generator (lazy initialized)
-    private lazy var computeGenerator: DomeComputeGenerator? = DomeComputeGenerator()
+    private lazy var meshGenerator: DomeMeshGenerator? = DomeMeshGenerator()
+
+    /// Toggle seam ribbon visibility (for performance testing)
+    func setSeamRibbonVisible(_ visible: Bool) {
+      seamRibbonEntity?.isEnabled = visible
+    }
+
+    // MARK: - Clean Animation API
+
+    /// Start a dome animation with typed configuration.
+    /// This is the preferred API - configs are pure data structs defined in DomeAnimationConfigs.swift.
+    func start(
+      _ animation: DomeAnimation,
+      in anchor: Entity,
+      cameraPosition: SIMD3<Float>
+    ) {
+      switch animation {
+      case .iris(let irisConfig):
+        // Build legacy config - iris stores dome radius in baseSpeed
+        var legacyConfig = DomeShatterConfig()
+        legacyConfig.tessellatedFragmentCount = irisConfig.fragmentCount
+        legacyConfig.baseSpeed = irisConfig.domeRadius
+
+        start(
+          fragmentCount: irisConfig.fragmentCount,
+          radius: irisConfig.domeRadius,
+          in: anchor,
+          config: legacyConfig,
+          algorithm: .iris,
+          waveOrigin: nil,
+          waveSpeed: 0,
+          irisBladeCount: irisConfig.bladeCount,
+          irisTwist: irisConfig.twistDegrees,
+          irisOpenDuration: irisConfig.openDuration,
+          cameraPosition: cameraPosition
+        )
+        // Handle iris-specific post-setup
+        setSeamRibbonVisible(irisConfig.showSeamRibbons)
+      }
+    }
+
+    // MARK: - Legacy Start API (used internally and by other engines until migrated)
 
     /// Start GPU-driven shatter with specified algorithm
     func start(
@@ -93,6 +134,9 @@ import simd
       rippleAmplitude: Float = 0.03,
       rippleSpeed: Float = 0.2,
       collapseSpeed: Float = 0.3,
+      irisBladeCount: Int = 12,
+      irisTwist: Float = 0.0,
+      irisOpenDuration: Float = 4.0,
       cameraPosition: SIMD3<Float>,
       doubleSided: Bool = true
     ) {
@@ -110,22 +154,13 @@ import simd
       let actualCount = lonSegments + (latSegments - 1) * lonSegments * 2
       fragmentCount = actualCount
 
-      // Create mesh - choose between CPU and GPU compute paths
-      let mesh: MeshResource?
-      if useComputeGenerator, let generator = computeGenerator {
-        mesh = generator.generateMesh(
-          latSegments: latSegments,
-          lonSegments: lonSegments,
-          radius: radius
-        )
-      } else {
-        mesh = createTessellatedMesh(
-          radius: radius,
-          latSegments: latSegments,
-          lonSegments: lonSegments
-        )
-      }
-      guard let mesh else {
+      // Create mesh using GPU compute
+      guard let generator = meshGenerator,
+            let mesh = generator.generateMesh(
+              latSegments: latSegments,
+              lonSegments: lonSegments,
+              radius: radius
+            ) else {
         gpuLog.error("Failed to create mesh")
         isActive = false
         return
@@ -144,7 +179,10 @@ import simd
         rippleFrequency: rippleFrequency,
         rippleAmplitude: rippleAmplitude,
         rippleSpeed: rippleSpeed,
-        collapseSpeed: collapseSpeed
+        collapseSpeed: collapseSpeed,
+        irisBladeCount: irisBladeCount,
+        irisTwist: irisTwist,
+        irisOpenDuration: irisOpenDuration
       ) else {
         gpuLog.error("Failed to create texture")
         isActive = false
@@ -169,107 +207,75 @@ import simd
       anchor.addChild(fragmentEntity)
       entity = fragmentEntity
 
+      // Create seam ribbon for iris algorithm
+      if algorithm == .iris, irisBladeCount > 0 {
+        if let ribbonMesh = createSeamRibbonMesh(bladeCount: irisBladeCount, segmentsPerArc: 64),
+           let ribbonMaterial = createSeamRibbonMaterial(dataTexture: dataTex, cameraPosition: cameraPosition) {
+          let ribbonEntity = ModelEntity(mesh: ribbonMesh, materials: [ribbonMaterial])
+          anchor.addChild(ribbonEntity)
+          seamRibbonEntity = ribbonEntity
+        }
+      }
+
       // Initialize at time 0
       currentTime = 0
       currentCameraPosition = cameraPosition
       updateMaterial()
     }
 
-    /// Creates mesh for tessellated dome - vertices only, shader computes centers
-    private func createTessellatedMesh(
-      radius: Float,
-      latSegments: Int,
-      lonSegments: Int
-    ) -> MeshResource? {
+    // MARK: - Seam Ribbon Mesh
+
+    /// Creates ribbon mesh for iris blade seams
+    /// UV encoding: x = arcT (0-1), y = bladeIndex + widthSign*0.25
+    private func createSeamRibbonMesh(bladeCount: Int, segmentsPerArc: Int) -> MeshResource? {
       var positions: [SIMD3<Float>] = []
       var normals: [SIMD3<Float>] = []
       var uvs: [SIMD2<Float>] = []
       var indices: [UInt32] = []
 
-      // Precompute trig tables
-      var sinTheta: [Float] = []
-      var cosTheta: [Float] = []
-      for lat in 0...latSegments {
-        let theta = (Float(lat) / Float(latSegments)) * (Float.pi / 2)
-        sinTheta.append(sin(theta))
-        cosTheta.append(cos(theta))
-      }
+      // For each blade boundary, create a ribbon strip
+      for blade in 0..<bladeCount {
+        let bladeF = Float(blade)
 
-      var sinPhi: [Float] = []
-      var cosPhi: [Float] = []
-      for lon in 0...lonSegments {
-        let phi = (Float(lon) / Float(lonSegments)) * 2 * Float.pi
-        sinPhi.append(sin(phi))
-        cosPhi.append(cos(phi))
-      }
+        // Create quad strip along the arc
+        for seg in 0..<segmentsPerArc {
+          let t0 = Float(seg) / Float(segmentsPerArc)
+          let t1 = Float(seg + 1) / Float(segmentsPerArc)
 
-      var fragmentIndex = 0
+          // Four corners of this quad (positions at origin - shader moves them)
+          // Left edge: widthSign encoded as 0.0 in UV.y fraction
+          // Right edge: widthSign encoded as 0.5 in UV.y fraction
+          let baseIdx = UInt32(positions.count)
 
-      // Generate triangles matching shader's computation
-      for lat in 0..<latSegments {
-        let st1 = sinTheta[lat]
-        let ct1 = cosTheta[lat]
-        let st2 = sinTheta[lat + 1]
-        let ct2 = cosTheta[lat + 1]
+          // Vertex 0: t0, left edge
+          positions.append(SIMD3<Float>(0, 0, 0))
+          normals.append(SIMD3<Float>(0, 1, 0))
+          uvs.append(SIMD2<Float>(t0, bladeF + 0.0))
 
-        for lon in 0..<lonSegments {
-          let sp1 = sinPhi[lon]
-          let cp1 = cosPhi[lon]
-          let sp2 = sinPhi[lon + 1]
-          let cp2 = cosPhi[lon + 1]
+          // Vertex 1: t0, right edge
+          positions.append(SIMD3<Float>(0, 0, 0))
+          normals.append(SIMD3<Float>(0, 1, 0))
+          uvs.append(SIMD2<Float>(t0, bladeF + 0.5))
 
-          // Four corners
-          let p00 = SIMD3<Float>(radius * st1 * cp1, radius * ct1, radius * st1 * sp1)
-          let p10 = SIMD3<Float>(radius * st2 * cp1, radius * ct2, radius * st2 * sp1)
-          let p01 = SIMD3<Float>(radius * st1 * cp2, radius * ct1, radius * st1 * sp2)
-          let p11 = SIMD3<Float>(radius * st2 * cp2, radius * ct2, radius * st2 * sp2)
+          // Vertex 2: t1, left edge
+          positions.append(SIMD3<Float>(0, 0, 0))
+          normals.append(SIMD3<Float>(0, 1, 0))
+          uvs.append(SIMD2<Float>(t1, bladeF + 0.0))
 
-          if lat == 0 {
-            // Pole triangle: [p00, p11, p10]
-            let fn = computeFaceNormal(p00, p11, p10)
-            let baseIdx = UInt32(positions.count)
-            positions.append(contentsOf: [p00, p11, p10])
-            normals.append(contentsOf: [fn, fn, fn])
-            // UV.x = fragmentIndex (shader reads this to compute center)
-            uvs.append(contentsOf: [
-              SIMD2<Float>(Float(fragmentIndex), 0),
-              SIMD2<Float>(Float(fragmentIndex), 0),
-              SIMD2<Float>(Float(fragmentIndex), 0),
-            ])
-            indices.append(contentsOf: [baseIdx, baseIdx + 1, baseIdx + 2])
-            fragmentIndex += 1
-          } else {
-            // Quad: two triangles
-            // Triangle 0: [p00, p11, p10]
-            let fn1 = computeFaceNormal(p00, p11, p10)
-            var baseIdx = UInt32(positions.count)
-            positions.append(contentsOf: [p00, p11, p10])
-            normals.append(contentsOf: [fn1, fn1, fn1])
-            uvs.append(contentsOf: [
-              SIMD2<Float>(Float(fragmentIndex), 0),
-              SIMD2<Float>(Float(fragmentIndex), 0),
-              SIMD2<Float>(Float(fragmentIndex), 0),
-            ])
-            indices.append(contentsOf: [baseIdx, baseIdx + 1, baseIdx + 2])
-            fragmentIndex += 1
+          // Vertex 3: t1, right edge
+          positions.append(SIMD3<Float>(0, 0, 0))
+          normals.append(SIMD3<Float>(0, 1, 0))
+          uvs.append(SIMD2<Float>(t1, bladeF + 0.5))
 
-            // Triangle 1: [p00, p01, p11]
-            let fn2 = computeFaceNormal(p00, p01, p11)
-            baseIdx = UInt32(positions.count)
-            positions.append(contentsOf: [p00, p01, p11])
-            normals.append(contentsOf: [fn2, fn2, fn2])
-            uvs.append(contentsOf: [
-              SIMD2<Float>(Float(fragmentIndex), 0),
-              SIMD2<Float>(Float(fragmentIndex), 0),
-              SIMD2<Float>(Float(fragmentIndex), 0),
-            ])
-            indices.append(contentsOf: [baseIdx, baseIdx + 1, baseIdx + 2])
-            fragmentIndex += 1
-          }
+          // Two triangles for the quad
+          // Triangle 1: 0, 1, 2
+          indices.append(contentsOf: [baseIdx, baseIdx + 1, baseIdx + 2])
+          // Triangle 2: 1, 3, 2
+          indices.append(contentsOf: [baseIdx + 1, baseIdx + 3, baseIdx + 2])
         }
       }
 
-      var desc = MeshDescriptor(name: "gpu_dome_fragments")
+      var desc = MeshDescriptor(name: "iris_seam_ribbon")
       desc.positions = MeshBuffers.Positions(positions)
       desc.normals = MeshBuffers.Normals(normals)
       desc.textureCoordinates = MeshBuffers.TextureCoordinates(uvs)
@@ -278,25 +284,54 @@ import simd
       do {
         return try MeshResource.generate(from: [desc])
       } catch {
-        gpuLog.error("Mesh generation failed: \(error)")
+        gpuLog.error("Ribbon mesh generation failed: \(error)")
         return nil
       }
     }
 
-    private func computeFaceNormal(_ v0: SIMD3<Float>, _ v1: SIMD3<Float>, _ v2: SIMD3<Float>) -> SIMD3<Float> {
-      let edge1 = v1 - v0
-      let edge2 = v2 - v0
-      var normal = simd_normalize(simd_cross(edge1, edge2))
-      let center = (v0 + v1 + v2) / 3.0
-      if simd_dot(normal, center) < 0 {
-        normal = -normal
+    /// Creates material for seam ribbon
+    private func createSeamRibbonMaterial(
+      dataTexture: TextureResource,
+      cameraPosition: SIMD3<Float>
+    ) -> CustomMaterial? {
+      guard let device = MTLCreateSystemDefaultDevice(),
+            let library = device.makeDefaultLibrary() else {
+        return nil
       }
-      return normal
+
+      do {
+        let geometryModifier = CustomMaterial.GeometryModifier(
+          named: "irisSeamRibbonGeometryModifier",
+          in: library
+        )
+
+        let surfaceShader = CustomMaterial.SurfaceShader(
+          named: "irisSeamRibbonSurfaceShader",
+          in: library
+        )
+
+        var material = try CustomMaterial(
+          surfaceShader: surfaceShader,
+          geometryModifier: geometryModifier,
+          lightingModel: .lit
+        )
+
+        material.faceCulling = .none  // Double-sided ribbon
+        material.custom.value = [0, cameraPosition.x, cameraPosition.y, cameraPosition.z]
+        material.custom.texture = .init(dataTexture)
+
+        return material
+      } catch {
+        gpuLog.error("Ribbon material creation failed: \(error)")
+        return nil
+      }
     }
 
     func stop() {
       entity?.removeFromParent()
       entity = nil
+      seamRibbonEntity?.removeFromParent()
+      seamRibbonEntity = nil
       dataTexture = nil
       mtlDataTexture = nil
       isActive = false
@@ -360,6 +395,15 @@ import simd
         ]
         entity.model?.materials = [material]
       }
+
+      // Update ribbon material too
+      if let ribbonEntity = seamRibbonEntity,
+         var ribbonMaterial = ribbonEntity.model?.materials.first as? CustomMaterial {
+        ribbonMaterial.custom.value = [
+          currentTime, currentCameraPosition.x, currentCameraPosition.y, currentCameraPosition.z,
+        ]
+        ribbonEntity.model?.materials = [ribbonMaterial]
+      }
     }
 
     // MARK: - Texture Layout Constants
@@ -399,7 +443,10 @@ import simd
       rippleFrequency: Float,
       rippleAmplitude: Float,
       rippleSpeed: Float,
-      collapseSpeed: Float
+      collapseSpeed: Float,
+      irisBladeCount: Int = 12,
+      irisTwist: Float = 0.0,
+      irisOpenDuration: Float = 4.0
     ) -> TextureResource? {
       // Layout (16 x 4096):
       // Rows 0-4095: Lookup tables (4096 random parameter sets)
@@ -553,8 +600,23 @@ import simd
           pixels.append(UInt8((rippleSpeed16 >> 8) & 0xFF))
           pixels.append(UInt8(rippleSpeed16 & 0xFF))
 
-          // Cols 14+: padding
-          for _ in 14..<width {
+          // Col 14: irisBladeCount (RG), irisOpenDuration (BA) - for iris algorithm
+          let irisBlades16 = UInt16(clamping: irisBladeCount)
+          let irisOpenDuration16 = encode16bit(irisOpenDuration, min: 0.1, max: 10.0)
+          pixels.append(UInt8((irisBlades16 >> 8) & 0xFF))
+          pixels.append(UInt8(irisBlades16 & 0xFF))
+          pixels.append(UInt8((irisOpenDuration16 >> 8) & 0xFF))
+          pixels.append(UInt8(irisOpenDuration16 & 0xFF))
+
+          // Col 15: reserved (RG), irisTwist (BA) - for iris algorithm
+          let irisTwist16 = encode16bit(irisTwist, min: -180.0, max: 180.0)
+          pixels.append(128)  // reserved
+          pixels.append(128)  // reserved
+          pixels.append(UInt8((irisTwist16 >> 8) & 0xFF))
+          pixels.append(UInt8(irisTwist16 & 0xFF))
+
+          // Cols 16+: padding
+          for _ in 16..<width {
             pixels.append(contentsOf: [128, 128, 128, 128])
           }
         } else {
@@ -711,4 +773,3 @@ import simd
     }
   }
 
-#endif

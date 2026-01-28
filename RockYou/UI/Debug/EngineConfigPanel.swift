@@ -36,6 +36,7 @@ struct ConfigPanel<E: AnyObject & Observable>: View {
   var engine: E
   var config: [PropertyConfig<E>]
   var width: CGFloat = 280
+  var onChanged: (() -> Void)? = nil
 
   var body: some View {
     ScrollView {
@@ -88,7 +89,7 @@ struct ConfigPanel<E: AnyObject & Observable>: View {
       Slider(
         value: Binding(
           get: { (prop.getValue(engine) as? Double) ?? 0 },
-          set: { prop.setValue(engine, $0) }
+          set: { prop.setValue(engine, $0); onChanged?() }
         ),
         in: min...max,
         step: step
@@ -104,7 +105,7 @@ struct ConfigPanel<E: AnyObject & Observable>: View {
       prop.name,
       isOn: Binding(
         get: { (prop.getValue(engine) as? Bool) ?? false },
-        set: { prop.setValue(engine, $0) }
+        set: { prop.setValue(engine, $0); onChanged?() }
       )
     )
   }
@@ -125,7 +126,7 @@ struct ConfigPanel<E: AnyObject & Observable>: View {
         "",
         value: Binding(
           get: { (prop.getValue(engine) as? Int) ?? 0 },
-          set: { prop.setValue(engine, $0) }
+          set: { prop.setValue(engine, $0); onChanged?() }
         ),
         in: min...max,
         step: step
@@ -150,7 +151,7 @@ struct ConfigPanel<E: AnyObject & Observable>: View {
         "",
         selection: Binding(
           get: { toIndex(prop.getValue(engine)) },
-          set: { prop.setValue(engine, fromIndex($0)) }
+          set: { prop.setValue(engine, fromIndex($0)); onChanged?() }
         )
       ) {
         ForEach(Array(options.enumerated()), id: \.offset) { index, option in
@@ -176,7 +177,7 @@ struct ConfigPanel<E: AnyObject & Observable>: View {
           "",
           value: Binding(
             get: { (prop.getValue(engine) as? Int) ?? 0 },
-            set: { prop.setValue(engine, $0) }
+            set: { prop.setValue(engine, $0); onChanged?() }
           ),
           format: .number
         )
@@ -188,7 +189,7 @@ struct ConfigPanel<E: AnyObject & Observable>: View {
           "",
           text: Binding(
             get: { (prop.getValue(engine) as? String) ?? "" },
-            set: { prop.setValue(engine, $0) }
+            set: { prop.setValue(engine, $0); onChanged?() }
           )
         )
         .textFieldStyle(.roundedBorder)
@@ -208,7 +209,7 @@ struct ConfigPanel<E: AnyObject & Observable>: View {
         "",
         selection: Binding(
           get: { (prop.getValue(engine) as? Color) ?? .white },
-          set: { prop.setValue(engine, $0) }
+          set: { prop.setValue(engine, $0); onChanged?() }
         )
       )
       .labelsHidden()

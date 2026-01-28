@@ -1,0 +1,106 @@
+// IrisKinematicsModel.swift
+// RockYou
+//
+// Shared kinematics helpers for iris debug views.
+
+import simd
+
+struct IrisKinematicsModel {
+  var rin: Double
+  var rout: Double
+  var lengthDeg: Double
+  var bladeCount: Int
+  var maxActuatorRotationDeg: Double
+  var slotInnerScale: Double
+  var slotOuterScale: Double
+
+  var lengthRad: Double { lengthDeg * .pi / 180 }
+  var rm: Double { (rin + rout) / 2 }
+  var endcapRadius: Double { (rout - rin) / 2 }
+  var pivotToActuator: Double { 2 * rm * sin(lengthRad / 2) }
+  var pivotRadius: Double { rm }
+
+  var bladeP: SIMD2<Double> { SIMD2(-rm, 0) }
+  var bladePivotPin: SIMD2<Double> { SIMD2(0, 0) }
+  var bladeActuatorPin: SIMD2<Double> {
+    SIMD2(rm * (cos(lengthRad) - 1), rm * sin(lengthRad))
+  }
+
+  var slotInnerRadius: Double { pivotRadius - pivotToActuator * slotInnerScale }
+  var slotOuterRadius: Double { pivotRadius + pivotToActuator * slotOuterScale }
+
+  var maxActuatorRotationRad: Double { -maxActuatorRotationDeg * .pi / 180 }
+
+  func pivotAngle(for bladeIndex: Int) -> Double {
+    Double(bladeIndex) * (2 * .pi / Double(max(1, bladeCount)))
+  }
+
+  func pivotPosition(for bladeIndex: Int) -> SIMD2<Double> {
+    let angle = pivotAngle(for: bladeIndex)
+    return SIMD2(pivotRadius * cos(angle), pivotRadius * sin(angle))
+  }
+
+  func slotBaseAngle(for bladeIndex: Int) -> Double {
+    pivotAngle(for: bladeIndex) + lengthRad
+  }
+
+  func actuatorRotation(for aperture: Double) -> Double {
+    -aperture * maxActuatorRotationRad
+  }
+
+  func bladeAngle(
+    bladeIndex: Int,
+    actuatorRotation: Double
+  ) -> (bladeAngle: Double, actuatorRadius: Double, isValid: Bool)? {
+    guard bladeIndex < bladeCount else { return nil }
+
+    let pivotAngle = pivotAngle(for: bladeIndex)
+    let pivotX = pivotRadius * cos(pivotAngle)
+    let pivotY = pivotRadius * sin(pivotAngle)
+
+    let slotAngle = slotBaseAngle(for: bladeIndex) + actuatorRotation
+
+    let d = pivotToActuator
+    let dot = pivotX * cos(slotAngle) + pivotY * sin(slotAngle)
+    let c = pivotRadius * pivotRadius - d * d
+    let discriminant = dot * dot - c
+
+    guard discriminant >= 0 else {
+      return (0, 0, false)
+    }
+
+    let sqrtDisc = sqrt(discriminant)
+    let r1 = dot + sqrtDisc
+    let r2 = dot - sqrtDisc
+
+    let slotInner = slotInnerRadius
+    let slotOuter = slotOuterRadius
+
+    let inRange1 = r1 >= slotInner && r1 <= slotOuter
+    let inRange2 = r2 >= slotInner && r2 <= slotOuter
+
+    let r: Double
+    if inRange1 && !inRange2 {
+      r = r1
+    } else if inRange2 && !inRange1 {
+      r = r2
+    } else if inRange1 && inRange2 {
+      let slotMid = (slotInner + slotOuter) / 2
+      r = abs(r1 - slotMid) < abs(r2 - slotMid) ? r1 : r2
+    } else {
+      let d1 = min(abs(r1 - slotInner), abs(r1 - slotOuter))
+      let d2 = min(abs(r2 - slotInner), abs(r2 - slotOuter))
+      r = d1 < d2 ? r1 : r2
+    }
+
+    let actuatorX = r * cos(slotAngle)
+    let actuatorY = r * sin(slotAngle)
+
+    let thetaWorld = atan2(actuatorY - pivotY, actuatorX - pivotX)
+    let thetaLocal = atan2(sin(lengthRad), cos(lengthRad) - 1)
+    let bladeAngle = thetaWorld - thetaLocal
+    let isValid = r >= slotInner && r <= slotOuter
+
+    return (bladeAngle, r, isValid)
+  }
+}

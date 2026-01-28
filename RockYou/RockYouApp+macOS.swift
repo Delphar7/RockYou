@@ -54,6 +54,11 @@ struct RockYouApp: App {
       }
       .defaultSize(width: 950, height: 700)
 
+      Window("Debug — Iris Direct P_i", id: "debug-iris-direct") {
+        IrisSectorDirectDebugView()
+      }
+      .defaultSize(width: 800, height: 600)
+
       Window("Debug — Playground: Dome", id: "debug-playground-dome") {
         DomePlaygroundView()
       }
@@ -102,6 +107,10 @@ extension RockYouApp {
         OpenDebugRenderWindowButton(
           title: "Iris: Seam Equations",
           windowId: "debug-iris-seam-equations"
+        )
+        OpenDebugRenderWindowButton(
+          title: "Iris: Direct P_i",
+          windowId: "debug-iris-direct"
         )
 
         Divider()
@@ -175,11 +184,6 @@ private struct DomeRenderDebugView: View {
   @State private var pitchDegrees: Double
   @State private var cameraDistance: Double
   @State private var useFreeCamera: Bool = true
-  @State private var renderFlat: Bool = false
-  // 3D reference plane (in RealityKit scene)
-  @State private var showDPadReferencePlane: Bool = false
-  @State private var dpadReferencePlaneAbove: Bool = true
-  @State private var dpadReferencePlaneOpacity: Double = 0.5
 
   init() {
     let config = RealityDebugViewConfig.dome
@@ -196,19 +200,13 @@ private struct DomeRenderDebugView: View {
     HStack(spacing: 20) {
       DomeDoorsView(
         openProgress: progress,
-        backdropOpacity: CGFloat(DomeSceneConfig.defaultBackdropOpacity),
-        showDebugAxes: true,
-        renderSurface: renderFlat ? .flat : .dome,
         debugCameraOrbit: useFreeCamera
           ? DomeDebugCameraOrbit(
             yawDegrees: Float(yawDegrees),
             pitchDegrees: Float(pitchDegrees),
             distance: Float(cameraDistance)
           )
-          : nil,
-        showDPadReferencePlane: showDPadReferencePlane,
-        dpadReferencePlaneAbove: dpadReferencePlaneAbove,
-        dpadReferencePlaneOpacity: Float(dpadReferencePlaneOpacity)
+          : nil
       )
       .frame(width: renderSize, height: renderSize)
 
@@ -227,16 +225,6 @@ private struct DomeRenderDebugView: View {
         cameraControlsDisabled: !useFreeCamera,
         extras: {
           Toggle("Free Camera", isOn: $useFreeCamera)
-          Toggle("Render Flat", isOn: $renderFlat)
-          Toggle("Show DPad Reference (3D)", isOn: $showDPadReferencePlane)
-          if showDPadReferencePlane {
-            Toggle("Reference Above Backdrop", isOn: $dpadReferencePlaneAbove)
-            LabeledContent("Reference Opacity") {
-              Text("\(dpadReferencePlaneOpacity, specifier: "%.2f")")
-                .frame(width: 64, alignment: .trailing)
-            }
-            Slider(value: $dpadReferencePlaneOpacity, in: 0...1)
-          }
         }
       )
       .frame(width: 220)

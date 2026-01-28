@@ -1,0 +1,70 @@
+// IrisShader.metal
+// RockYou
+//
+// Iris mechanism algorithm shader: Dome fragments form iris blades.
+// Pure clear glass - seams rendered separately via ribbon geometry.
+
+#include "FragmentShaderScaffold.h"
+#include "Algorithms/IrisAlgorithm.h"
+
+// Geometry modifier for iris dome fragments
+[[visible]]
+void irisGeometryModifier(realitykit::geometry_parameters params) {
+  float4 customParams = params.uniforms().custom_parameter();
+  float time = customParams.x;
+  float3 cameraPos = float3(customParams.y, customParams.z, customParams.w);
+
+  auto dataTexture = params.textures().custom();
+  constexpr sampler texSampler(address::clamp_to_edge, filter::nearest);
+  float texWidth = float(dataTexture.get_width());
+  float texHeight = float(dataTexture.get_height());
+
+  float2 uv = params.geometry().uv0();
+  int fragmentIndex = int(round(uv.x));
+
+  fragment_math::DomeParams dome = fragment_math::readDomeParams(dataTexture, texSampler, texWidth, texHeight);
+  iris::PhysicsData physics = iris::readPhysicsData(fragmentIndex, dataTexture, texSampler, texWidth, texHeight);
+
+  IrisFragmentState state = iris::computeState(fragmentIndex, time, dome, physics);
+
+  // Apply position offset
+  float3 center = fragment_math::computeCenterFromIndex(fragmentIndex, dome.latSegments, dome.lonSegments, dome.radius);
+  float3 offset = state.position - center;
+  params.geometry().set_model_position_offset(offset);
+
+  // Rotate normal
+  float3 normal = params.geometry().normal();
+  float3 rotatedNormal = fragment_math::quatRotate(state.rotation, normal);
+
+  // Backface check
+  float3 viewDir = normalize(cameraPos - center);
+  bool backFacing = dot(normal, viewDir) < 0.0f;
+
+  if (!state.visible) {
+    params.geometry().set_model_position_offset(float3(0, -1000.0f, 0));
+    return;
+  }
+
+  float3 finalNormal = backFacing ? -rotatedNormal : rotatedNormal;
+  params.geometry().set_normal(finalNormal);
+
+  // Pass blade index to surface shader via UV1
+  params.geometry().set_uv1(float2(float(state.bladeIndex), 0.0f));
+}
+
+FRAGMENT_VISIBILITY_KERNEL(iris, iris)
+
+// Iris surface shader - pure clear glass
+[[visible]]
+void irisSurfaceShader(realitykit::surface_parameters params) {
+  float3 normal = params.geometry().normal();
+  float3 view = params.geometry().view_direction();
+  bool backFacing = dot(normal, view) < 0.0f;
+
+  // Clear shiny glass - almost invisible except for reflections
+  params.surface().set_base_color(half3(0.0h));
+  params.surface().set_metallic(0.0h);
+  params.surface().set_roughness(0.01h);
+  params.surface().set_specular(1.0h);
+  params.surface().set_opacity(backFacing ? 0.02h : 0.04h);
+}

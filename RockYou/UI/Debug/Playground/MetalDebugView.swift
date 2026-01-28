@@ -16,6 +16,7 @@ protocol PlaygroundEngine: AnyObject, Observable {
   var fragmentCount: Int { get }
   var domeRadius: Double { get }
   var showDpadTexture: Bool { get }
+  var showSeamRibbons: Bool { get }
 
   func toShatterConfig() -> DomeShatterConfig
 
@@ -25,6 +26,11 @@ protocol PlaygroundEngine: AnyObject, Observable {
     in anchor: AnchorEntity,
     cameraPosition: SIMD3<Float>
   )
+}
+
+extension PlaygroundEngine {
+  // Default: ribbons enabled (only relevant for iris algorithm)
+  var showSeamRibbons: Bool { true }
 }
 
 // MARK: - Metal Debug View
@@ -48,6 +54,9 @@ struct MetalDebugView<Engine: PlaygroundEngine>: View {
   @State private var cameraDistance: Double = 1.2
 
   @State private var restartID = UUID()
+  @State private var softRestartID = UUID()
+  @State private var autoRestart: Bool = true
+  @State private var configChangeID = UUID()
 
   /// UserDefaults key based on engine type name
   private var configKey: String { "PlaygroundConfig.\(String(describing: Engine.self))" }
@@ -67,7 +76,8 @@ struct MetalDebugView<Engine: PlaygroundEngine>: View {
         effectiveTime: Float(currentTime + subFrame * (1.0 / 60.0)),
         yawDegrees: Float(yawDegrees),
         pitchDegrees: Float(pitchDegrees),
-        cameraDistance: Float(cameraDistance)
+        cameraDistance: Float(cameraDistance),
+        softRestartID: softRestartID
       )
       .id(restartID)
       .frame(minWidth: 400, minHeight: 400)
@@ -146,8 +156,13 @@ struct MetalDebugView<Engine: PlaygroundEngine>: View {
           }
 
           GroupBox("Configuration") {
-            ConfigPanel(engine: engine, config: config, width: 240)
+            ConfigPanel(engine: engine, config: config, width: 240, onChanged: {
+              configChangeID = UUID()
+            })
               .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle("Auto Restart", isOn: $autoRestart)
+              .toggleStyle(.checkbox)
+              .padding(.top, 4)
           }
 
           GroupBox("Camera") {
@@ -172,6 +187,15 @@ struct MetalDebugView<Engine: PlaygroundEngine>: View {
       // Save config whenever simulation restarts (captures any config changes)
       PropertyConfig<Engine>.save(engine, config: config, key: configKey)
       saveCamera()
+    }
+    .onChange(of: configChangeID) { _, _ in
+      // Auto-restart on config change if enabled (soft restart - no screen blank)
+      if autoRestart {
+        gpuShatterSim.stop()
+        currentTime = 0
+        subFrame = 0
+        softRestartID = UUID()
+      }
     }
   }
 
@@ -204,10 +228,13 @@ private struct MetalCanvas<Engine: PlaygroundEngine>: View {
   let yawDegrees: Float
   let pitchDegrees: Float
   let cameraDistance: Float
+  var softRestartID: UUID  // Triggers in-place restart without recreating view
 
   @State private var camera: PerspectiveCamera?
   @State private var cameraAnchor: AnchorEntity?
   @State private var backdropEntity: Entity?
+  @State private var simAnchor: AnchorEntity?
+  @State private var lastSoftRestartID: UUID?
 
   var body: some View {
     RealityView { content in
@@ -238,11 +265,26 @@ private struct MetalCanvas<Engine: PlaygroundEngine>: View {
       // Simulation anchor
       let anchor = AnchorEntity(world: .zero)
       content.add(anchor)
+      simAnchor = anchor
+      lastSoftRestartID = softRestartID
 
       // Start simulation (engine-specific)
       engine.startSimulation(gpuShatterSim: gpuShatterSim, in: anchor, cameraPosition: pos)
 
     } update: { _ in
+      // Check for soft restart (config change)
+      if softRestartID != lastSoftRestartID, let anchor = simAnchor {
+        lastSoftRestartID = softRestartID
+
+        // Clear existing children from the anchor
+        for child in anchor.children {
+          child.removeFromParent()
+        }
+
+        // Restart simulation with fresh config
+        let camPos = PlaygroundCamera.position(yaw: yawDegrees, pitch: pitchDegrees, distance: cameraDistance)
+        engine.startSimulation(gpuShatterSim: gpuShatterSim, in: anchor, cameraPosition: camPos)
+      }
       let camPos = PlaygroundCamera.position(yaw: yawDegrees, pitch: pitchDegrees, distance: cameraDistance)
       if let camera, let cameraAnchor {
         camera.position = camPos
@@ -250,6 +292,7 @@ private struct MetalCanvas<Engine: PlaygroundEngine>: View {
       }
 
       backdropEntity?.isEnabled = engine.showDpadTexture
+      gpuShatterSim.setSeamRibbonVisible(engine.showSeamRibbons)
 
       if gpuShatterSim.isActive {
         gpuShatterSim.setTime(effectiveTime)

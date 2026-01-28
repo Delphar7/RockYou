@@ -92,9 +92,9 @@ struct CameraEventCapture: NSViewRepresentable {
       distance = min(max(newDistance, distanceRange.lowerBound), distanceRange.upperBound)
     }
     view.onDrag = { deltaX, deltaY in
-      let newYaw = yawDegrees + deltaX * dragSensitivity
+        let newYaw = yawDegrees - deltaX * dragSensitivity
       yawDegrees = min(max(newYaw, yawRange.lowerBound), yawRange.upperBound)
-      let newPitch = pitchDegrees - deltaY * dragSensitivity
+        let newPitch = pitchDegrees + deltaY * dragSensitivity
       pitchDegrees = min(max(newPitch, pitchRange.lowerBound), pitchRange.upperBound)
     }
     return view

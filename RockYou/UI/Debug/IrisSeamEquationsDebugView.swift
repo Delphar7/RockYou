@@ -29,6 +29,9 @@ struct IrisSeamEquationsDebugView: View {
     @State private var showPivots: Bool = true
     @State private var showActuatorPins: Bool = true
     @State private var showBladeP: Bool = false
+    @State private var clipOuter: Bool = true
+    @State private var fillGaps: Bool = true
+    @State private var clipNext: Bool = true
     @State private var visibleBlades: [Bool] = Array(repeating: true, count: 12)
 
     @State private var animationTimer: Timer?
@@ -36,8 +39,13 @@ struct IrisSeamEquationsDebugView: View {
     // MARK: - Computed Geometry
 
     private var lengthRad: Double { lengthDeg * .pi / 180 }
-    private var rm: Double { (rin + rout) / 2 }
-    private var endcapRadius: Double { (rout - rin) / 2 }
+    private var innerRadius: Double {
+      guard fillGaps else { return rin }
+      let k = Double.pi / Double(bladeCount)
+      return rout * (1 - k) / (1 + k)
+    }
+    private var rm: Double { (innerRadius + rout) / 2 }
+    private var endcapRadius: Double { (rout - innerRadius) / 2 }
     private var pivotToActuator: Double { 2 * rm * sin(lengthRad / 2) }
     private var pivotRadius: Double { rm }  // Pivot mounting circle radius
 
@@ -190,6 +198,71 @@ struct IrisSeamEquationsDebugView: View {
       return (bladeAngle, r, isValid)
     }
 
+    private func bladeWorldPoints(
+      bladeIndex: Int,
+      bladeAngle: Double
+    ) -> (pivotPos: CGPoint, pWorld: CGPoint, pivotPinWorld: CGPoint, actuatorPinWorld: CGPoint) {
+      let pivotAngle = Double(bladeIndex) * (2 * .pi / Double(bladeCount))
+      let pivotPos = CGPoint(x: pivotRadius * cos(pivotAngle), y: pivotRadius * sin(pivotAngle))
+
+      func bladeToWorld(_ localPt: SIMD2<Double>) -> CGPoint {
+        let cos_a = cos(bladeAngle)
+        let sin_a = sin(bladeAngle)
+        let rotX = localPt.x * cos_a - localPt.y * sin_a
+        let rotY = localPt.x * sin_a + localPt.y * cos_a
+        return CGPoint(x: pivotPos.x + rotX, y: pivotPos.y + rotY)
+      }
+
+      let pWorld = bladeToWorld(bladeP)
+      let pivotPinWorld = bladeToWorld(bladePivotPin)
+      let actuatorPinWorld = bladeToWorld(bladeActuatorPin)
+
+      return (pivotPos, pWorld, pivotPinWorld, actuatorPinWorld)
+    }
+
+    private func pivotSideIntersectionAngle(
+      pWorld: CGPoint,
+      pivotPinWorld: CGPoint
+    ) -> Double? {
+      let r0 = innerRadius
+      let r1 = pivotRadius
+      let dx = pWorld.x
+      let dy = pWorld.y
+      let d = hypot(dx, dy)
+      let epsilon = 1e-6
+
+      guard d > epsilon else { return nil }
+      if d > r0 + r1 { return nil }
+      if d < abs(r0 - r1) { return nil }
+
+      let a = (r0 * r0 - r1 * r1 + d * d) / (2 * d)
+      let h2 = r0 * r0 - a * a
+      let h = h2 <= 0 ? 0 : sqrt(h2)
+
+      let ux = -dx / d
+      let uy = -dy / d
+      let px = -uy
+      let py = ux
+
+      let baseX = dx + a * ux
+      let baseY = dy + a * uy
+
+      let ix1 = baseX + h * px
+      let iy1 = baseY + h * py
+      let ix2 = baseX - h * px
+      let iy2 = baseY - h * py
+
+      let dist1 = (ix1 - pivotPinWorld.x) * (ix1 - pivotPinWorld.x)
+        + (iy1 - pivotPinWorld.y) * (iy1 - pivotPinWorld.y)
+      let dist2 = (ix2 - pivotPinWorld.x) * (ix2 - pivotPinWorld.x)
+        + (iy2 - pivotPinWorld.y) * (iy2 - pivotPinWorld.y)
+
+      let ix = dist1 <= dist2 ? ix1 : ix2
+      let iy = dist1 <= dist2 ? iy1 : iy2
+
+      return atan2(iy - pWorld.y, ix - pWorld.x)
+    }
+
     // MARK: - Drawing
 
     private func drawIris(context: GraphicsContext, size: CGSize) {
@@ -275,15 +348,33 @@ struct IrisSeamEquationsDebugView: View {
       }
 
       let orderedBlades = blades.sorted { left, right in
-        clockwiseAngle(left.pivotAngle) > clockwiseAngle(right.pivotAngle)
+        clockwiseAngle(left.pivotAngle) < clockwiseAngle(right.pivotAngle)
       }
+      let bladeByIndex = Dictionary(uniqueKeysWithValues: blades.map { ($0.index, $0) })
+
+      let outerClipPath: Path? = {
+        guard clipOuter else { return nil }
+        let ro = toViewRadius(pivotRadius)
+        let rect = CGRect(
+          x: center.x - ro, y: center.y - ro,
+          width: ro * 2, height: ro * 2
+        )
+        return Path(ellipseIn: rect)
+      }()
 
       for (idx, blade) in orderedBlades.enumerated() {
-        let occluders = Array(orderedBlades.prefix(idx))
+        // Default: draw-order occlusion (earlier-drawn blades show through)
+        var occluders = Array(orderedBlades.prefix(idx))
+        if clipNext {
+          // Pinwheel mode: only occlude by immediate successor (wrap-around)
+          occluders = bladeByIndex[(blade.index + 1) % bladeCount].map { [$0] } ?? []
+        }
+
         drawVisibleBlade(
           context: context,
           blade: blade,
-          occluders: occluders
+          occluders: occluders,
+          clipPath: outerClipPath
         )
       }
 
@@ -314,36 +405,28 @@ struct IrisSeamEquationsDebugView: View {
       isValid: Bool
     ) -> BladeRenderData? {
       let pivotAngle = Double(bladeIndex) * (2 * .pi / Double(bladeCount))
-      let pivotPos = CGPoint(x: pivotRadius * cos(pivotAngle), y: pivotRadius * sin(pivotAngle))
-
-      // Transform blade-local point to world
-      func bladeToWorld(_ localPt: SIMD2<Double>) -> CGPoint {
-        let cos_a = cos(bladeAngle)
-        let sin_a = sin(bladeAngle)
-        let rotX = localPt.x * cos_a - localPt.y * sin_a
-        let rotY = localPt.x * sin_a + localPt.y * cos_a
-        return CGPoint(x: pivotPos.x + rotX, y: pivotPos.y + rotY)
-      }
-
-      let pWorld = bladeToWorld(bladeP)
-      let pivotPinWorld = bladeToWorld(bladePivotPin)
-      let actuatorPinWorld = bladeToWorld(bladeActuatorPin)
+      let points = bladeWorldPoints(bladeIndex: bladeIndex, bladeAngle: bladeAngle)
+      let pWorld = points.pWorld
+      let pivotPinWorld = points.pivotPinWorld
+      let actuatorPinWorld = points.actuatorPinWorld
 
       // Calculate angles from P in world coords
       let angleToPivot = atan2(pivotPinWorld.y - pWorld.y, pivotPinWorld.x - pWorld.x)
       let angleToActuator = atan2(actuatorPinWorld.y - pWorld.y, actuatorPinWorld.x - pWorld.x)
 
+      let pivotSideAngle = pivotSideIntersectionAngle(pWorld: pWorld, pivotPinWorld: pivotPinWorld)
+      let innerEndAngle = pivotSideAngle ?? angleToPivot
+
       // Determine arc direction
-      var delta = angleToPivot - angleToActuator
+      var delta = innerEndAngle - angleToActuator
       if delta > .pi { delta -= 2 * .pi }
       if delta < -.pi { delta += 2 * .pi }
       let arcClockwise = delta > 0
 
       let pView = toView(pWorld)
-      let pivotView = toView(pivotPinWorld)
       let actuatorView = toView(actuatorPinWorld)
 
-      let riScaled = rin * scale
+      let riScaled = innerRadius * scale
       let roScaled = rout * scale
       let endcapScaled = endcapRadius * scale
 
@@ -351,22 +434,30 @@ struct IrisSeamEquationsDebugView: View {
 
       // 1. Inner arc: actuator to pivot (centered at P)
       let innerStart = Angle(radians: -angleToActuator)
-      let innerEnd = Angle(radians: -angleToPivot)
+      let innerEnd = Angle(radians: -innerEndAngle)
       bladePath.addArc(
         center: pView, radius: riScaled,
         startAngle: innerStart, endAngle: innerEnd,
         clockwise: arcClockwise)
 
-      // 2. Pivot endcap (bulges away from P)
-      let pivotCapStart = Angle(radians: -(angleToPivot + .pi))
-      let pivotCapEnd = Angle(radians: -angleToPivot)
-      bladePath.addArc(
-        center: pivotView, radius: endcapScaled,
-        startAngle: pivotCapStart, endAngle: pivotCapEnd,
-        clockwise: true)
+      let tangentAngle = pivotSideAngle ?? angleToPivot
+      let endAngleView = -tangentAngle
+      let radial = CGPoint(x: cos(endAngleView), y: sin(endAngleView))
+      let innerPoint = CGPoint(
+        x: pView.x + riScaled * radial.x,
+        y: pView.y + riScaled * radial.y
+      )
+      let tangent = CGPoint(x: -radial.y, y: radial.x) // 90° CCW from radial
+      let deltaRadius = max(0, roScaled * roScaled - riScaled * riScaled)
+      let t = sqrt(deltaRadius)
+      let outerPoint = CGPoint(
+        x: innerPoint.x + tangent.x * t,
+        y: innerPoint.y + tangent.y * t
+      )
+      bladePath.addLine(to: outerPoint)
 
       // 3. Outer arc: pivot to actuator (centered at P)
-      let outerStart = Angle(radians: -angleToPivot)
+      let outerStart = Angle(radians: -innerEndAngle)
       let outerEnd = Angle(radians: -angleToActuator)
       bladePath.addArc(
         center: pView, radius: roScaled,
@@ -412,9 +503,14 @@ struct IrisSeamEquationsDebugView: View {
     private func drawVisibleBlade(
       context: GraphicsContext,
       blade: BladeRenderData,
-      occluders: [BladeRenderData]
+      occluders: [BladeRenderData],
+      clipPath: Path?
     ) {
       context.drawLayer { layer in
+        if let clipPath {
+          layer.clip(to: clipPath)
+        }
+
         layer.fill(blade.path, with: .color(blade.bladeColor.opacity(blade.fillAlpha)))
         layer.stroke(blade.path, with: .color(blade.bladeColor), lineWidth: 1.5)
 
@@ -440,9 +536,12 @@ struct IrisSeamEquationsDebugView: View {
           layer.fill(Path(ellipseIn: pRect), with: .color(.yellow))
         }
 
-        layer.blendMode = .destinationOut
-        for other in occluders {
-          layer.fill(other.path, with: .color(.white))
+        // Punch out occluders - works in offscreen buffer regardless of main canvas draw order
+        if !occluders.isEmpty {
+          layer.blendMode = .destinationOut
+          for other in occluders {
+            layer.fill(other.path, with: .color(.white))
+          }
         }
       }
     }
@@ -583,13 +682,25 @@ struct IrisSeamEquationsDebugView: View {
     }
 
     private var displayOptionsSection: some View {
-      GroupBox("Display Options") {
-        VStack(alignment: .leading, spacing: 8) {
-          Toggle("Pivot Circle", isOn: $showPivotCircle)
-          Toggle("Actuator Slots", isOn: $showSlots)
-          Toggle("Pivot Points", isOn: $showPivots)
-          Toggle("Actuator Pins", isOn: $showActuatorPins)
-          Toggle("Blade Center (P)", isOn: $showBladeP)
+      HStack(alignment: .top, spacing: 12) {
+        GroupBox("Display Options") {
+          VStack(alignment: .leading, spacing: 8) {
+            Toggle("Pivot Circle", isOn: $showPivotCircle)
+            Toggle("Actuator Slots", isOn: $showSlots)
+            Toggle("Pivot Points", isOn: $showPivots)
+            Toggle("Actuator Pins", isOn: $showActuatorPins)
+            Toggle("Blade Center (P)", isOn: $showBladeP)
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            Toggle("Clip Outer", isOn: $clipOuter)
+            Toggle("Fill Gaps", isOn: $fillGaps)
+            Toggle("Clip Next", isOn: $clipNext)
+          }
+        } label: {
+          EmptyView()
         }
       }
     }

@@ -1,0 +1,510 @@
+// IrisSectorDirectDebugView.swift
+// RockYou
+//
+// Direct P_i angle-based iris rendering using Metal shader.
+// Instead of testing blade coverage, finds the blade whose arc center P_i
+// is closest counterclockwise to the query point.
+
+#if os(macOS)
+
+  import Metal
+  import MetalKit
+  import SwiftUI
+
+  struct IrisSectorDirectDebugView: View {
+    @State private var rin: Double = 45.0
+    @State private var rout: Double = 50.0
+    @State private var lengthDeg: Double = 90.0
+    @State private var bladeCount: Int = 12
+    @State private var maxActuatorRotationDeg: Double = 90.0
+    @State private var aperture: Double = 0.0
+    @State private var fillGaps: Bool = true
+    @State private var clipToPivot: Bool = true
+    @State private var showPiPoints: Bool = true
+
+    @State private var renderer: IrisSectorDirectRenderer?
+
+    // MARK: - Derived Geometry
+
+    private var lengthRad: Double { lengthDeg * .pi / 180 }
+
+    private var innerRadius: Double {
+      guard fillGaps else { return rin }
+      let k = Double.pi / Double(bladeCount)
+      return rout * (1 - k) / (1 + k)
+    }
+
+    private var rm: Double { (innerRadius + rout) / 2 }
+    private var pivotRadius: Double { rm }
+    private var pivotToActuator: Double { 2 * rm * sin(lengthRad / 2) }
+    private var slotInnerRadius: Double { pivotRadius - pivotToActuator * 0.8 }
+    private var slotOuterRadius: Double { pivotRadius + pivotToActuator * 0.2 }
+    private var maxActuatorRotationRad: Double { -maxActuatorRotationDeg * .pi / 180 }
+
+    private var uniforms: IrisSectorDirectUniforms {
+      IrisSectorDirectUniforms(
+        innerRadius: Float(innerRadius),
+        outerRadius: Float(rout),
+        pivotRadius: Float(pivotRadius),
+        pivotToActuator: Float(pivotToActuator),
+        slotInnerRadius: Float(slotInnerRadius),
+        slotOuterRadius: Float(slotOuterRadius),
+        lengthRad: Float(lengthRad),
+        bladeCount: Int32(bladeCount),
+        aperture: Float(aperture),
+        maxActuatorRotationRad: Float(maxActuatorRotationRad),
+        rmX: Float(-rm),
+        rmY: 0,
+        aspectRatio: 1.0,
+        clipToPivot: clipToPivot ? 1 : 0,
+        showPiPoints: showPiPoints ? 1 : 0
+      )
+    }
+
+    var body: some View {
+      HSplitView {
+        ZStack {
+          Color.black.opacity(0.9)
+          if let renderer {
+            IrisSectorDirectMetalView(renderer: renderer, uniforms: uniforms)
+              .padding(12)
+          } else {
+            ProgressView()
+          }
+        }
+        .overlay(alignment: .topLeading) {
+          Text("Direct P_i Angle (Metal)")
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.7))
+            .padding(8)
+        }
+        .frame(minWidth: 400, minHeight: 400)
+
+        ScrollView {
+          VStack(alignment: .leading, spacing: 16) {
+            geometrySection
+            apertureSection
+          }
+          .padding()
+        }
+        .frame(width: 280)
+      }
+      .onAppear {
+        renderer = IrisSectorDirectRenderer()
+      }
+    }
+
+    private var geometrySection: some View {
+      GroupBox("Blade Geometry") {
+        VStack(alignment: .leading, spacing: 10) {
+          LabeledContent("Rin") {
+            HStack {
+              Slider(value: $rin, in: 5...50)
+              Text(String(format: "%.1f", rin))
+                .font(.system(.caption, design: .monospaced))
+                .frame(width: 40)
+            }
+          }
+
+          LabeledContent("Rout") {
+            HStack {
+              Slider(value: $rout, in: 10...60)
+              Text(String(format: "%.1f", rout))
+                .font(.system(.caption, design: .monospaced))
+                .frame(width: 40)
+            }
+          }
+
+          LabeledContent("Arc Length") {
+            HStack {
+              Slider(value: $lengthDeg, in: 10...120)
+              Text(String(format: "%.0f°", lengthDeg))
+                .font(.system(.caption, design: .monospaced))
+                .frame(width: 40)
+            }
+          }
+
+          LabeledContent("Blade Count") {
+            Stepper("\(bladeCount)", value: $bladeCount, in: 3...24)
+          }
+
+          LabeledContent("Max Rotation") {
+            HStack {
+              Slider(value: $maxActuatorRotationDeg, in: 0...180)
+              Text(String(format: "%.0f°", maxActuatorRotationDeg))
+                .font(.system(.caption, design: .monospaced))
+                .frame(width: 40)
+            }
+          }
+
+          Toggle("Fill Gaps", isOn: $fillGaps)
+          Toggle("Clip to Pivot", isOn: $clipToPivot)
+          Toggle("Show P_i Points", isOn: $showPiPoints)
+        }
+      }
+    }
+
+    private var apertureSection: some View {
+      GroupBox("Aperture") {
+        VStack(alignment: .leading, spacing: 12) {
+          HStack {
+            Text("Open").font(.caption)
+            Slider(value: $aperture, in: 0...1)
+            Text("Closed").font(.caption)
+          }
+          Text(String(format: "t = %.3f", aperture))
+            .font(.system(.body, design: .monospaced))
+        }
+      }
+    }
+  }
+
+  // MARK: - Uniforms
+
+  struct IrisSectorDirectUniforms {
+    var innerRadius: Float
+    var outerRadius: Float
+    var pivotRadius: Float
+    var pivotToActuator: Float
+    var slotInnerRadius: Float
+    var slotOuterRadius: Float
+    var lengthRad: Float
+    var bladeCount: Int32
+    var aperture: Float
+    var maxActuatorRotationRad: Float
+    var rmX: Float
+    var rmY: Float
+    var aspectRatio: Float
+    var clipToPivot: Int32
+    var showPiPoints: Int32
+  }
+
+  // MARK: - Metal View
+
+  struct IrisSectorDirectMetalView: NSViewRepresentable {
+    let renderer: IrisSectorDirectRenderer
+    let uniforms: IrisSectorDirectUniforms
+
+    func makeNSView(context: Context) -> MTKView {
+      let view = MTKView()
+      view.device = renderer.device
+      view.delegate = renderer
+      view.colorPixelFormat = .bgra8Unorm
+      view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+      view.enableSetNeedsDisplay = true
+      view.isPaused = true
+      renderer.uniforms = uniforms
+      DispatchQueue.main.async {
+        view.setNeedsDisplay(view.bounds)
+      }
+      return view
+    }
+
+    func updateNSView(_ nsView: MTKView, context: Context) {
+      var u = uniforms
+      let size = nsView.bounds.size
+      if size.width > 0 && size.height > 0 {
+        u.aspectRatio = Float(size.width / size.height)
+        renderer.uniforms = u
+        nsView.setNeedsDisplay(nsView.bounds)
+      }
+    }
+  }
+
+  // MARK: - Renderer
+
+  final class IrisSectorDirectRenderer: NSObject, MTKViewDelegate {
+    let device: MTLDevice
+    let commandQueue: MTLCommandQueue
+    let pipelineState: MTLRenderPipelineState
+    var uniforms: IrisSectorDirectUniforms = IrisSectorDirectUniforms(
+      innerRadius: 45, outerRadius: 50, pivotRadius: 47.5,
+      pivotToActuator: 67, slotInnerRadius: 0, slotOuterRadius: 100,
+      lengthRad: 1.57, bladeCount: 12, aperture: 0,
+      maxActuatorRotationRad: -1.57, rmX: -47.5, rmY: 0, aspectRatio: 1.0,
+      clipToPivot: 1, showPiPoints: 1
+    )
+
+    override init() {
+      guard let device = MTLCreateSystemDefaultDevice(),
+        let queue = device.makeCommandQueue()
+      else {
+        fatalError("Metal not available")
+      }
+      self.device = device
+      self.commandQueue = queue
+
+      let shaderSource = Self.shaderSource
+      let library = try! device.makeLibrary(source: shaderSource, options: nil)
+      let vertexFunc = library.makeFunction(name: "irisDirectVertex")!
+      let fragmentFunc = library.makeFunction(name: "irisDirectFragment")!
+
+      let desc = MTLRenderPipelineDescriptor()
+      desc.vertexFunction = vertexFunc
+      desc.fragmentFunction = fragmentFunc
+      desc.colorAttachments[0].pixelFormat = .bgra8Unorm
+      desc.colorAttachments[0].isBlendingEnabled = true
+      desc.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+      desc.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+
+      self.pipelineState = try! device.makeRenderPipelineState(descriptor: desc)
+      super.init()
+    }
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+      view.setNeedsDisplay(view.bounds)
+    }
+
+    func draw(in view: MTKView) {
+      guard let drawable = view.currentDrawable,
+        let desc = view.currentRenderPassDescriptor,
+        let commandBuffer = commandQueue.makeCommandBuffer(),
+        let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: desc)
+      else { return }
+
+      encoder.setRenderPipelineState(pipelineState)
+      var u = uniforms
+      let size = view.drawableSize
+      if size.width > 0 && size.height > 0 {
+        u.aspectRatio = Float(size.width / size.height)
+      }
+      encoder.setFragmentBytes(&u, length: MemoryLayout<IrisSectorDirectUniforms>.stride, index: 0)
+      encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+      encoder.endEncoding()
+
+      commandBuffer.present(drawable)
+      commandBuffer.commit()
+    }
+
+    // MARK: - Shader Source
+
+    private static let shaderSource = """
+      #include <metal_stdlib>
+      using namespace metal;
+
+      struct IrisSectorDirectUniforms {
+        float innerRadius;
+        float outerRadius;
+        float pivotRadius;
+        float pivotToActuator;
+        float slotInnerRadius;
+        float slotOuterRadius;
+        float lengthRad;
+        int bladeCount;
+        float aperture;
+        float maxActuatorRotationRad;
+        float rmX;
+        float rmY;
+        float aspectRatio;
+        int clipToPivot;
+        int showPiPoints;
+      };
+
+      struct VertexOut {
+        float4 position [[position]];
+        float2 uv;
+      };
+
+      vertex VertexOut irisDirectVertex(uint vid [[vertex_id]]) {
+        float2 positions[4] = {
+          float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, 1)
+        };
+        float2 uvs[4] = {
+          float2(0, 1), float2(1, 1), float2(0, 0), float2(1, 0)
+        };
+        VertexOut out;
+        out.position = float4(positions[vid], 0, 1);
+        out.uv = uvs[vid];
+        return out;
+      }
+
+      float normalizeAngle(float a) {
+        float twoPi = 2.0 * M_PI_F;
+        a = fmod(a, twoPi);
+        if (a < 0) a += twoPi;
+        return a;
+      }
+
+      float pivotAngle(int bladeIndex, int bladeCount) {
+        return float(bladeIndex) * (2.0 * M_PI_F / float(max(1, bladeCount)));
+      }
+
+      float2 pivotPosition(int bladeIndex, constant IrisSectorDirectUniforms& u) {
+        float angle = pivotAngle(bladeIndex, u.bladeCount);
+        return float2(u.pivotRadius * cos(angle), u.pivotRadius * sin(angle));
+      }
+
+      float slotBaseAngle(int bladeIndex, constant IrisSectorDirectUniforms& u) {
+        return pivotAngle(bladeIndex, u.bladeCount) + u.lengthRad;
+      }
+
+      float computeBladeAngle(int bladeIndex, float actuatorRotation, constant IrisSectorDirectUniforms& u) {
+        float pivotAng = pivotAngle(bladeIndex, u.bladeCount);
+        float pivotX = u.pivotRadius * cos(pivotAng);
+        float pivotY = u.pivotRadius * sin(pivotAng);
+
+        float slotAngle = slotBaseAngle(bladeIndex, u) + actuatorRotation;
+
+        float d = u.pivotToActuator;
+        float dot = pivotX * cos(slotAngle) + pivotY * sin(slotAngle);
+        float c = u.pivotRadius * u.pivotRadius - d * d;
+        float discriminant = dot * dot - c;
+
+        if (discriminant < 0) return 0;
+
+        float sqrtDisc = sqrt(discriminant);
+        float r1 = dot + sqrtDisc;
+        float r2 = dot - sqrtDisc;
+
+        bool inRange1 = r1 >= u.slotInnerRadius && r1 <= u.slotOuterRadius;
+        bool inRange2 = r2 >= u.slotInnerRadius && r2 <= u.slotOuterRadius;
+
+        float r;
+        if (inRange1 && !inRange2) {
+          r = r1;
+        } else if (inRange2 && !inRange1) {
+          r = r2;
+        } else if (inRange1 && inRange2) {
+          float slotMid = (u.slotInnerRadius + u.slotOuterRadius) / 2.0;
+          r = abs(r1 - slotMid) < abs(r2 - slotMid) ? r1 : r2;
+        } else {
+          float d1 = min(abs(r1 - u.slotInnerRadius), abs(r1 - u.slotOuterRadius));
+          float d2 = min(abs(r2 - u.slotInnerRadius), abs(r2 - u.slotOuterRadius));
+          r = d1 < d2 ? r1 : r2;
+        }
+
+        float actuatorX = r * cos(slotAngle);
+        float actuatorY = r * sin(slotAngle);
+
+        float thetaWorld = atan2(actuatorY - pivotY, actuatorX - pivotX);
+        float thetaLocal = atan2(sin(u.lengthRad), cos(u.lengthRad) - 1.0);
+
+        return thetaWorld - thetaLocal;
+      }
+
+      // Compute P_i (arc center) in world coordinates for blade i
+      float2 computePi(int bladeIndex, float actuatorRotation, constant IrisSectorDirectUniforms& u) {
+        float2 pivotPos = pivotPosition(bladeIndex, u);
+        float bladeAngle = computeBladeAngle(bladeIndex, actuatorRotation, u);
+
+        // P in blade-local coords is (rmX, rmY) = (-rm, 0)
+        // Rotate to world: P_world = pivotPos + rotate(P_local, bladeAngle)
+        float c = cos(bladeAngle);
+        float s = sin(bladeAngle);
+        float2 pLocal = float2(u.rmX, u.rmY);
+        float2 pRel = float2(c * pLocal.x - s * pLocal.y, s * pLocal.x + c * pLocal.y);
+
+        return pivotPos + pRel;
+      }
+
+      // Find visible blade using pinwheel rule with distance checks:
+      // Blade i is visible if:
+      //   - dist(Q, P_i) > innerRadius  (blade i covers Q)
+      //   - dist(Q, P_{i+1}) <= innerRadius  (blade i+1 does NOT cover Q)
+      //
+      // NOTE: Using just "closest P_i where dist > innerRadius" creates a beautiful
+      // Voronoi-like spirograph pattern (see 2026-01-26 session). To recreate,
+      // replace the successor check with simple closest-distance selection.
+      //
+      int findVisibleBladeDirect(float2 queryPoint, constant IrisSectorDirectUniforms& u, float actuatorRot) {
+        for (int i = 0; i < u.bladeCount; i++) {
+          float2 pi = computePi(i, actuatorRot, u);
+          float dist_i = length(queryPoint - pi);
+
+          // Does blade i cover this point?
+          if (dist_i > u.innerRadius) {
+            // Does blade i+1 (successor) also cover this point?
+            int successor = (i + 1) % u.bladeCount;
+            float2 pi_next = computePi(successor, actuatorRot, u);
+            float dist_next = length(queryPoint - pi_next);
+
+            // If successor does NOT cover, blade i is visible (unoccluded)
+            if (dist_next <= u.innerRadius) {
+              return i;
+            }
+          }
+        }
+
+        // No blade found - might need fallback for edge cases
+        return -1;
+      }
+
+      float3 hsvToRgb(float h, float s, float v) {
+        float hh = fmod(fmod(h, 1.0) + 1.0, 1.0);
+        int i = int(hh * 6.0);
+        float f = hh * 6.0 - float(i);
+        float p = v * (1.0 - s);
+        float q = v * (1.0 - f * s);
+        float t = v * (1.0 - (1.0 - f) * s);
+
+        switch (i % 6) {
+          case 0: return float3(v, t, p);
+          case 1: return float3(q, v, p);
+          case 2: return float3(p, v, t);
+          case 3: return float3(p, q, v);
+          case 4: return float3(t, p, v);
+          default: return float3(v, p, q);
+        }
+      }
+
+      fragment float4 irisDirectFragment(VertexOut in [[stage_in]],
+                                         constant IrisSectorDirectUniforms& u [[buffer(0)]]) {
+        float2 uv = in.uv;
+        float2 ndc = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+
+        float extent = (u.pivotRadius + u.outerRadius) * 0.60;
+        float2 worldPos;
+        if (u.aspectRatio > 1.0) {
+          worldPos = float2(ndc.x * extent * u.aspectRatio, ndc.y * extent);
+        } else {
+          worldPos = float2(ndc.x * extent, ndc.y * extent / u.aspectRatio);
+        }
+
+        float actuatorRot = -u.aperture * u.maxActuatorRotationRad;
+
+        // Optionally clip pixels outside pivot circle
+        float distFromCenter = length(worldPos);
+        if (u.clipToPivot && distFromCenter > u.pivotRadius) {
+          return float4(0, 0, 0, 0);
+        }
+
+        // Draw pivot circle
+        float pivotCircleWidth = 0.25;
+        if (abs(distFromCenter - u.pivotRadius) < pivotCircleWidth) {
+          return float4(1.0, 1.0, 1.0, 0.4);
+        }
+
+        // Draw P_i points as small circles
+        if (u.showPiPoints) {
+          for (int i = 0; i < u.bladeCount; i++) {
+            float2 pi = computePi(i, actuatorRot, u);
+            float distToPi = length(worldPos - pi);
+            if (distToPi < 1.5) {
+              float hue = float(i) / float(max(1, u.bladeCount));
+              float3 color = hsvToRgb(hue, 1.0, 1.0);
+              return float4(color, 1.0);
+            }
+          }
+        }
+
+        // Find visible blade using direct angle method
+        int visibleBlade = findVisibleBladeDirect(worldPos, u, actuatorRot);
+
+        if (visibleBlade < 0) {
+          return float4(0, 0, 0, 0);
+        }
+
+        float hue = float(visibleBlade) / float(max(1, u.bladeCount));
+        float3 color = hsvToRgb(hue, 0.8, 0.9);
+
+        return float4(color, 0.75);
+      }
+      """
+  }
+
+  #Preview("Iris Sector Direct") {
+    IrisSectorDirectDebugView()
+      .frame(width: 800, height: 600)
+  }
+
+#endif  // os(macOS)

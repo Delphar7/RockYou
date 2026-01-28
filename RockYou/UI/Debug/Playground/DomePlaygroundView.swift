@@ -16,9 +16,9 @@ enum DomePlaygroundCategory: String, CaseIterable {
 }
 
 enum ShatterAlgorithm: String, CaseIterable {
-  case explode = "Explode"
-  case confetti = "Confetti"
+  case shatter = "Shatter"  // Unified explode/confetti (mode picker inside)
   case ripple = "Ripple"
+  case iris = "Iris"
 }
 
 // MARK: - Playground View
@@ -27,7 +27,7 @@ struct DomePlaygroundView: View {
   private static let selectionKey = "DomePlaygroundSelection"
 
   @State private var selectedCategory: DomePlaygroundCategory = .sample
-  @State private var selectedShatter: ShatterAlgorithm = .explode
+  @State private var selectedShatter: ShatterAlgorithm = .shatter
 
   init() {
     // Load saved selection
@@ -127,12 +127,12 @@ struct DomePlaygroundView: View {
 
     case .shatter:
       switch selectedShatter {
-      case .explode:
-        ExplodeDebugView()
-      case .confetti:
-        ConfettiDebugView()
+      case .shatter:
+        ShatterDebugView()
       case .ripple:
         RippleDebugView()
+      case .iris:
+        IrisDebugView()
       }
     }
   }

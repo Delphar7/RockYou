@@ -107,17 +107,17 @@ void rippleSurfaceShader(realitykit::surface_parameters params) {
 
   // Material properties
   // Metal (trough): metallic, opaque, reflective
-  // Glass (peak): non-metallic, translucent, refractive-looking
+  // Glass (peak): non-metallic, translucent, dark (like fragmentSurfaceShader)
 
-  // Base colors
-  half3 metalColor = half3(0.85h, 0.85h, 0.9h);   // Cool silver
-  half3 glassColor = half3(0.9h, 0.95h, 1.0h);    // Clear with slight blue tint
+  // Base colors - glass is dark and clear, not bright white
+  half3 metalColor = half3(0.75h, 0.75h, 0.8h);   // Silver (matches fragmentSurfaceShader)
+  half3 glassColor = half3(0.1h, 0.12h, 0.15h);   // Dark clear glass
 
   // Interpolate properties
   half3 baseColor = mix(metalColor, glassColor, half(glassAmount));
-  half metallic = mix(0.95h, 0.0h, half(glassAmount));
+  half metallic = mix(0.9h, 0.0h, half(glassAmount));
   half roughness = mix(0.15h, 0.05h, half(glassAmount));  // Glass is smoother
-  half opacity = mix(1.0h, 0.4h, half(glassAmount));      // Glass is translucent
+  half opacity = mix(1.0h, 0.15h, half(glassAmount));     // Glass is translucent
   half specular = mix(0.5h, 0.8h, half(glassAmount));     // Glass is more specular
 
   // Back faces: darker, more matte

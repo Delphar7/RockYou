@@ -1,7 +1,8 @@
 // DomeBladeMeshView.swift
-// RockYou
+// RockYou/UI/Debug/Playground
 //
-// 3D blade meshes for the dome iris, supporting aperture animation.
+// Blade mesh generation and configuration for playground experimentation.
+// Contains DomeBladeMeshConfig, DomeBladeMeshGenerator, and DomeShatterConfig.
 
 import RealityKit
 import SwiftUI
