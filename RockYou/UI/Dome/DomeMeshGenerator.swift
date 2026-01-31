@@ -31,23 +31,26 @@ class DomeMeshGenerator {
 
   init?() {
     guard let device = MTLCreateSystemDefaultDevice() else {
+      Log.warn("DomeMesh", "FAIL: No Metal device available")
       meshLog.error("No Metal device available")
       return nil
     }
-    self.device = device
 
     guard let commandQueue = device.makeCommandQueue() else {
+      Log.warn("DomeMesh", "FAIL: makeCommandQueue returned nil")
       meshLog.error("Failed to create command queue")
       return nil
     }
     self.commandQueue = commandQueue
 
     guard let library = device.makeDefaultLibrary() else {
+      Log.warn("DomeMesh", "FAIL: makeDefaultLibrary returned nil")
       meshLog.error("Failed to load default Metal library")
       return nil
     }
 
     guard let computeFunction = library.makeFunction(name: "generateDomeVertices") else {
+      Log.warn("DomeMesh", "FAIL: generateDomeVertices function not found in library")
       meshLog.error("Failed to find generateDomeVertices function")
       return nil
     }
@@ -55,9 +58,13 @@ class DomeMeshGenerator {
     do {
       self.computePipeline = try device.makeComputePipelineState(function: computeFunction)
     } catch {
+      Log.warn("DomeMesh", "FAIL: compute pipeline: \(error)")
       meshLog.error("Failed to create compute pipeline: \(error)")
       return nil
     }
+
+    self.device = device
+    Log.debug("DomeMesh", "Init OK: device=\(device.name)")
   }
 
   /// Generate dome mesh using GPU compute - NO COPY, direct GPU buffer usage
@@ -121,10 +128,21 @@ class DomeMeshGenerator {
 
       // Dispatch threads - one per vertex
       let threadsPerGroup = min(computePipeline.maxTotalThreadsPerThreadgroup, 256)
-      computeEncoder.dispatchThreads(
-        MTLSize(width: totalVertices, height: 1, depth: 1),
-        threadsPerThreadgroup: MTLSize(width: threadsPerGroup, height: 1, depth: 1)
-      )
+      let gridSize = MTLSize(width: totalVertices, height: 1, depth: 1)
+      let groupSize = MTLSize(width: threadsPerGroup, height: 1, depth: 1)
+
+      if device.supportsFamily(.apple4) || device.supportsFamily(.mac2) {
+        // Non-uniform threadgroup dispatch (preferred)
+        computeEncoder.dispatchThreads(gridSize, threadsPerThreadgroup: groupSize)
+      } else {
+        // Fallback for devices without non-uniform dispatch (e.g. iOS Simulator = Apple2)
+        let groupCount = MTLSize(
+          width: (totalVertices + threadsPerGroup - 1) / threadsPerGroup,
+          height: 1,
+          depth: 1
+        )
+        computeEncoder.dispatchThreadgroups(groupCount, threadsPerThreadgroup: groupSize)
+      }
       computeEncoder.endEncoding()
 
       // Commit and wait for completion

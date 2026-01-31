@@ -22,6 +22,7 @@ final class AppCacheManager: ObservableObject {
 
   private var appsFetchedAtByDevice: [String: TimeInterval] = [:]
   private var mruByDevice: [String: [String: TimeInterval]] = [:]
+  private var iconLuminanceCache: [String: CGFloat] = [:]
   private let iconDirectory: URL?
 
   private init() {
@@ -127,6 +128,25 @@ final class AppCacheManager: ObservableObject {
     return PlatformImage.cachedContentsOfFile(fileURL.path)
   }
 
-  func bumpIconVersion() { iconVersion &+= 1 }
+  func bumpIconVersion() {
+    iconVersion &+= 1
+    iconLuminanceCache.removeAll()
+  }
+
   func bumpMRUVersion() { mruVersion &+= 1 }
+
+  // MARK: - Icon edge luminance
+
+  func iconEdgeLuminance(for appId: String, deviceId: String) -> CGFloat? {
+    let key = "\(deviceId)_\(appId)"
+    if let cached = iconLuminanceCache[key] { return cached }
+
+    guard let iconDirectory else { return nil }
+    let app = RokuApp(id: appId, name: "", type: nil, version: nil)
+    let fileURL = iconDirectory.appendingPathComponent(app.iconFilename(for: deviceId))
+    guard let native = PlatformImage.cachedNativeContentsOfFile(fileURL.path),
+          let lum = PlatformImage.edgeLuminance(of: native) else { return nil }
+    iconLuminanceCache[key] = lum
+    return lum
+  }
 }

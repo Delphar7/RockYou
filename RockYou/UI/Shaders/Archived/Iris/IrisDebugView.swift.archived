@@ -1,3 +1,4 @@
+#if false
 // IrisDebugView.swift
 // RockYou/UI/Debug/Playground
 //
@@ -21,3 +22,4 @@ struct IrisDebugView: View {
   IrisDebugView()
     .frame(width: 950, height: 700)
 }
+#endif

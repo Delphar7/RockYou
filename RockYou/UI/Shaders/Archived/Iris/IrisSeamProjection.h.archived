@@ -2,7 +2,7 @@
 // RockYou
 //
 // Unified projection functions for iris seam geometry.
-// Both point2seam and seam2point use the same math, ensuring consistency.
+// domePointToIrisSpace and irisSpaceToDomePoint use the same math, ensuring consistency.
 //
 // Coordinate spaces:
 // - Dome space: 3D hemisphere, Y up, radius R
@@ -169,6 +169,7 @@ inline float2 circleCircleIntersect(
 /// Compute a point along blade i's seam curve
 /// arcT: 0 = aperture edge (meets successor blade), 1 = dome edge
 /// Returns 3D position on dome surface, or Y=-1000 if seam should be hidden
+/// If warningOut is provided, sets it to a value > 0 when discontinuity is detected
 inline float3 computeSeamPoint(
     int bladeIndex,
     float arcT,
@@ -176,10 +177,18 @@ inline float3 computeSeamPoint(
     int bladeCount,
     float irisRadius,
     float domeRadius,
-    float twistRadians
+    float twistRadians,
+    thread float* warningOut = nullptr
 ) {
-  // Hide seams when iris is nearly fully open
-  if (aperture < 0.05f) {
+  // Warning codes: encode which condition triggered
+  // 1.x = piDist small (P_i near origin)
+  // 2.x = angleDiff large (arc going long way)
+  // 3.x = angleDiff small (arc collapsing)
+  // 4.x = arcPoint outside dome
+  if (warningOut) *warningOut = 0.0f;
+
+  // Hide seams when iris is fully open (epsilon guard for exact-zero degenerate case)
+  if (aperture < 0.005f) {
     return float3(0, -1000.0f, 0);
   }
 
@@ -193,6 +202,13 @@ inline float3 computeSeamPoint(
 
   // Dome end: intersection with dome boundary circle (origin, irisRadius)
   float piDist = length(pi);
+
+  // WARNING 1: piDist near 0 means P_i is near origin (diagnostic only —
+  // with correct radius the geometry stays well-conditioned until aperture < 0.05)
+  if (warningOut && piDist < irisRadius * 0.15f) {
+    *warningOut = 1.0f + (1.0f - piDist / (irisRadius * 0.15f));  // 1.x
+  }
+
   piDist = min(piDist, 2.0f * irisRadius * 0.999f);
   float halfArc = acos(clamp(piDist / (2.0f * irisRadius), 0.0f, 1.0f));
   float angleToOrigin = atan2(-pi.y, -pi.x);
@@ -203,14 +219,40 @@ inline float3 computeSeamPoint(
   float angleAperture = atan2(aperturePoint.y - pi.y, aperturePoint.x - pi.x);
   float angleDome = atan2(domePoint.y - pi.y, domePoint.x - pi.x);
 
-  // Ensure we go the right way around the arc (shorter path typically)
+  // Interpolate angle along arc — use shortest path.
+  // The seam arc from aperture to dome-edge never exceeds π on the blade circle,
+  // so shortest-path normalization is always correct. The old "always clockwise"
+  // convention broke at low aperture where some blades' natural arc was CCW.
   float angleDiff = angleDome - angleAperture;
-  if (angleDiff > M_PI_F) angleDiff -= 2.0f * M_PI_F;
-  if (angleDiff < -M_PI_F) angleDiff += 2.0f * M_PI_F;
+  while (angleDiff > M_PI_F) angleDiff -= 2.0f * M_PI_F;
+  while (angleDiff < -M_PI_F) angleDiff += 2.0f * M_PI_F;
 
-  // Interpolate along arc from aperture (arcT=0) to dome (arcT=1)
+  // Safety check: verify midpoint of arc is inside dome boundary.
+  // If not, we picked the wrong half — flip direction.
+  float midArcAngle = angleAperture + angleDiff * 0.5f;
+  float2 midArcPt = pi + float2(cos(midArcAngle), sin(midArcAngle)) * irisRadius;
+  if (length(midArcPt) > irisRadius * 1.05f) {
+    angleDiff += (angleDiff > 0.0f) ? -2.0f * M_PI_F : 2.0f * M_PI_F;
+  }
+
+  // WARNING 2: Large |angleDiff| suggests arc might be going the long way
+  if (warningOut && *warningOut < 1.0f && abs(angleDiff) > M_PI_F * 1.6f) {
+    *warningOut = 2.0f + (abs(angleDiff) / M_PI_F - 1.6f);  // 2.x
+  }
+
+  // WARNING 3: Very small |angleDiff| suggests arc might be collapsing
+  if (warningOut && *warningOut < 1.0f && abs(angleDiff) < M_PI_F * 0.1f) {
+    *warningOut = 3.0f + (1.0f - abs(angleDiff) / (M_PI_F * 0.1f));  // 3.x
+  }
+
   float arcAngle = angleAperture + arcT * angleDiff;
   float2 arcPoint = pi + float2(cos(arcAngle), sin(arcAngle)) * irisRadius;
+
+  // WARNING 4: Arc point outside dome boundary
+  float arcPointDist = length(arcPoint);
+  if (warningOut && *warningOut < 1.0f && arcPointDist > irisRadius * 1.01f) {
+    *warningOut = 4.0f + (arcPointDist / irisRadius - 1.0f);  // 4.x
+  }
 
   // Project to 3D dome surface using consistent projection
   return irisSpaceToDomePoint(arcPoint, domeRadius, irisRadius, twistRadians);

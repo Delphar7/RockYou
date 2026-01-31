@@ -1,0 +1,286 @@
+// IrisAlgorithm.h
+// RockYou
+//
+// Iris mechanism algorithm using direct P_i distance checks.
+// For each fragment, finds the visible blade using:
+//   blade i is visible if dist(Q, P_i) > innerRadius AND dist(Q, P_{i+1}) <= innerRadius
+// This elegantly handles all edge cases including full open/close.
+//
+// 2D iris coordinates are derived from 3D dome position by projection: (x, z)
+// Rmiddle maps to Y=0 (dome equator), opening at apex.
+
+#pragma once
+
+#include <metal_stdlib>
+#include "../FragmentState.h"
+#include "../FragmentMath.h"
+#include "IrisSeamProjection.h"
+
+using namespace metal;
+using namespace fragment_math;
+
+// =============================================================================
+// Iris Algorithm State
+// =============================================================================
+
+struct IrisFragmentState {
+  float3 position;        // World position after blade rotation
+  float3 normal;          // Rotated normal
+  float4 rotation;        // Current rotation quaternion
+  float elapsed;          // Total elapsed time
+  bool visible;           // Above clip plane
+  int bladeIndex;         // Which blade this fragment belongs to (-1 = opening)
+  float seamDistance;     // Distance to nearest blade boundary (for etched seam
+                          // rendering)
+};
+
+// =============================================================================
+// Iris Algorithm Implementation
+// =============================================================================
+
+using DomeParams = fragment_math::DomeParams;
+using PhysicsConfig = fragment_math::PhysicsConfig;
+
+namespace iris {
+
+// Iris geometry data
+struct PhysicsData {
+  int bladeCount;
+  float radius;             // Single iris radius (pivot circle & coverage threshold)
+  float twistRadians;       // Max twist from apex (0) to equator
+  float openDuration;       // Time in seconds for iris to fully open
+};
+
+// =============================================================================
+// Iris Kinematics (ported from IrisSectorDirectDebugView)
+// =============================================================================
+
+inline float pivotAngle(int bladeIndex, int bladeCount) {
+  return float(bladeIndex) * (2.0f * M_PI_F / float(max(1, bladeCount)));
+}
+
+inline float2 pivotPosition(int bladeIndex, int bladeCount, float radius) {
+  float angle = pivotAngle(bladeIndex, bladeCount);
+  return float2(radius * cos(angle), radius * sin(angle));
+}
+
+// Compute P_i (arc center) for blade i at given aperture
+// Direct interpolation: no kinematic simulation
+inline float2 computePi(
+    int bladeIndex,
+    float aperture,      // 0 = open, 1 = closed
+    int bladeCount,
+    float radius
+) {
+  float2 pivotPos = pivotPosition(bladeIndex, bladeCount, radius);
+
+  // Direct angle interpolation:
+  // - Open (aperture=0): bladeAngle = pivotAngle, P_i near origin
+  // - Closed (aperture=1): bladeAngle = pivotAngle + π/3, P_i at coverage boundary
+  // 60° (π/3) is where center coverage begins
+  float pivotAng = pivotAngle(bladeIndex, bladeCount);
+  float closureRotation = M_PI_F / 3.0f;  // 60° rotation for closure
+  float bladeAng = pivotAng + aperture * closureRotation;
+
+  // P in blade-local coords is (-radius, 0)
+  // Rotate to world: P_world = pivotPos + rotate(P_local, bladeAngle)
+  float c = cos(bladeAng);
+  float s = sin(bladeAng);
+  float2 pLocal = float2(-radius, 0);
+  float2 pRel = float2(c * pLocal.x - s * pLocal.y, s * pLocal.x + c * pLocal.y);
+
+  return pivotPos + pRel;
+}
+
+// Find visible blade using pinwheel rule with distance checks:
+// Blade i covers point Q if: dist(Q, P_i) > radius
+// Blade i is visible (unoccluded) if blade i covers Q but successor does not
+inline int findVisibleBlade(
+    float2 queryPoint,
+    float aperture,
+    int bladeCount,
+    float radius
+) {
+  for (int i = 0; i < bladeCount; i++) {
+    float2 pi = computePi(i, aperture, bladeCount, radius);
+    float dist_i = length(queryPoint - pi);
+
+    // Does blade i cover this point? (distance > radius from arc center)
+    if (dist_i > radius) {
+      // Does blade i+1 (successor) also cover this point?
+      int successor = (i + 1) % bladeCount;
+      float2 pi_next = computePi(successor, aperture, bladeCount, radius);
+      float dist_next = length(queryPoint - pi_next);
+
+      // If successor does NOT cover (dist <= radius), blade i is visible
+      if (dist_next <= radius) {
+        return i;
+      }
+    }
+  }
+
+  // No blade covers this point - it's in the opening
+  return -1;
+}
+
+// =============================================================================
+// Config Reading
+// =============================================================================
+
+// Read iris-specific config from texture header (col 14-15)
+template<typename T>
+inline void readIrisConfig(
+    texture2d<T, access::sample> tex,
+    sampler texSampler,
+    float texWidth,
+    float texHeight,
+    thread int& bladeCount,
+    thread float& twistDeg,
+    thread float& openDuration
+) {
+  // Col 14: irisBladeCount (RG), irisOpenDuration (BA)
+  float2 c14UV = float2(14.5f / texWidth, 0.5f / texHeight);
+  float4 c14 = float4(tex.sample(texSampler, c14UV));
+  bladeCount = int(decode16bitInt(c14.r, c14.g));
+  openDuration = decode16bit(c14.b, c14.a, 0.1f, 10.0f);
+
+  // Col 15: reserved (RG), twistDeg (BA)
+  float2 c15UV = float2(15.5f / texWidth, 0.5f / texHeight);
+  float4 c15 = float4(tex.sample(texSampler, c15UV));
+  twistDeg = decode16bit(c15.b, c15.a, -180.0f, 180.0f);
+}
+
+// Read iris geometry data from texture header
+template<typename T>
+inline PhysicsData readPhysicsData(
+    int fragmentIndex,
+    texture2d<T, access::sample> tex,
+    sampler texSampler,
+    float texWidth,
+    float texHeight
+) {
+  PhysicsData pd;
+
+  // Read dome radius directly from col 3 (R,G) — the canonical source.
+  // (The baseSpeed path in readPhysicsConfig reads from col 10 B,A which
+  //  doesn't match how IrisContent encodes it into col 10 R,G.)
+  float2 h3UV = float2(3.5f / texWidth, 0.5f / texHeight);
+  float4 h3 = float4(tex.sample(texSampler, h3UV));
+  pd.radius = fragment_math::decode16bit(h3.r, h3.g, 0.0f, 2.0f);
+
+  // Read iris-specific config
+  float twistDeg;
+  float openDuration;
+  readIrisConfig(tex, texSampler, texWidth, texHeight, pd.bladeCount, twistDeg, openDuration);
+
+  pd.twistRadians = twistDeg * M_PI_F / 180.0f;
+  pd.openDuration = openDuration;
+
+  return pd;
+}
+
+// =============================================================================
+// Main State Computation
+// =============================================================================
+
+// Compute fragment state for iris algorithm
+inline IrisFragmentState computeState(
+    int fragmentIndex,
+    float time,
+    DomeParams dome,
+    PhysicsData physics
+) {
+  IrisFragmentState state;
+  state.elapsed = time;
+
+  // Compute fragment center from tessellation
+  float3 center = computeCenterFromIndex(
+    fragmentIndex, dome.latSegments, dome.lonSegments, dome.radius
+  );
+  float3 normal = normalize(center);
+
+  // === APERTURE ANIMATION ===
+  // time 0 to openDuration: closed -> open (aperture 1->0)
+  float aperture = 1.0f - clamp(time / physics.openDuration, 0.0f, 1.0f);
+
+  // === PROJECT TO 2D IRIS COORDINATES ===
+  // Use shared projection function for consistency with seam computation
+  float2 irisPos = iris_projection::domePointToIrisSpace(
+    center, dome.radius, physics.radius, physics.twistRadians
+  );
+
+  // Compute theta for seam distance correction (radial distance based)
+  float2 discPos = float2(center.x, center.z);
+  float radialDist = length(discPos);
+  float theta = asin(clamp(radialDist / dome.radius, 0.0f, 1.0f));
+
+  // Find which blade covers this point (aperture drives blade positions directly)
+  int bladeIndex = findVisibleBlade(
+    irisPos, aperture,
+    physics.bladeCount, physics.radius
+  );
+
+  // Check if point is in the opening (no blade covers it)
+  if (bladeIndex < 0) {
+    // Point is in the iris opening - make fragment invisible
+    state.position = float3(center.x, -1.0f, center.z);
+    state.normal = normal;
+    state.rotation = float4(0, 0, 0, 1);
+    state.visible = false;
+    state.bladeIndex = -1;
+    state.seamDistance = 1.0f; // Not relevant for opening
+    return state;
+  }
+
+  // Compute seam distance as a normalized fraction (0 = on boundary, higher =
+  // farther) Normalizing by radius makes this dimensionless and consistent
+  // across projection
+  float2 pi =
+      computePi(bladeIndex, aperture, physics.bladeCount, physics.radius);
+  float distToPi = length(irisPos - pi);
+  float seamFrac = abs(distToPi - physics.radius) / physics.radius;
+
+  // Also check distance to successor blade's boundary (the other edge)
+  int successor = (bladeIndex + 1) % physics.bladeCount;
+  float2 piNext =
+      computePi(successor, aperture, physics.bladeCount, physics.radius);
+  float distToSuccessor = length(irisPos - piNext);
+  float seamFracSuccessor =
+      abs(distToSuccessor - physics.radius) / physics.radius;
+
+  // Use minimum of both seam fractions
+  float minSeamDist = min(seamFrac, seamFracSuccessor);
+
+  // Correct for projection distortion: 2D distances are compressed near equator
+  // Inflate seam distance by 1/cos(theta) to get approximate 3D surface
+  // distance (theta already computed above for twist)
+  float projectionCorrection = 1.0f / max(0.15f, cos(theta));
+  float correctedSeamDist = minSeamDist * projectionCorrection;
+
+  // Fragment is covered by a blade - visible
+  state.position = center;
+  state.normal = normal;
+  state.rotation = float4(0, 0, 0, 1);
+  state.visible = true;
+  state.bladeIndex = bladeIndex;
+  state.seamDistance = correctedSeamDist;
+
+  return state;
+}
+
+// Convenience: compute minimal state for visibility checking
+inline FragmentState computeVisibilityState(
+    int fragmentIndex,
+    float time,
+    DomeParams dome,
+    PhysicsData physics
+) {
+  IrisFragmentState full = computeState(fragmentIndex, time, dome, physics);
+  FragmentState fs;
+  fs.position = full.position;
+  fs.normal = full.normal;
+  fs.visible = full.visible;
+  return fs;
+}
+
+}  // namespace iris

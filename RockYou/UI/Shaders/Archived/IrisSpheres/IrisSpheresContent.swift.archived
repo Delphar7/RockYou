@@ -1,9 +1,9 @@
-// IrisContent.swift
+#if false
+// IrisSpheresContent.swift
 // RockYou/UI/Dome
 //
-// Iris mechanism content for SceneView.
-// Uses dot(Q, n_i) > threshold for blade coverage with tilted plane normals.
-// Spiral seams via tilt parameter.
+// Sphere-based iris mechanism content for SceneView.
+// Uses 3D sphere-sphere intersection instead of 2D projection + twist.
 
 import CoreGraphics
 import Foundation
@@ -12,20 +12,20 @@ import os
 import RealityKit
 import simd
 
-private let log = Logger(subsystem: "com.rockyou", category: "IrisContent")
+private let log = Logger(subsystem: "com.rockyou", category: "IrisSpheresContent")
 
-/// Iris content - blade coverage via plane half-space checks.
-/// Seam arcs are plane-sphere intersection circles with general basis vectors.
+/// Sphere-based iris content - blade coverage and seam arcs computed
+/// directly in 3D via sphere intersection math.
 @MainActor
-final class IrisContent: SceneContent {
-  let config: IrisAnimationConfig
+final class IrisSpheresContent: SceneContent {
+  let config: IrisSpheresAnimationConfig
   let entity: Entity
 
   private let domeEntity: ModelEntity
   private let ribbonEntity: ModelEntity?
   private var dataTexture: TextureResource?
 
-  init(config: IrisAnimationConfig) {
+  init(config: IrisSpheresAnimationConfig) {
     self.config = config
 
     let root = Entity()
@@ -54,7 +54,7 @@ final class IrisContent: SceneContent {
     }
     self.dataTexture = texture
 
-    // Create material with iris shaders
+    // Create material with iris spheres shaders
     guard let material = Self.createDomeMaterial(texture: texture) else {
       log.error("Failed to create dome material")
       self.entity = root
@@ -118,11 +118,11 @@ final class IrisContent: SceneContent {
 
     do {
       let geometryModifier = CustomMaterial.GeometryModifier(
-        named: "irisGeometryModifier",
+        named: "irisSpheresGeometryModifier",
         in: library
       )
       let surfaceShader = CustomMaterial.SurfaceShader(
-        named: "irisSurfaceShader",
+        named: "irisSpheresSurfaceShader",
         in: library
       )
 
@@ -151,11 +151,11 @@ final class IrisContent: SceneContent {
 
     do {
       let geometryModifier = CustomMaterial.GeometryModifier(
-        named: "irisSeamGeometryModifier",
+        named: "irisSpheresSeamGeometryModifier",
         in: library
       )
       let surfaceShader = CustomMaterial.SurfaceShader(
-        named: "irisSeamSurfaceShader",
+        named: "irisSpheresSeamSurfaceShader",
         in: library
       )
 
@@ -217,7 +217,7 @@ final class IrisContent: SceneContent {
       }
     }
 
-    var desc = MeshDescriptor(name: "iris_seam_ribbons")
+    var desc = MeshDescriptor(name: "iris_spheres_seam_ribbons")
     desc.positions = MeshBuffers.Positions(positions)
     desc.normals = MeshBuffers.Normals(normals)
     desc.textureCoordinates = MeshBuffers.TextureCoordinates(uvs)
@@ -236,7 +236,7 @@ final class IrisContent: SceneContent {
   private static let textureWidth = 32
   private static let textureHeight = 4096
 
-  private static func createDataTexture(config: IrisAnimationConfig) -> TextureResource? {
+  private static func createDataTexture(config: IrisSpheresAnimationConfig) -> TextureResource? {
     let width = textureWidth
     let height = textureHeight
 
@@ -274,7 +274,7 @@ final class IrisContent: SceneContent {
         pixels.append(contentsOf: [128, 128, 0, 0])
 
         // Col 7: Algorithm ID
-        pixels.append(5)  // iris algorithm
+        pixels.append(4)  // iris_spheres algorithm
         pixels.append(contentsOf: [0, 0, 0])
 
         // Col 8-11: Physics config (baseSpeed stores domeRadius)
@@ -298,19 +298,11 @@ final class IrisContent: SceneContent {
         pixels.append(UInt8((duration16 >> 8) & 0xFF))
         pixels.append(UInt8(duration16 & 0xFF))
 
-        // Col 15: unused
+        // Col 15: unused (no twist needed for spheres)
         pixels.append(contentsOf: [128, 128, 128, 128])
 
-        // Col 16: tilt (RG) [0, π/2], elevation (BA) [0, π/4]
-        let tilt16 = encode16bit(config.tilt, min: 0.0, max: Float.pi / 2)
-        let elev16 = encode16bit(config.elevation, min: 0.0, max: Float.pi / 4)
-        pixels.append(UInt8((tilt16 >> 8) & 0xFF))
-        pixels.append(UInt8(tilt16 & 0xFF))
-        pixels.append(UInt8((elev16 >> 8) & 0xFF))
-        pixels.append(UInt8(elev16 & 0xFF))
-
         // Remaining cols: padding
-        for _ in 17..<width {
+        for _ in 16..<width {
           pixels.append(contentsOf: [128, 128, 128, 128])
         }
       } else {
@@ -347,7 +339,7 @@ final class IrisContent: SceneContent {
     }
 
     do {
-      return try TextureResource(image: cgImage, withName: "IrisData", options: .init(semantic: .raw))
+      return try TextureResource(image: cgImage, withName: "IrisSpheresData", options: .init(semantic: .raw))
     } catch {
       log.error("Failed to create texture: \(error)")
       return nil
@@ -362,3 +354,4 @@ final class IrisContent: SceneContent {
     return UInt16(clamped * 65535)
   }
 }
+#endif

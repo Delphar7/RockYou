@@ -19,8 +19,20 @@ final class RippleContent: SceneContent {
   let config: RippleAnimationConfig
   let entity: Entity
 
+  /// Published visibility result - true when compute shader detects all fragments gone
+  private(set) var allFragmentsGone: Bool = false
+
+  /// SceneContent protocol - animation complete when all fragments gone
+  var isComplete: Bool { allFragmentsGone }
+
   private let domeEntity: ModelEntity
   private var dataTexture: TextureResource?
+  private var mtlDataTexture: MTLTexture?  // Raw Metal texture for compute shader
+  private let fragmentCount: Int
+
+  // Visibility checking
+  private var visibilityChecker: VisibilityChecker?
+  private var lastVisibilityCheckTime: Float = -1
 
   init(config: RippleAnimationConfig, cameraPosition: SIMD3<Float> = [0.6, 0.4, 0.6]) {
     self.config = config
@@ -28,11 +40,18 @@ final class RippleContent: SceneContent {
     // Create root entity
     let root = Entity()
 
+    // Compute tessellation segments
+    let latSegs = Self.latSegments(for: config.fragmentCount)
+    let lonSegs = Self.lonSegments(for: config.fragmentCount)
+
+    // Actual fragment count from tessellation
+    self.fragmentCount = lonSegs + (latSegs - 1) * lonSegs * 2
+
     // Generate dome mesh
     guard let meshGenerator = DomeMeshGenerator(),
           let mesh = meshGenerator.generateMesh(
-            latSegments: Self.latSegments(for: config.fragmentCount),
-            lonSegments: Self.lonSegments(for: config.fragmentCount),
+            latSegments: latSegs,
+            lonSegments: lonSegs,
             radius: config.domeRadius
           ) else {
       rippleLog.error("Failed to generate dome mesh")
@@ -51,14 +70,16 @@ final class RippleContent: SceneContent {
     )
     let waveOrigin = rotatedDir * config.domeRadius * 0.8
 
-    // Create data texture for shader params
-    guard let texture = Self.createDataTexture(config: config, waveOrigin: waveOrigin) else {
+    // Create data texture for shader params (also creates MTLTexture for compute)
+    let textureResult = Self.createDataTexture(config: config, waveOrigin: waveOrigin)
+    guard let texture = textureResult.resource else {
       rippleLog.error("Failed to create data texture")
       self.entity = root
       self.domeEntity = ModelEntity()
       return
     }
     self.dataTexture = texture
+    self.mtlDataTexture = textureResult.mtlTexture
 
     // Create material with ripple shaders
     guard let material = Self.createMaterial(texture: texture) else {
@@ -73,6 +94,12 @@ final class RippleContent: SceneContent {
     root.addChild(dome)
     self.domeEntity = dome
 
+    // Add DPad backdrop plane if enabled
+    if config.showDpadTexture,
+       let backdrop = Self.makeBackdropEntity(radius: config.domeRadius) {
+      root.addChild(backdrop)
+    }
+
     self.entity = root
   }
 
@@ -81,6 +108,42 @@ final class RippleContent: SceneContent {
     if var material = domeEntity.model?.materials.first as? CustomMaterial {
       material.custom.value = [time, cameraPosition.x, cameraPosition.y, cameraPosition.z]
       domeEntity.model?.materials = [material]
+    }
+
+    // Check visibility periodically (not every frame)
+    let checkInterval: Float = 0.5  // Check twice per second
+    if time - lastVisibilityCheckTime >= checkInterval {
+      lastVisibilityCheckTime = time
+      checkVisibility(at: time)
+    }
+  }
+
+  // MARK: - Visibility Checking
+
+  /// Check if any fragments are still visible using GPU compute shader
+  private func checkVisibility(at time: Float) {
+    guard !allFragmentsGone else { return }
+    guard let mtlTexture = mtlDataTexture else { return }
+
+    // Lazily create visibility checker
+    if visibilityChecker == nil {
+      visibilityChecker = VisibilityChecker()
+    }
+    guard let checker = visibilityChecker else { return }
+
+    // Use async check to avoid blocking main thread
+    let count = fragmentCount
+    checker.checkVisibilityAsync(
+      animation: RippleVisibilityAdapter(texture: mtlTexture, fragmentCount: count),
+      time: time
+    ) { [weak self] result in
+      DispatchQueue.main.async {
+        guard let self = self else { return }
+        if result == .allGone {
+          self.allFragmentsGone = true
+          rippleLog.info("All fragments gone at t=\(time)")
+        }
+      }
     }
   }
 
@@ -136,10 +199,16 @@ final class RippleContent: SceneContent {
   private static let textureWidth = 32
   private static let textureHeight = 4096
 
+  /// Result of texture creation - includes both RealityKit and Metal textures
+  private struct TextureResult {
+    let resource: TextureResource?
+    let mtlTexture: MTLTexture?
+  }
+
   private static func createDataTexture(
     config: RippleAnimationConfig,
     waveOrigin: SIMD3<Float>
-  ) -> TextureResource? {
+  ) -> TextureResult {
     let width = textureWidth
     let height = textureHeight
 
@@ -247,7 +316,7 @@ final class RippleContent: SceneContent {
     let nsData = Data(pixels)
     guard let provider = CGDataProvider(data: nsData as CFData) else {
       rippleLog.error("CGDataProvider creation failed")
-      return nil
+      return TextureResult(resource: nil, mtlTexture: nil)
     }
 
     guard let linearColorSpace = CGColorSpace(name: CGColorSpace.linearSRGB),
@@ -265,14 +334,37 @@ final class RippleContent: SceneContent {
             intent: .defaultIntent
           ) else {
       rippleLog.error("CGImage creation failed")
-      return nil
+      return TextureResult(resource: nil, mtlTexture: nil)
+    }
+
+    // Create Metal texture for compute shader visibility checking
+    var mtlTexture: MTLTexture?
+    if let device = MTLCreateSystemDefaultDevice() {
+      let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+        pixelFormat: .rgba8Unorm,
+        width: width,
+        height: height,
+        mipmapped: false
+      )
+      descriptor.usage = [.shaderRead]
+      if let mtlTex = device.makeTexture(descriptor: descriptor) {
+        let region = MTLRegion(
+          origin: MTLOrigin(x: 0, y: 0, z: 0),
+          size: MTLSize(width: width, height: height, depth: 1)
+        )
+        pixels.withUnsafeBytes { ptr in
+          mtlTex.replace(region: region, mipmapLevel: 0, withBytes: ptr.baseAddress!, bytesPerRow: bytesPerRow)
+        }
+        mtlTexture = mtlTex
+      }
     }
 
     do {
-      return try TextureResource(image: cgImage, withName: "RippleData", options: .init(semantic: .raw))
+      let resource = try TextureResource(image: cgImage, withName: "RippleData", options: .init(semantic: .raw))
+      return TextureResult(resource: resource, mtlTexture: mtlTexture)
     } catch {
       rippleLog.error("Failed to create texture: \(error)")
-      return nil
+      return TextureResult(resource: nil, mtlTexture: mtlTexture)
     }
   }
 
@@ -282,5 +374,51 @@ final class RippleContent: SceneContent {
     let normalized = (value - min) / (max - min)
     let clamped = Swift.max(0, Swift.min(1, normalized))
     return UInt16(clamped * 65535)
+  }
+
+  // MARK: - Backdrop
+
+  private static func makeBackdropEntity(radius: Float) -> ModelEntity? {
+    guard let path = Bundle.main.path(forResource: "DPad-Refracted", ofType: "png"),
+          let native = PlatformImage.cachedNativeContentsOfFile(path),
+          let cg = PlatformImage.cgImage(from: native) else {
+      return nil
+    }
+
+    let tex: TextureResource
+    do {
+      tex = try TextureResource(image: cg, withName: "DPad-Ripple-Backdrop", options: .init(semantic: .color))
+    } catch {
+      return nil
+    }
+
+    // Create plane sized to match dome diameter
+    let mesh = MeshResource.generatePlane(width: radius * 2, depth: radius * 2)
+    var mat = UnlitMaterial()
+    mat.color = .init(texture: .init(tex))
+    mat.blending = .transparent(opacity: 1.0)
+
+    let entity = ModelEntity(mesh: mesh, materials: [mat])
+    entity.position = [0, -0.01, 0]  // Slightly below dome
+    return entity
+  }
+}
+
+// MARK: - Visibility Adapter
+
+/// Adapter to make RippleContent work with VisibilityChecker
+private struct RippleVisibilityAdapter: VisibilityCheckable {
+  let texture: MTLTexture
+  let fragmentCount: Int
+
+  var visibilityKernelName: String { "rippleVisibilityKernel" }
+
+  func encodeVisibilityParameters(encoder: MTLComputeCommandEncoder) {
+    // Buffer 2: fragment count (buffer 0 = anyVisible, buffer 1 = time)
+    var count = UInt32(fragmentCount)
+    encoder.setBytes(&count, length: MemoryLayout<UInt32>.size, index: 2)
+
+    // Texture 0: data texture
+    encoder.setTexture(texture, index: 0)
   }
 }

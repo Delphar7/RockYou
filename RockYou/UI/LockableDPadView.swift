@@ -24,15 +24,13 @@ struct LockableDPadView: View {
   @Environment(\.scenePhase) private var scenePhase
   @ObservedObject private var interactionTracker = UserInteractionTracker.shared
   @ObservedObject private var snapshotManager = BreakerSwitchSnapshotManager.shared
+  @ObservedObject private var domeManager = DomeAnimationManager.shared
   @State private var settings = AppSettings.shared
 
   @State private var isLocked = false
 
   // Single "source of truth" for lever position (0=locked, 1=unlocked).
   @State private var progress: CGFloat = 0
-  @State private var domeIsActive: Bool = false
-  @State private var domeOpenProgress: CGFloat = 0
-  @State private var domeNonce: UInt64 = 0
 
   // Explicit interaction state (who owns progress).
   private enum Phase {
@@ -150,85 +148,22 @@ struct LockableDPadView: View {
       size: dpadSize
     )
     .allowsHitTesting(!isLocked)
-    .opacity(domeIsActive ? 0 : 1)
+    .opacity(domeManager.isActive && !domeManager.dpadSurfaced ? 0 : 1)
+    .simultaneousGesture(
+      DragGesture(minimumDistance: 0)
+        .onChanged { _ in
+          if domeManager.isActive && !domeManager.dpadSurfaced {
+            domeManager.dpadSurfaced = true
+          }
+        }
+    )
     .onAppear {
       requestSnapshot(dpadSize: dpadSize)
     }
     .overlay {
       if isLocked {
         lockOverlay(dpadSize: dpadSize)
-      } else if domeIsActive {
-        domeOverlay(dpadSize: dpadSize)
       }
-    }
-  }
-
-  private func domeOverlay(dpadSize: CGFloat) -> some View {
-    // Dome sequence (RealityKit):
-    // - Shader blends regular/refracted DPad textures based on iris mask.
-    // - No black ellipse needed - shader handles masking.
-    let domeSize = dpadSize * CGFloat(DomeSceneConfig.renderCanvasScale)
-    let p = min(1, max(0, domeOpenProgress))
-
-    return DomeDoorsView(openProgress: p)
-      .frame(width: domeSize, height: domeSize)
-      .frame(width: dpadSize, height: dpadSize, alignment: .center)
-      .allowsHitTesting(false)
-  }
-
-  @MainActor
-  private func showAndOpenDome() {
-    domeNonce &+= 1
-    let nonce = domeNonce
-    let openDurationSeconds: TimeInterval = 8.0
-    let teardownDelaySeconds: TimeInterval = 0.25
-    let frameIntervalSeconds: TimeInterval = 1.0 / 60.0
-
-    withTransaction(Transaction(animation: nil)) {
-      domeIsActive = true
-      domeOpenProgress = 0
-    }
-
-    Task { @MainActor in
-      Log.debug(
-        "DomeDoors",
-        "Start dome open: duration=\(String(format: "%.2f", openDurationSeconds))s nonce=\(nonce)"
-      )
-      // Allow the dome view to mount before animating progress.
-      await Task.yield()
-      guard domeNonce == nonce else {
-        Log.debug("DomeDoors", "Canceled before start: nonce changed")
-        return
-      }
-
-      let start = Date()
-      while domeNonce == nonce {
-        let elapsed = Date().timeIntervalSince(start)
-        let progress = min(1.0, max(0, elapsed / openDurationSeconds))
-        domeOpenProgress = progress
-        if progress >= 1.0 { break }
-        try? await Task.sleep(nanoseconds: UInt64(frameIntervalSeconds * 1_000_000_000))
-      }
-
-      let elapsedTotal = Date().timeIntervalSince(start)
-      if domeNonce != nonce {
-        Log.debug(
-          "DomeDoors",
-          "Canceled mid-open: elapsed=\(String(format: "%.2f", elapsedTotal))s nonce=\(nonce)"
-        )
-        return
-      }
-
-      Log.debug(
-        "DomeDoors",
-        "Open complete: elapsed=\(String(format: "%.2f", elapsedTotal))s nonce=\(nonce)"
-      )
-
-      // Remove shortly after open completes.
-      try? await Task.sleep(nanoseconds: UInt64(teardownDelaySeconds * 1_000_000_000))
-      guard domeNonce == nonce else { return }
-      Log.debug("DomeDoors", "Teardown dome: nonce=\(nonce)")
-      domeIsActive = false
     }
   }
 
@@ -395,7 +330,8 @@ struct LockableDPadView: View {
           progress = 0
         }
         phase = .idle
-        showAndOpenDome()
+        let domeSize = (size ?? 210) * CGFloat(DomeSceneConfig.renderCanvasScale)
+        domeManager.start(referenceDomeSize: domeSize)
         return
       }
 
@@ -485,7 +421,7 @@ struct LockableDPadView: View {
 
   private func checkIdleTimeout() {
     guard let timeout = lockTimeout else { return }
-    guard !domeIsActive else { return }
+    guard !domeManager.isActive else { return }
     let timeSinceInteraction = Date().timeIntervalSince(interactionTracker.lastInteractionAt)
     if timeSinceInteraction >= timeout && !isLocked {
       withAnimation(.easeInOut(duration: 0.5)) {
@@ -499,6 +435,16 @@ struct LockableDPadView: View {
 
   private func handleAppBecameActive() {
     interactionTracker.noteInteraction()
+
+    // Always clear stale gesture state (e.g. mid-drag when app suspended).
+    settleToken &+= 1
+    leverFallAnimator.stop()
+    if phase.isDragging || phase.isSettling {
+      progress = 0
+      phase = .idle
+      liveReady = false
+    }
+
     guard isLocked else { return }
 
     withAnimation(.easeInOut(duration: 0.3)) {
@@ -513,9 +459,7 @@ struct LockableDPadView: View {
     progress = 0
     phase = .idle
     liveReady = false
-    domeIsActive = false
-    domeOpenProgress = 0
-    domeNonce &+= 1
+    domeManager.cancel()
   }
 }
 

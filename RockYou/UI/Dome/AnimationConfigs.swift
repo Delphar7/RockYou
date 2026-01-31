@@ -10,39 +10,40 @@ import Foundation
 // MARK: - Animation Enum
 
 /// Dome animation with associated configuration.
-/// Used by IrisContent (production) and playground engines.
+/// Production effects use iris, shatter, ripple, and flower.
 enum DomeAnimation {
   case iris(IrisAnimationConfig)
-  // Future: case ripple(RippleAnimationConfig)
-  // Future: case explode(ExplodeAnimationConfig)
-  // Future: case confetti(ConfettiAnimationConfig)
+  case shatter(ShatterAnimationConfig)
+  case ripple(RippleAnimationConfig)
+  case flower(FlowerAnimationConfig)
 }
 
 // MARK: - Iris Animation Config
 
 /// Configuration for iris mechanism animation.
-/// Dome fragments form rotating iris blades that open/close.
+/// Uses dot(Q, n_i) > threshold (half-space checks) for blade coverage.
+/// Supports spiral seams via tilt parameter and cheaper per-fragment computation.
 struct IrisAnimationConfig {
   /// Number of tessellated dome fragments
   var fragmentCount: Int = 30000
 
   /// Dome radius in meters
-  var domeRadius: Float = 0.5
+  var domeRadius: Float = 0.6
 
   /// Number of iris blades
   var bladeCount: Int = 12
 
-  /// Twist angle from apex to equator (degrees)
-  var twistDegrees: Float = 0.0
-
-  /// Duration of open animation (seconds)
+  /// Duration of animation (seconds)
   var openDuration: Float = 4.0
+
+  /// Tilt angle: 0 = radial (no spiral), π/2 = full tangential
+  var tilt: Float = 0.5
+
+  /// Elevation: lifts blade normals toward dome apex
+  var elevation: Float = 0.3
 
   /// Whether to render seam ribbons between blades
   var showSeamRibbons: Bool = true
-
-  /// Whether to show debug DPad texture
-  var showDpadTexture: Bool = false
 
   // MARK: - Presets
 
@@ -51,13 +52,9 @@ struct IrisAnimationConfig {
   /// Randomized config for production variety
   static func randomized(using rng: inout some RandomNumberGenerator) -> Self {
     IrisAnimationConfig(
-      fragmentCount: 30000,
-      domeRadius: 0.5,
       bladeCount: [8, 10, 12, 14, 16].randomElement(using: &rng) ?? 12,
-      twistDegrees: Float.random(in: -60...60, using: &rng),
-      openDuration: 4.0,
-      showSeamRibbons: true,
-      showDpadTexture: false
+      tilt: Float.random(in: 0.3...0.8, using: &rng),
+      elevation: Float.random(in: 0.1...0.4, using: &rng)
     )
   }
 
@@ -146,6 +143,22 @@ struct ShatterAnimationConfig {
     config.cannonPower = 0.5
     return config
   }
+
+  /// Randomized config for production variety
+  static func randomized(using rng: inout some RandomNumberGenerator) -> Self {
+    let mode: ShatterMode = Bool.random(using: &rng) ? .explode : .confetti
+    var config = ShatterAnimationConfig(mode: mode)
+    config.baseGravity = Float.random(in: 0.1...0.4, using: &rng)
+    config.baseSpeed = Float.random(in: 0.1...0.25, using: &rng)
+    config.cannonPower = mode == .confetti ? Float.random(in: 0.3...0.7, using: &rng) : 0.0
+    return config
+  }
+
+  /// Randomized config using system RNG
+  static func randomized() -> Self {
+    var rng = SystemRandomNumberGenerator()
+    return randomized(using: &rng)
+  }
 }
 
 // MARK: - Ripple Animation Config
@@ -194,6 +207,61 @@ struct RippleAnimationConfig {
   // MARK: - Presets
 
   static let `default` = RippleAnimationConfig()
+
+  /// Randomized config for production variety
+  static func randomized(using rng: inout some RandomNumberGenerator) -> Self {
+    RippleAnimationConfig(
+      waveFrequency: Float.random(in: 4...12, using: &rng),
+      waveAmplitude: Float.random(in: 0.003...0.01, using: &rng),
+      rippleSpeed: Float.random(in: 0.05...0.2, using: &rng)
+    )
+  }
+
+  /// Randomized config using system RNG
+  static func randomized() -> Self {
+    var rng = SystemRandomNumberGenerator()
+    return randomized(using: &rng)
+  }
+}
+
+// MARK: - Flower Animation Config
+
+/// Configuration for blooming flower blade animation.
+/// Iris blades on a dome that rotate open like a flower.
+struct FlowerAnimationConfig {
+  /// Number of iris blades
+  var bladeCount: Int = 10
+
+  /// How far blades extend from rim toward pole (0 = rim only, 1 = to pole)
+  var bladeCoverage: Float = 0.85
+
+  /// Angular overlap between adjacent blades (radians)
+  var bladeOverlap: Float = 0.02
+
+  /// Dome radius in meters
+  var domeRadius: Float = 0.5
+
+  /// Duration of open animation (seconds)
+  var openDuration: Float = 4.0
+
+  // MARK: - Presets
+
+  static let `default` = FlowerAnimationConfig()
+
+  /// Randomized config for production variety
+  static func randomized(using rng: inout some RandomNumberGenerator) -> Self {
+    FlowerAnimationConfig(
+      bladeCount: [8, 10, 12, 14].randomElement(using: &rng) ?? 10,
+      bladeCoverage: Float.random(in: 0.75...0.95, using: &rng),
+      bladeOverlap: Float.random(in: 0.01...0.04, using: &rng)
+    )
+  }
+
+  /// Randomized config using system RNG
+  static func randomized() -> Self {
+    var rng = SystemRandomNumberGenerator()
+    return randomized(using: &rng)
+  }
 }
 
 // MARK: - Scene Config
@@ -201,6 +269,10 @@ struct RippleAnimationConfig {
 /// Fixed configuration for dome scene layout and camera animation.
 /// Used by DoorsView for production rendering.
 enum DomeSceneConfig {
+  /// Target wall-clock duration for the full animation (seconds).
+  /// Shader time is decoupled: openDuration / duration = playback speed multiplier.
+  static let duration: Float = 1.0
+
   static let baseDomeRadius: Float = 0.5
   static let domeRadius: Float = baseDomeRadius
 

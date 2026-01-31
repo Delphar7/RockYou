@@ -1,0 +1,771 @@
+#if false
+// IrisSeamAlgorithmDebugView.swift
+// RockYou/UI/Debug
+//
+// Debug view for iris seam algorithm - renders 2D iris space geometry
+// to understand seam curve computation issues.
+
+import simd
+import SwiftUI
+import SceneKit
+import os
+
+private let log = Logger(subsystem: "com.rockyou", category: "IrisSeamDebug")
+
+// MARK: - Algorithm Translation (matches IrisSeamProjection.h)
+
+struct IrisSeamAlgorithm {
+  let bladeCount: Int
+  let irisRadius: Float
+
+  /// Compute P_i for a blade (pivot point + rotation)
+  func computePi(bladeIndex: Int, aperture: Float) -> SIMD2<Float> {
+    let pivotAngle = Float(bladeIndex) * (2.0 * Float.pi / Float(max(1, bladeCount)))
+    let pivotPos = SIMD2<Float>(irisRadius * cos(pivotAngle), irisRadius * sin(pivotAngle))
+
+    let closureRotation: Float = Float.pi / 3.0
+    let bladeAngle = pivotAngle + aperture * closureRotation
+    let c = cos(bladeAngle)
+    let s = sin(bladeAngle)
+    let pLocal = SIMD2<Float>(-irisRadius, 0)
+    let pRel = SIMD2<Float>(c * pLocal.x - s * pLocal.y, s * pLocal.x + c * pLocal.y)
+
+    return pivotPos + pRel
+  }
+
+  /// Circle-circle intersection (equal radii) - returns point closer to origin
+  func circleCircleIntersect(center1: SIMD2<Float>, center2: SIMD2<Float>, radius: Float) -> SIMD2<Float> {
+    let midpoint = (center1 + center2) * 0.5
+    let d = simd_length(center2 - center1)
+
+    if d < 0.001 || d > 2.0 * radius {
+      return midpoint
+    }
+
+    let h = sqrt(max(0, radius * radius - d * d * 0.25))
+    let dir = center2 - center1
+    let perpDir = SIMD2<Float>(-dir.y, dir.x) / d
+
+    let intersect1 = midpoint + perpDir * h
+    let intersect2 = midpoint - perpDir * h
+
+    return simd_length(intersect1) < simd_length(intersect2) ? intersect1 : intersect2
+  }
+
+  /// Compute seam curve data for a blade
+  func computeSeamData(bladeIndex: Int, aperture: Float) -> SeamData {
+    let pi = computePi(bladeIndex: bladeIndex, aperture: aperture)
+    let successor = (bladeIndex + 1) % bladeCount
+    let piNext = computePi(bladeIndex: successor, aperture: aperture)
+
+    // Aperture point: intersection with successor's arc
+    let aperturePoint = circleCircleIntersect(center1: pi, center2: piNext, radius: irisRadius)
+
+    // Dome point: intersection with dome boundary circle
+    var piDist = simd_length(pi)
+    piDist = min(piDist, 2.0 * irisRadius * 0.999)
+    let halfArc = acos(simd_clamp(piDist / (2.0 * irisRadius), 0.0, 1.0))
+    let angleToOrigin = atan2(-pi.y, -pi.x)
+    let angleToDome = angleToOrigin - halfArc
+    let domePoint = pi + SIMD2<Float>(cos(angleToDome), sin(angleToDome)) * irisRadius
+
+    // Compute angles on blade's arc
+    let angleAperture = atan2(aperturePoint.y - pi.y, aperturePoint.x - pi.x)
+    let angleDome = atan2(domePoint.y - pi.y, domePoint.x - pi.x)
+
+    // Angle difference (normalized to [-π, π])
+    var angleDiff = angleDome - angleAperture
+    while angleDiff > Float.pi { angleDiff -= 2.0 * Float.pi }
+    while angleDiff < -Float.pi { angleDiff += 2.0 * Float.pi }
+
+    return SeamData(
+      pi: pi,
+      piNext: piNext,
+      aperturePoint: aperturePoint,
+      domePoint: domePoint,
+      angleAperture: angleAperture,
+      angleDome: angleDome,
+      angleDiff: angleDiff,
+      halfArc: halfArc,
+      angleToOrigin: angleToOrigin
+    )
+  }
+
+  /// Compute arc points for visualization
+  func computeArcPoints(data: SeamData, segments: Int = 32) -> [SIMD2<Float>] {
+    var points: [SIMD2<Float>] = []
+    for i in 0...segments {
+      let t = Float(i) / Float(segments)
+      let angle = data.angleAperture + t * data.angleDiff
+      let point = data.pi + SIMD2<Float>(cos(angle), sin(angle)) * irisRadius
+      points.append(point)
+    }
+    return points
+  }
+
+  // MARK: - 3D Projection (matches IrisSeamProjection.h)
+
+  /// Compute twist angle from radial distance
+  func computeTwistAngle(radialDist: Float, domeRadius: Float, twistRadians: Float) -> Float {
+    let sinTheta = simd_clamp(radialDist / domeRadius, 0.0, 1.0)
+    let theta = asin(sinTheta)  // 0 at apex, π/2 at equator
+    let twistFraction = theta / (Float.pi / 2.0)
+    return twistFraction * twistRadians
+  }
+
+  /// Rotate a 2D point around origin
+  func rotate2D(_ p: SIMD2<Float>, angle: Float) -> SIMD2<Float> {
+    let c = cos(angle)
+    let s = sin(angle)
+    return SIMD2<Float>(p.x * c - p.y * s, p.x * s + p.y * c)
+  }
+
+  /// Project 2D iris space point to 3D dome surface
+  func irisSpaceToDomePoint(
+    irisPos: SIMD2<Float>,
+    domeRadius: Float,
+    twistRadians: Float
+  ) -> SIMD3<Float> {
+    // Scale back to twisted dome space
+    let scale = domeRadius / irisRadius
+    var twistedPos = irisPos * scale
+
+    // Radial distance preserved through twist
+    var radialDist = simd_length(twistedPos)
+
+    // Clamp to dome boundary
+    if radialDist > domeRadius {
+      twistedPos = simd_normalize(twistedPos) * domeRadius
+      radialDist = domeRadius
+    }
+
+    // Compute twist angle and un-twist
+    let twistAngle = computeTwistAngle(radialDist: radialDist, domeRadius: domeRadius, twistRadians: twistRadians)
+    let discPos = rotate2D(twistedPos, angle: -twistAngle)
+
+    // Project to 3D dome surface
+    let y = sqrt(max(0.0, domeRadius * domeRadius - radialDist * radialDist))
+    return SIMD3<Float>(discPos.x, y, discPos.y)
+  }
+
+  /// Compute 3D arc points
+  func computeArcPoints3D(data: SeamData, domeRadius: Float, twistRadians: Float, segments: Int = 32) -> [SIMD3<Float>] {
+    let points2D = computeArcPoints(data: data, segments: segments)
+    return points2D.map { irisSpaceToDomePoint(irisPos: $0, domeRadius: domeRadius, twistRadians: twistRadians) }
+  }
+
+  /// Simulate full ribbon vertex positioning (matches shader logic)
+  /// Returns (leftEdge, rightEdge) for each point
+  func computeRibbonEdges(data: SeamData, domeRadius: Float, twistRadians: Float, segments: Int = 32) -> [(left: SIMD3<Float>, right: SIMD3<Float>)] {
+    let points3D = computeArcPoints3D(data: data, domeRadius: domeRadius, twistRadians: twistRadians, segments: segments)
+    var result: [(left: SIMD3<Float>, right: SIMD3<Float>)] = []
+
+    for i in 0..<points3D.count {
+      let pos3D = points3D[i]
+      let prevIdx = max(0, i - 1)
+      let nextIdx = min(points3D.count - 1, i + 1)
+      let posPrev = points3D[prevIdx]
+      let posNext = points3D[nextIdx]
+
+      // Normal is outward from dome center
+      let normal = simd_normalize(pos3D)
+
+      // Compute tangent, project to tangent plane
+      var tangentDir = posNext - posPrev
+      tangentDir = tangentDir - normal * simd_dot(tangentDir, normal)
+      let tangentLen = simd_length(tangentDir)
+
+      // Compute binormal
+      let radialXZ = SIMD2<Float>(pos3D.x, pos3D.z)
+      let radialLen = simd_length(radialXZ)
+
+      var binormal: SIMD3<Float>
+      if tangentLen > 0.0001 {
+        let tangent = tangentDir / tangentLen
+        binormal = simd_normalize(simd_cross(normal, tangent))
+      } else if radialLen > 0.001 {
+        let circumXZ = SIMD2<Float>(-radialXZ.y, radialXZ.x) / radialLen
+        binormal = simd_normalize(SIMD3<Float>(circumXZ.x, 0, circumXZ.y))
+      } else {
+        binormal = SIMD3<Float>(1, 0, 0)
+      }
+
+      // Taper ribbon width near apex
+      let apexTaper = smoothstep(0.0, 0.15, radialLen / domeRadius)
+      let ribbonWidth: Float = 0.003 * apexTaper
+
+      // Compute offset positions
+      let leftOffset = pos3D + binormal * (-ribbonWidth)
+      let rightOffset = pos3D + binormal * ribbonWidth
+
+      // Re-normalize to dome surface + outward offset
+      let leftOnDome = simd_normalize(leftOffset) * domeRadius
+      let rightOnDome = simd_normalize(rightOffset) * domeRadius
+      let leftFinal = leftOnDome + simd_normalize(leftOnDome) * 0.008
+      let rightFinal = rightOnDome + simd_normalize(rightOnDome) * 0.008
+
+      result.append((left: leftFinal, right: rightFinal))
+    }
+    return result
+  }
+
+  private func smoothstep(_ edge0: Float, _ edge1: Float, _ x: Float) -> Float {
+    let t = simd_clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+  }
+
+  struct SeamData {
+    let pi: SIMD2<Float>           // Blade center
+    let piNext: SIMD2<Float>       // Next blade center
+    let aperturePoint: SIMD2<Float> // Start of seam (at aperture)
+    let domePoint: SIMD2<Float>     // End of seam (at dome edge)
+    let angleAperture: Float        // Angle to aperture point from pi
+    let angleDome: Float            // Angle to dome point from pi
+    let angleDiff: Float            // Interpolation range
+    let halfArc: Float              // Half-arc for dome intersection
+    let angleToOrigin: Float        // Angle from pi toward origin
+  }
+}
+
+// MARK: - Debug View
+
+struct IrisSeamAlgorithmDebugView: View {
+  @State private var aperture: Double = 0.5
+  @State private var bladeIndex: Int = 0
+  @State private var bladeCount: Int = 6
+  @State private var showAllBlades: Bool = false
+  @State private var showLogging: Bool = false
+  @State private var twistRadians: Double = 1.0
+  @State private var domeRadius: Double = 0.5
+
+  // Camera orbit (matches RealityDebugView)
+  @State private var yawDegrees: Double = 45
+  @State private var pitchDegrees: Double = 35
+  @State private var cameraDistance: Double = 1.2
+
+  private let irisRadius: Float = 1.0
+
+  var body: some View {
+    HSplitView {
+      // 2D Canvas
+      GeometryReader { geo in
+        Canvas { ctx, size in
+          let scale = min(size.width, size.height) * 0.4
+          let center = CGPoint(x: size.width / 2, y: size.height / 2)
+
+          // Transform: iris space to screen (Y up → Y down, scaled)
+          func toScreen(_ p: SIMD2<Float>) -> CGPoint {
+            CGPoint(
+              x: center.x + CGFloat(p.x) * scale,
+              y: center.y - CGFloat(p.y) * scale  // Flip Y
+            )
+          }
+
+          let algo = IrisSeamAlgorithm(bladeCount: bladeCount, irisRadius: irisRadius)
+
+          // Draw dome boundary circle
+          let domeCircle = Path(ellipseIn: CGRect(
+            x: center.x - scale,
+            y: center.y - scale,
+            width: scale * 2,
+            height: scale * 2
+          ))
+          ctx.stroke(domeCircle, with: .color(.gray.opacity(0.5)), lineWidth: 2)
+
+          // Draw origin
+          ctx.fill(Path(ellipseIn: CGRect(
+            x: center.x - 4, y: center.y - 4, width: 8, height: 8
+          )), with: .color(.white))
+
+          // Draw blade(s)
+          let indicesToDraw = showAllBlades ? Array(0..<bladeCount) : [bladeIndex]
+
+          for idx in indicesToDraw {
+            let data = algo.computeSeamData(bladeIndex: idx, aperture: Float(aperture))
+            let isSelected = idx == bladeIndex
+            let alpha = isSelected ? 1.0 : 0.3
+
+            // Draw blade arc (full circle centered at pi)
+            let bladeCircle = Path(ellipseIn: CGRect(
+              x: toScreen(data.pi).x - scale,
+              y: toScreen(data.pi).y - scale,
+              width: scale * 2,
+              height: scale * 2
+            ))
+            ctx.stroke(bladeCircle, with: .color(.blue.opacity(0.2 * alpha)), lineWidth: 1)
+
+            // Draw pi (blade center)
+            let piScreen = toScreen(data.pi)
+            ctx.fill(Path(ellipseIn: CGRect(
+              x: piScreen.x - 5, y: piScreen.y - 5, width: 10, height: 10
+            )), with: .color(.blue.opacity(alpha)))
+
+            // Draw aperture point
+            let apScreen = toScreen(data.aperturePoint)
+            ctx.fill(Path(ellipseIn: CGRect(
+              x: apScreen.x - 5, y: apScreen.y - 5, width: 10, height: 10
+            )), with: .color(.green.opacity(alpha)))
+
+            // Draw dome point
+            let dpScreen = toScreen(data.domePoint)
+            ctx.fill(Path(ellipseIn: CGRect(
+              x: dpScreen.x - 5, y: dpScreen.y - 5, width: 10, height: 10
+            )), with: .color(.red.opacity(alpha)))
+
+            // Draw seam arc
+            let arcPoints = algo.computeArcPoints(data: data)
+            if arcPoints.count > 1 {
+              var arcPath = Path()
+              arcPath.move(to: toScreen(arcPoints[0]))
+              for point in arcPoints.dropFirst() {
+                arcPath.addLine(to: toScreen(point))
+              }
+              ctx.stroke(arcPath, with: .color(.orange.opacity(alpha)), lineWidth: isSelected ? 3 : 1)
+
+              // Mark points outside dome boundary
+              for (_, point) in arcPoints.enumerated() {
+                if simd_length(point) > irisRadius * 1.01 {
+                  let ps = toScreen(point)
+                  ctx.stroke(Path(ellipseIn: CGRect(
+                    x: ps.x - 6, y: ps.y - 6, width: 12, height: 12
+                  )), with: .color(.red), lineWidth: 2)
+                }
+              }
+            }
+
+            // Draw line from pi to origin (for reference)
+            if isSelected {
+              var refLine = Path()
+              refLine.move(to: piScreen)
+              refLine.addLine(to: center)
+              ctx.stroke(refLine, with: .color(.gray.opacity(0.3)), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            }
+          }
+
+          // Legend
+          let legendY: CGFloat = 20
+          ctx.draw(Text("● Pi (blade center)").foregroundColor(.blue).font(.caption), at: CGPoint(x: 100, y: legendY))
+          ctx.draw(Text("● Aperture point").foregroundColor(.green).font(.caption), at: CGPoint(x: 100, y: legendY + 16))
+          ctx.draw(Text("● Dome point").foregroundColor(.red).font(.caption), at: CGPoint(x: 100, y: legendY + 32))
+          ctx.draw(Text("— Seam arc").foregroundColor(.orange).font(.caption), at: CGPoint(x: 100, y: legendY + 48))
+        }
+      }
+      .background(Color.black)
+      .frame(minWidth: 300, minHeight: 300)
+
+      // 3D SceneKit View with camera overlay
+      SeamScene3DView(
+        bladeIndex: bladeIndex,
+        bladeCount: bladeCount,
+        aperture: Float(aperture),
+        irisRadius: irisRadius,
+        domeRadius: Float(domeRadius),
+        twistRadians: Float(twistRadians),
+        showAllBlades: showAllBlades,
+        yawDegrees: Float(yawDegrees),
+        pitchDegrees: Float(pitchDegrees),
+        cameraDistance: Float(cameraDistance)
+      )
+      .overlay {
+        CameraEventCapture(
+          distance: $cameraDistance,
+          yawDegrees: $yawDegrees,
+          pitchDegrees: $pitchDegrees,
+          distanceRange: 0.3...3.0
+        )
+      }
+      .frame(minWidth: 300, minHeight: 300)
+
+      // Controls
+      ScrollView {
+        VStack(alignment: .leading, spacing: 16) {
+          GroupBox("Aperture") {
+            VStack(alignment: .leading) {
+              Slider(value: $aperture, in: 0...1)
+              Text("Aperture: \(aperture, specifier: "%.3f") (0=open, 1=closed)")
+                .font(.caption)
+            }
+          }
+
+          GroupBox("Blade") {
+            VStack(alignment: .leading) {
+              Stepper("Blade: \(bladeIndex)", value: $bladeIndex, in: 0...(bladeCount - 1))
+              Stepper("Count: \(bladeCount)", value: $bladeCount, in: 3...12)
+              Toggle("Show all blades", isOn: $showAllBlades)
+            }
+          }
+
+          GroupBox("3D Projection") {
+            VStack(alignment: .leading) {
+              HStack {
+                Text("Dome R:")
+                Slider(value: $domeRadius, in: 0.1...1.0)
+                Text("\(domeRadius, specifier: "%.2f")")
+              }
+              HStack {
+                Text("Twist:")
+                Slider(value: $twistRadians, in: 0...3.0)
+                Text("\(twistRadians, specifier: "%.2f")")
+              }
+            }
+            .font(.caption)
+          }
+
+          GroupBox("Data") {
+            let algo = IrisSeamAlgorithm(bladeCount: bladeCount, irisRadius: irisRadius)
+            let data = algo.computeSeamData(bladeIndex: bladeIndex, aperture: Float(aperture))
+
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Pi: (\(data.pi.x, specifier: "%.3f"), \(data.pi.y, specifier: "%.3f"))")
+              Text("Aperture pt: (\(data.aperturePoint.x, specifier: "%.3f"), \(data.aperturePoint.y, specifier: "%.3f"))")
+              Text("Dome pt: (\(data.domePoint.x, specifier: "%.3f"), \(data.domePoint.y, specifier: "%.3f"))")
+              Divider()
+              Text("angleAperture: \(data.angleAperture * 180 / Float.pi, specifier: "%.1f")°")
+              Text("angleDome: \(data.angleDome * 180 / Float.pi, specifier: "%.1f")°")
+              Text("angleDiff: \(data.angleDiff * 180 / Float.pi, specifier: "%.1f")°")
+              Divider()
+              Text("halfArc: \(data.halfArc * 180 / Float.pi, specifier: "%.1f")°")
+              Text("angleToOrigin: \(data.angleToOrigin * 180 / Float.pi, specifier: "%.1f")°")
+
+              // Check if any arc points are outside dome
+              let arcPoints = algo.computeArcPoints(data: data)
+              let outsideCount = arcPoints.filter { simd_length($0) > irisRadius * 1.01 }.count
+              if outsideCount > 0 {
+                Text("⚠️ \(outsideCount) arc points outside dome!")
+                  .foregroundColor(.red)
+              }
+
+              // Arc length check
+              let arcLength = abs(data.angleDiff) * 180 / Float.pi
+              if arcLength > 180 {
+                Text("⚠️ Arc > 180° (\(arcLength, specifier: "%.1f")°)")
+                  .foregroundColor(.orange)
+              }
+            }
+          }
+
+          GroupBox("Angle Graph (vs aperture)") {
+            Canvas { ctx, size in
+              let algo = IrisSeamAlgorithm(bladeCount: bladeCount, irisRadius: irisRadius)
+
+              // Sample angles across aperture range
+              let samples = 100
+              var angleToOriginPts: [CGPoint] = []
+              var angleDiffPts: [CGPoint] = []
+              var angleAperturePts: [CGPoint] = []
+
+              for i in 0...samples {
+                let ap = Float(i) / Float(samples)
+                let d = algo.computeSeamData(bladeIndex: bladeIndex, aperture: ap)
+
+                let x = CGFloat(i) / CGFloat(samples) * size.width
+
+                // Scale angles: -180 to 180 → 0 to height
+                let toOriginY = size.height * (1 - CGFloat(d.angleToOrigin * 180 / Float.pi + 180) / 360)
+                let diffY = size.height * (1 - CGFloat(d.angleDiff * 180 / Float.pi + 180) / 360)
+                let apY = size.height * (1 - CGFloat(d.angleAperture * 180 / Float.pi + 180) / 360)
+
+                angleToOriginPts.append(CGPoint(x: x, y: toOriginY))
+                angleDiffPts.append(CGPoint(x: x, y: diffY))
+                angleAperturePts.append(CGPoint(x: x, y: apY))
+              }
+
+              // Draw zero line (y=0 degrees)
+              let zeroY = size.height * 0.5
+              var zeroLine = Path()
+              zeroLine.move(to: CGPoint(x: 0, y: zeroY))
+              zeroLine.addLine(to: CGPoint(x: size.width, y: zeroY))
+              ctx.stroke(zeroLine, with: .color(.gray.opacity(0.3)), lineWidth: 1)
+
+              // Draw current aperture position
+              let curX = CGFloat(aperture) * size.width
+              var curLine = Path()
+              curLine.move(to: CGPoint(x: curX, y: 0))
+              curLine.addLine(to: CGPoint(x: curX, y: size.height))
+              ctx.stroke(curLine, with: .color(.white.opacity(0.5)), lineWidth: 1)
+
+              // Draw angleToOrigin (cyan)
+              var toOriginPath = Path()
+              toOriginPath.move(to: angleToOriginPts[0])
+              for pt in angleToOriginPts.dropFirst() { toOriginPath.addLine(to: pt) }
+              ctx.stroke(toOriginPath, with: .color(.cyan), lineWidth: 1.5)
+
+              // Draw angleDiff (orange)
+              var diffPath = Path()
+              diffPath.move(to: angleDiffPts[0])
+              for pt in angleDiffPts.dropFirst() { diffPath.addLine(to: pt) }
+              ctx.stroke(diffPath, with: .color(.orange), lineWidth: 1.5)
+
+              // Draw angleAperture (green)
+              var apPath = Path()
+              apPath.move(to: angleAperturePts[0])
+              for pt in angleAperturePts.dropFirst() { apPath.addLine(to: pt) }
+              ctx.stroke(apPath, with: .color(.green), lineWidth: 1.5)
+
+              // Legend
+              ctx.draw(Text("angleToOrigin").font(.system(size: 8)).foregroundColor(.cyan), at: CGPoint(x: 50, y: 10))
+              ctx.draw(Text("angleDiff").font(.system(size: 8)).foregroundColor(.orange), at: CGPoint(x: 120, y: 10))
+              ctx.draw(Text("angleAperture").font(.system(size: 8)).foregroundColor(.green), at: CGPoint(x: 175, y: 10))
+            }
+            .frame(height: 100)
+            .background(Color.black.opacity(0.3))
+            .font(.system(.caption, design: .monospaced))
+          }
+
+          GroupBox("Logging") {
+            Toggle("Log to console", isOn: $showLogging)
+            Button("Log Current State") {
+              logCurrentState()
+            }
+            .buttonStyle(.bordered)
+          }
+
+          Spacer()
+        }
+        .padding()
+      }
+      .frame(width: 280)
+    }
+    .onChange(of: aperture) { _, _ in
+      if showLogging { logCurrentState() }
+    }
+  }
+
+  private func logCurrentState() {
+    let algo = IrisSeamAlgorithm(bladeCount: bladeCount, irisRadius: irisRadius)
+    let data = algo.computeSeamData(bladeIndex: bladeIndex, aperture: Float(aperture))
+
+    log.info("""
+      === Blade \(bladeIndex) @ aperture \(aperture, format: .fixed(precision: 3)) ===
+      Pi: (\(data.pi.x, format: .fixed(precision: 3)), \(data.pi.y, format: .fixed(precision: 3)))
+      Aperture: (\(data.aperturePoint.x, format: .fixed(precision: 3)), \(data.aperturePoint.y, format: .fixed(precision: 3)))
+      Dome: (\(data.domePoint.x, format: .fixed(precision: 3)), \(data.domePoint.y, format: .fixed(precision: 3)))
+      angleAperture: \(data.angleAperture * 180 / .pi, format: .fixed(precision: 1))°
+      angleDome: \(data.angleDome * 180 / .pi, format: .fixed(precision: 1))°
+      angleDiff: \(data.angleDiff * 180 / .pi, format: .fixed(precision: 1))°
+      """)
+  }
+}
+
+#Preview {
+  IrisSeamAlgorithmDebugView()
+    .frame(width: 1100, height: 600)
+}
+
+// MARK: - Hemisphere Wireframe
+
+private func makeSeamHemisphereGeometry(radius: Float, latSegments: Int = 12, lonSegments: Int = 24) -> SCNGeometry {
+  var positions: [SCNVector3] = []
+
+  // Apex
+  positions.append(SCNVector3(0, radius, 0))
+
+  // Latitude rings (top to equator)
+  for lat in 1...latSegments {
+    let theta = Float(lat) * (Float.pi / 2) / Float(latSegments)
+    let y = radius * cos(theta)
+    let r = radius * sin(theta)
+    for lon in 0..<lonSegments {
+      let phi = Float(lon) * 2 * Float.pi / Float(lonSegments)
+      positions.append(SCNVector3(r * cos(phi), y, r * sin(phi)))
+    }
+  }
+
+  var indices: [Int32] = []
+
+  // Apex fan
+  for lon in 0..<lonSegments {
+    indices.append(0)
+    indices.append(Int32(1 + lon))
+    indices.append(Int32(1 + (lon + 1) % lonSegments))
+  }
+
+  // Latitude bands
+  for lat in 1..<latSegments {
+    let ringStart = 1 + (lat - 1) * lonSegments
+    let nextRingStart = 1 + lat * lonSegments
+    for lon in 0..<lonSegments {
+      let nextLon = (lon + 1) % lonSegments
+      let tl = Int32(ringStart + lon)
+      let tr = Int32(ringStart + nextLon)
+      let bl = Int32(nextRingStart + lon)
+      let br = Int32(nextRingStart + nextLon)
+      indices.append(contentsOf: [tl, bl, tr])
+      indices.append(contentsOf: [tr, bl, br])
+    }
+  }
+
+  let source = SCNGeometrySource(vertices: positions)
+  let indexData = Data(bytes: indices, count: indices.count * MemoryLayout<Int32>.size)
+  let element = SCNGeometryElement(
+    data: indexData,
+    primitiveType: .triangles,
+    primitiveCount: indices.count / 3,
+    bytesPerIndex: MemoryLayout<Int32>.size
+  )
+
+  let geo = SCNGeometry(sources: [source], elements: [element])
+  let mat = SCNMaterial()
+  mat.fillMode = .lines
+  mat.diffuse.contents = NSColor.gray.withAlphaComponent(0.3)
+  mat.lightingModel = .constant
+  mat.isDoubleSided = true
+  geo.materials = [mat]
+  return geo
+}
+
+// MARK: - 3D SceneKit View
+
+struct SeamScene3DView: NSViewRepresentable {
+  let bladeIndex: Int
+  let bladeCount: Int
+  let aperture: Float
+  let irisRadius: Float
+  let domeRadius: Float
+  let twistRadians: Float
+  let showAllBlades: Bool
+  let yawDegrees: Float
+  let pitchDegrees: Float
+  let cameraDistance: Float
+
+  private static let lookAtTarget = SIMD3<Float>(0, 0.2, 0)
+
+  func makeNSView(context: Context) -> SCNView {
+    let scnView = SCNView()
+    scnView.scene = SCNScene()
+    scnView.backgroundColor = .black
+    scnView.allowsCameraControl = false
+    scnView.autoenablesDefaultLighting = true
+
+    // Camera
+    let cameraNode = SCNNode()
+    cameraNode.camera = SCNCamera()
+    cameraNode.name = "camera"
+    Self.updateCamera(cameraNode, yaw: yawDegrees, pitch: pitchDegrees, distance: cameraDistance)
+    scnView.scene?.rootNode.addChildNode(cameraNode)
+
+    // Wireframe dome hemisphere (unit radius, scaled by domeRadius)
+    let domeNode = SCNNode(geometry: makeSeamHemisphereGeometry(radius: 1.0))
+    domeNode.name = "dome"
+    let s = CGFloat(domeRadius)
+    domeNode.scale = SCNVector3(s, s, s)
+    scnView.scene?.rootNode.addChildNode(domeNode)
+
+    // Seam node (will be updated)
+    let seamNode = SCNNode()
+    seamNode.name = "seam"
+    scnView.scene?.rootNode.addChildNode(seamNode)
+
+    return scnView
+  }
+
+  private static func updateCamera(_ cameraNode: SCNNode, yaw: Float, pitch: Float, distance: Float) {
+    let pos = PlaygroundCamera.position(yaw: yaw, pitch: pitch, distance: distance)
+    let target = lookAtTarget
+    cameraNode.simdPosition = pos + target
+    cameraNode.simdLook(at: target, up: SIMD3<Float>(0, 1, 0), localFront: SIMD3<Float>(0, 0, -1))
+  }
+
+  func updateNSView(_ scnView: SCNView, context: Context) {
+    guard let scene = scnView.scene else { return }
+
+    // Update camera
+    if let cameraNode = scene.rootNode.childNode(withName: "camera", recursively: false) {
+      Self.updateCamera(cameraNode, yaw: yawDegrees, pitch: pitchDegrees, distance: cameraDistance)
+    }
+
+    // Update dome size via scale
+    if let domeNode = scene.rootNode.childNode(withName: "dome", recursively: false) {
+      let s = CGFloat(domeRadius)
+      domeNode.scale = SCNVector3(s, s, s)
+    }
+
+    // Rebuild seam geometry
+    if let seamNode = scene.rootNode.childNode(withName: "seam", recursively: false) {
+      // Remove old children
+      seamNode.childNodes.forEach { $0.removeFromParentNode() }
+
+      let algo = IrisSeamAlgorithm(bladeCount: bladeCount, irisRadius: irisRadius)
+      let indicesToDraw = showAllBlades ? Array(0..<bladeCount) : [bladeIndex]
+
+      for idx in indicesToDraw {
+        let data = algo.computeSeamData(bladeIndex: idx, aperture: aperture)
+        let points3D = algo.computeArcPoints3D(
+          data: data,
+          domeRadius: domeRadius,
+          twistRadians: twistRadians,
+          segments: 32
+        )
+
+        if points3D.count > 1 {
+          // Create line geometry from points
+          var vertices: [SCNVector3] = []
+          var indices: [Int32] = []
+
+          for (i, pt) in points3D.enumerated() {
+            vertices.append(SCNVector3(pt.x, pt.y, pt.z))
+            if i > 0 {
+              indices.append(Int32(i - 1))
+              indices.append(Int32(i))
+            }
+          }
+
+          let vertexSource = SCNGeometrySource(vertices: vertices)
+          let indexData = Data(bytes: indices, count: indices.count * MemoryLayout<Int32>.size)
+          let element = SCNGeometryElement(
+            data: indexData,
+            primitiveType: .line,
+            primitiveCount: indices.count / 2,
+            bytesPerIndex: MemoryLayout<Int32>.size
+          )
+
+          let lineGeo = SCNGeometry(sources: [vertexSource], elements: [element])
+          let lineMat = SCNMaterial()
+          lineMat.diffuse.contents = idx == bladeIndex ? NSColor.orange : NSColor.orange.withAlphaComponent(0.3)
+          lineMat.lightingModel = .constant
+          lineGeo.materials = [lineMat]
+
+          let lineNode = SCNNode(geometry: lineGeo)
+          seamNode.addChildNode(lineNode)
+
+          // Add spheres at key points for selected blade
+          if idx == bladeIndex {
+            // Color by arcT: red at aperture (t=0) → green in middle → blue at dome (t=1)
+            for (i, pt) in points3D.enumerated() {
+              let t = Float(i) / Float(max(1, points3D.count - 1))
+              let sampleSphere = SCNSphere(radius: i == 0 || i == points3D.count - 1 ? 0.015 : 0.008)
+
+              // Rainbow from red (t=0) through green (t=0.5) to blue (t=1)
+              let r = max(0, 1 - t * 2)  // 1→0 over first half
+              let g = t < 0.5 ? t * 2 : 2 - t * 2  // 0→1→0
+              let b = max(0, t * 2 - 1)  // 0→1 over second half
+              let color = NSColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
+
+              sampleSphere.firstMaterial?.diffuse.contents = color
+              sampleSphere.firstMaterial?.lightingModel = .constant
+              let sampleNode = SCNNode(geometry: sampleSphere)
+              sampleNode.position = SCNVector3(pt.x, pt.y, pt.z)
+              seamNode.addChildNode(sampleNode)
+            }
+
+            // Also show the NEXT blade's aperture point to check connection
+            let nextIdx = (idx + 1) % bladeCount
+            let nextData = algo.computeSeamData(bladeIndex: nextIdx, aperture: aperture)
+            let nextAperturePt = algo.irisSpaceToDomePoint(
+              irisPos: nextData.aperturePoint,
+              domeRadius: domeRadius,
+              twistRadians: twistRadians
+            )
+            let nextApSphere = SCNSphere(radius: 0.012)
+            nextApSphere.firstMaterial?.diffuse.contents = NSColor.magenta
+            nextApSphere.firstMaterial?.lightingModel = .constant
+            let nextApNode = SCNNode(geometry: nextApSphere)
+            nextApNode.position = SCNVector3(nextAperturePt.x, nextAperturePt.y, nextAperturePt.z)
+            seamNode.addChildNode(nextApNode)
+          }
+        }
+      }
+    }
+  }
+}
+#endif

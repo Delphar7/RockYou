@@ -132,10 +132,30 @@ final class AppCacheManager: ObservableObject {
   }
 
   /// Trigger SwiftUI to re-render views showing icons (safe for external callers).
-  func bumpIconVersion() { iconVersion &+= 1 }
+  func bumpIconVersion() {
+    iconVersion &+= 1
+    iconLuminanceCache.removeAll()
+  }
 
   /// Trigger SwiftUI to re-render views that sort by MRU (safe for external callers).
   func bumpMRUVersion() { mruVersion &+= 1 }
+
+  // MARK: - Icon edge luminance
+
+  private var iconLuminanceCache: [String: CGFloat] = [:]
+
+  func iconEdgeLuminance(for appId: String, deviceId: String) -> CGFloat? {
+    let key = "\(deviceId)_\(appId)"
+    if let cached = iconLuminanceCache[key] { return cached }
+
+    guard let iconDirectory else { return nil }
+    let app = RokuApp(id: appId, name: "", type: nil, version: nil)
+    let fileURL = iconDirectory.appendingPathComponent(app.iconFilename(for: deviceId))
+    guard let native = PlatformImage.cachedNativeContentsOfFile(fileURL.path),
+          let lum = PlatformImage.edgeLuminance(of: native) else { return nil }
+    iconLuminanceCache[key] = lum
+    return lum
+  }
 
   private func saveHashes() {
     AppCachePersistence.saveHashes(iconMetas)

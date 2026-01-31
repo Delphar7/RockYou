@@ -94,6 +94,7 @@ struct AppStripView: View {
 
   // Single-flight pulse state owned by the strip (NOT by individual icons).
   @State private var glowPulseFactor: CGFloat = GlowPulseConfig.baseOpacity
+  @State private var shimmerPhase: CGFloat = 0
   @State private var lastPulseStartedAt: Date = .distantPast
   @State private var pulsePausedForInactivity: Bool = false
   @State private var pulseRestartNonce: Int = 0
@@ -125,12 +126,14 @@ struct AppStripView: View {
       }
     }
     base
+      .environment(\.glowShimmerPhase, shimmerPhase)
       .task(id: pulseTaskId) {
         guard AppStripPlatformPolicy.supportsGlowPulse else { return }
 
         // Reset when the task starts (must be MainActor for @State writes).
         await MainActor.run {
           glowPulseFactor = GlowPulseConfig.baseOpacity
+          shimmerPhase = 0
           pulsePausedForInactivity = false
         }
 
@@ -162,6 +165,7 @@ struct AppStripView: View {
               await MainActor.run {
                 pulsePausedForInactivity = true
                 glowPulseFactor = GlowPulseConfig.baseOpacity
+                shimmerPhase = 0
               }
               DebugBuild.run {
                 Log.debug(
@@ -196,6 +200,7 @@ struct AppStripView: View {
             let opacity = GlowPulseCurve.opacity(u: u, baseline: base)
             await MainActor.run {
               glowPulseFactor = CGFloat(max(0.0, min(1.0, opacity)))
+              shimmerPhase = CGFloat(u)
             }
             if step != steps {
               try? await Task.sleep(nanoseconds: UInt64(dt * 1_000_000_000))
@@ -216,6 +221,7 @@ struct AppStripView: View {
           // Snap back to baseline (avoid drift).
           await MainActor.run {
             glowPulseFactor = GlowPulseConfig.baseOpacity
+            shimmerPhase = 0
           }
 
           DebugBuild.run {

@@ -1,3 +1,4 @@
+#if false
 // IrisSeamEquationsDebugView.swift
 // RockYou
 //
@@ -788,3 +789,4 @@ struct IrisSeamEquationsDebugView: View {
   IrisSeamEquationsDebugView()
     .frame(width: 950, height: 700)
 }
+#endif

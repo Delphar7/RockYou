@@ -2,11 +2,14 @@
 // RockYou/UI/Dome
 //
 // 3D "emergency dome doors" over the DPad.
-// Uses SceneView with IrisContent for GPU-driven iris mechanism animation.
+// Uses SceneView with a randomly selected dome animation (iris / ripple / shatter).
 
 import Foundation
+import os
 import RealityKit
 import SwiftUI
+
+private let doorsLog = Logger(subsystem: "com.rockyou", category: "DoorsView")
 
 struct DomeDoorsView: View {
   /// 0 = closed dome, 1 = fully opened (doors moved away)
@@ -15,21 +18,38 @@ struct DomeDoorsView: View {
   /// Optional debug override for the camera orbit.
   var debugCameraOrbit: DomeDebugCameraOrbit? = nil
 
-  // Animation config (can be randomized for variety)
-  private let irisConfig: IrisAnimationConfig
+  /// Full-screen viewport size (nil = legacy DPad-bound mode).
+  var viewportSize: CGSize? = nil
 
-  @State private var content: IrisContent?
+  /// Old dome frame size for scale ratio (nil = legacy mode).
+  var referenceDomeSize: CGFloat? = nil
 
-  init(openProgress: CGFloat, debugCameraOrbit: DomeDebugCameraOrbit? = nil) {
+  /// Called when the animation's content reports completion.
+  var onComplete: (() -> Void)? = nil
+
+  // Randomly selected animation with production overrides
+  private let animation: DomeAnimation
+
+  @State private var content: SceneContent?
+
+  init(
+    openProgress: CGFloat,
+    debugCameraOrbit: DomeDebugCameraOrbit? = nil,
+    viewportSize: CGSize? = nil,
+    referenceDomeSize: CGFloat? = nil,
+    onComplete: (() -> Void)? = nil
+  ) {
     self.openProgress = openProgress
     self.debugCameraOrbit = debugCameraOrbit
+    self.viewportSize = viewportSize
+    self.referenceDomeSize = referenceDomeSize
+    self.onComplete = onComplete
 
-    // Create config for production use
-    var config = IrisAnimationConfig.randomized()
-    config.domeRadius = DomeSceneConfig.domeRadius
-    config.openDuration = DomeSceneConfig.openDuration
-    config.showSeamRibbons = true
-    self.irisConfig = config
+    // iOS Simulator can't render RealityKit content (Apple2 GPU, no CustomMaterial support).
+    // Dome animations are device/Mac only; simulator shows nothing — test on-device.
+    let selected = DomeAnimationFactory.random()
+    self.animation = selected.animation.withProductionDefaults()
+    doorsLog.debug("Dome animation: \(selected.name)")
   }
 
   var body: some View {
@@ -37,15 +57,16 @@ struct DomeDoorsView: View {
       if let content {
         SceneView(
           content: content,
-          time: Float(openProgress) * irisConfig.openDuration,
+          time: Float(openProgress) * DomeSceneConfig.openDuration,
           cameraPosition: cameraPosition(for: Float(openProgress)),
           cameraFOV: DomeSceneConfig.cameraFovDegrees
         )
         .onAppear {
           // Position and scale are applied to the content entity
           content.entity.position = [0, 0.01, 0]
-          let s = DomeSceneConfig.domeEntityScale
+          let s = computeEntityScale()
           content.entity.scale = [s, s, s]
+          Log.debug("DoorsView", "SceneView appeared: scale=\(s) viewportH=\(viewportSize?.height ?? -1) refDome=\(referenceDomeSize ?? -1)")
         }
       }
     }
@@ -53,9 +74,25 @@ struct DomeDoorsView: View {
     .onAppear {
       // Create content lazily on appear
       if content == nil {
-        content = IrisContent(config: irisConfig)
+        let cameraPos = cameraPosition(for: 0)
+        Log.debug("DoorsView", "Creating content: viewportSize=\(String(describing: viewportSize)) refDome=\(String(describing: referenceDomeSize))")
+        content = animation.makeContent(cameraPosition: cameraPos)
+        Log.debug("DoorsView", "Content created: entity.children=\(content?.entity.children.count ?? -1)")
       }
     }
+    .onChange(of: openProgress) { _, _ in
+      if content?.isComplete == true {
+        onComplete?()
+      }
+    }
+  }
+
+  /// Computes entity scale, compensating for a larger viewport so the dome
+  /// keeps the same apparent pixel size at center.
+  private func computeEntityScale() -> Float {
+    let base = DomeSceneConfig.domeEntityScale
+    guard let viewportSize, let ref = referenceDomeSize, ref > 0 else { return base }
+    return base * Float(ref) / Float(viewportSize.height)
   }
 
   /// Computes camera position, using debug override if available

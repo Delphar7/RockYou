@@ -1,0 +1,396 @@
+// IrisSpheresAlgorithm.h
+// RockYou
+//
+// Sphere-based iris mechanism: blade coverage and seam computation
+// directly in 3D. No 2D iris space or projection needed.
+//
+// Blade i covers point Q if: dist(Q, P_i_3d) > R
+// where P_i_3d = (P_i.x, 0, P_i.z) on the XZ plane.
+//
+// Seam between blades is the intersection of two equal-radius spheres
+// (dome sphere centered at origin, blade sphere centered at P_i_3d),
+// which is always a circle lying on the dome surface.
+
+#pragma once
+
+#include <metal_stdlib>
+#include "../FragmentMath.h"
+#include "../FragmentState.h"
+
+using namespace metal;
+
+// =============================================================================
+// Iris Spheres: data structures
+// =============================================================================
+
+struct IrisSpheresFragmentState {
+  float3 position;
+  float3 normal;
+  float4 rotation;
+  float elapsed;
+  bool visible;
+  int bladeIndex;
+};
+
+namespace iris_spheres {
+
+using DomeParams = fragment_math::DomeParams;
+
+// =============================================================================
+// Blade kinematics (same pivot math as original, lifted to 3D)
+// =============================================================================
+
+/// Compute P_i in 3D: the center of blade i's coverage sphere.
+/// Lives on the XZ plane (Y=0).
+inline float3 computePi3D(
+    int bladeIndex,
+    float aperture,      // 0 = open, 1 = closed
+    int bladeCount,
+    float radius         // pivot circle radius = dome radius
+) {
+  float pivotAngle = float(bladeIndex) * (2.0f * M_PI_F / float(max(1, bladeCount)));
+  float2 pivotPos = float2(radius * cos(pivotAngle), radius * sin(pivotAngle));
+
+  float closureRotation = 5.0f * M_PI_F / 6.0f;
+  float bladeAngle = pivotAngle + aperture * closureRotation;
+  float c = cos(bladeAngle);
+  float s = sin(bladeAngle);
+  float2 pLocal = float2(-radius, 0);
+  float2 pRel = float2(c * pLocal.x - s * pLocal.y, s * pLocal.x + c * pLocal.y);
+
+  float2 pi2D = pivotPos + pRel;
+  return float3(pi2D.x, 0.0f, pi2D.y);  // Lift to XZ plane
+}
+
+// =============================================================================
+// Blade coverage (3D sphere check)
+// =============================================================================
+
+/// Check if blade i covers point Q (on dome surface).
+/// Blade covers Q when Q is OUTSIDE blade's sphere: dist(Q, P_i) > R.
+inline bool bladeCoverage(float3 Q, float3 Pi, float R) {
+  return length(Q - Pi) > R;
+}
+
+/// Find visible blade using pinwheel rule with sphere distance checks.
+/// Returns blade index or -1 if point is in the opening.
+inline int findVisibleBlade(
+    float3 Q,            // Point on dome surface
+    float aperture,
+    int bladeCount,
+    float radius         // dome radius = sphere radius
+) {
+  for (int i = 0; i < bladeCount; i++) {
+    float3 pi = computePi3D(i, aperture, bladeCount, radius);
+
+    if (bladeCoverage(Q, pi, radius)) {
+      // Blade i covers Q. Does successor also cover?
+      int successor = (i + 1) % bladeCount;
+      float3 piNext = computePi3D(successor, aperture, bladeCount, radius);
+
+      if (!bladeCoverage(Q, piNext, radius)) {
+        return i;  // Blade i visible: covers Q but successor doesn't
+      }
+    }
+  }
+  return -1;  // Opening
+}
+
+// =============================================================================
+// Seam geometry: sphere-sphere intersection circle (simplified)
+// =============================================================================
+//
+// Key insight: both spheres have equal radius R, one is at the origin, and
+// the other's center Pi is always on the XZ plane (Pi.y = 0). Therefore:
+//   - The intersection circle's normal is always horizontal (in XZ)
+//   - One basis vector is always Y_hat
+//   - Y = r_c * sin(θ), so Y=0 at θ=0 and θ=π (trivial)
+//   - The aperture theta is a single acos (no root ambiguity)
+//   - Arc interpolation stays in [0, π] — no angle wrapping
+
+/// Data describing the intersection circle of dome sphere and blade sphere.
+struct SeamCircle {
+  float3 center;       // Circle center (= P_i / 2)
+  float circleRadius;  // Radius of the intersection circle
+  float3 normal;       // Circle normal (= normalize(P_i)), always in XZ
+  float3 u;            // Basis vector in circle plane, in XZ
+  float3 v;            // Basis vector in circle plane, always (0,1,0)
+  bool valid;          // False if spheres don't intersect properly
+};
+
+/// Compute the intersection circle of the dome sphere and a blade sphere.
+/// Exploits the constraint that Pi lies on the XZ plane.
+inline SeamCircle computeSeamCircle(
+    float3 Pi,           // Blade center (3D, on XZ plane)
+    float R              // Dome radius = sphere radius
+) {
+  SeamCircle sc;
+  float piDist = length(Pi);
+
+  // Spheres don't intersect if centers too close or too far apart
+  if (piDist < 0.001f || piDist > 2.0f * R) {
+    sc.valid = false;
+    return sc;
+  }
+
+  sc.valid = true;
+
+  // Circle center: midpoint along Pi direction
+  sc.center = Pi * 0.5f;
+
+  // Circle radius: sqrt(R² - |Pi|²/4)
+  sc.circleRadius = sqrt(max(0.0f, R * R - piDist * piDist * 0.25f));
+
+  // Circle normal: direction of Pi (always in XZ since Pi.y = 0)
+  sc.normal = Pi / piDist;
+
+  // Deterministic basis — no branching needed:
+  // normal = (n.x, 0, n.z), so u = (n.z, 0, -n.x) is perpendicular in XZ
+  // v = (0, 1, 0) is always perpendicular to both (since normal is horizontal)
+  sc.u = float3(sc.normal.z, 0.0f, -sc.normal.x);
+  sc.v = float3(0.0f, 1.0f, 0.0f);
+
+  return sc;
+}
+
+/// Evaluate a point on the seam circle at parameter angle theta.
+inline float3 seamCirclePoint(SeamCircle sc, float theta) {
+  return sc.center + sc.circleRadius * (cos(theta) * sc.u + sin(theta) * sc.v);
+}
+
+// =============================================================================
+// Seam arc endpoints (simplified)
+// =============================================================================
+
+/// Find the aperture theta: where blade i's seam circle intersects blade i+1's sphere.
+/// Since both centers are on the XZ plane and v = Y_hat, the sin(θ) term vanishes,
+/// giving a direct formula: cos(θ) = (R² - |d|² - r²) / (2r · dot(d, u))
+/// acos returns θ ∈ [0, π] = upper hemisphere — one root, no ambiguity.
+inline float findApertureTheta(
+    SeamCircle sc,       // Blade i's seam circle
+    float3 PiNext,       // Blade i+1 center (on XZ plane)
+    float R              // Sphere radius
+) {
+  float3 d = sc.center - PiNext;  // d is in XZ plane (d.y = 0)
+  float denom = 2.0f * sc.circleRadius * dot(d, sc.u);
+
+  // Guard against degenerate case
+  if (abs(denom) < 0.0001f) {
+    return -1000.0f;
+  }
+
+  float cosTheta = (R * R - dot(d, d) - sc.circleRadius * sc.circleRadius) / denom;
+
+  // Check validity before clamping (reject if > 1% out of range)
+  if (cosTheta < -1.01f || cosTheta > 1.01f) {
+    return -1000.0f;
+  }
+
+  return acos(clamp(cosTheta, -1.0f, 1.0f));
+}
+
+// =============================================================================
+// Combined seam point + tangent computation
+// =============================================================================
+
+struct SeamPointResult {
+  float3 position;
+  float3 tangent;
+  bool valid;
+};
+
+/// Compute position and analytical tangent along blade i's seam arc.
+/// arcT: 0 = aperture end (where seams meet), 1 = dome edge (equator)
+inline SeamPointResult computeSeamPointAndTangent(
+    int bladeIndex,
+    float arcT,
+    float aperture,
+    int bladeCount,
+    float radius          // dome radius = sphere radius
+) {
+  SeamPointResult result;
+  result.valid = false;
+  result.position = float3(0, -1000.0f, 0);
+  result.tangent = float3(0, 0, 0);
+
+  // Hide seams when iris is nearly fully open
+  if (aperture < 0.05f) {
+    return result;
+  }
+
+  float3 Pi = computePi3D(bladeIndex, aperture, bladeCount, radius);
+  SeamCircle sc = computeSeamCircle(Pi, radius);
+
+  if (!sc.valid) {
+    return result;
+  }
+
+  // Find aperture theta (intersection with successor blade's sphere)
+  int successor = (bladeIndex + 1) % bladeCount;
+  float3 PiNext = computePi3D(successor, aperture, bladeCount, radius);
+  float thetaAperture = findApertureTheta(sc, PiNext, radius);
+
+  if (thetaAperture < -999.0f) {
+    return result;
+  }
+
+  // Find dome edge theta: Y = r_c * sin(θ), so Y=0 at θ=0 and θ=π.
+  // Pick the equator point that is INSIDE the successor's sphere
+  // (where successor does NOT cover → blade i is visible).
+  float3 equator0 = seamCirclePoint(sc, 0.0f);    // θ = 0
+  float3 equatorPi = seamCirclePoint(sc, M_PI_F);  // θ = π
+
+  float3 diff0 = equator0 - PiNext;
+  float3 diffPi = equatorPi - PiNext;
+
+  // Inside successor's sphere means dist² ≤ R²
+  float thetaDome;
+  if (dot(diff0, diff0) <= radius * radius) {
+    thetaDome = 0.0f;
+  } else if (dot(diffPi, diffPi) <= radius * radius) {
+    thetaDome = M_PI_F;
+  } else {
+    // Neither equator point is inside successor — fallback
+    thetaDome = M_PI_F;
+  }
+
+  // Linear interpolation: both thetas in [0, π], so no wrapping needed
+  float theta = thetaAperture + arcT * (thetaDome - thetaAperture);
+
+  float3 pos = seamCirclePoint(sc, theta);
+
+  // Ensure on dome surface (numerical precision)
+  float len = length(pos);
+  if (len > 0.001f) {
+    pos = pos * (radius / len);
+  }
+
+  // Analytical tangent: d/dt of circle parameterization
+  // θ = thetaAperture + arcT * (thetaDome - thetaAperture), so dθ/dt = thetaDome - thetaAperture
+  float dThetaDt = thetaDome - thetaAperture;
+  float3 tangent = sc.circleRadius * (-sin(theta) * sc.u + cos(theta) * sc.v) * dThetaDt;
+
+  result.position = pos;
+  result.tangent = tangent;
+  result.valid = true;
+  return result;
+}
+
+// =============================================================================
+// Main seam point computation (convenience wrapper)
+// =============================================================================
+
+/// Compute a point along blade i's seam arc.
+/// arcT: 0 = aperture end (where seams meet), 1 = dome edge (equator)
+/// Returns 3D position on dome surface.
+inline float3 computeSeamPoint(
+    int bladeIndex,
+    float arcT,
+    float aperture,
+    int bladeCount,
+    float radius          // dome radius = sphere radius
+) {
+  SeamPointResult r = computeSeamPointAndTangent(bladeIndex, arcT, aperture, bladeCount, radius);
+  return r.position;
+}
+
+// =============================================================================
+// Config reading (reuses iris texture layout)
+// =============================================================================
+
+struct PhysicsData {
+  int bladeCount;
+  float radius;
+  float openDuration;
+};
+
+template<typename T>
+inline PhysicsData readPhysicsData(
+    int fragmentIndex,
+    texture2d<T, access::sample> tex,
+    sampler texSampler,
+    float texWidth,
+    float texHeight
+) {
+  PhysicsData pd;
+
+  // Read dome radius directly from col 3 (R,G) — the canonical source.
+  // (The baseSpeed path in readPhysicsConfig reads from col 10 B,A which
+  //  doesn't match how IrisSpheresContent encodes it into col 10 R,G.)
+  float2 h3UV = float2(3.5f / texWidth, 0.5f / texHeight);
+  float4 h3 = float4(tex.sample(texSampler, h3UV));
+  pd.radius = fragment_math::decode16bit(h3.r, h3.g, 0.0f, 2.0f);
+
+  // Read iris-specific config from col 14
+  float2 c14UV = float2(14.5f / texWidth, 0.5f / texHeight);
+  float4 c14 = float4(tex.sample(texSampler, c14UV));
+  pd.bladeCount = int(fragment_math::decode16bitInt(c14.r, c14.g));
+  pd.openDuration = fragment_math::decode16bit(c14.b, c14.a, 0.1f, 10.0f);
+
+  return pd;
+}
+
+// =============================================================================
+// Main state computation (for dome fragment shader)
+// =============================================================================
+
+inline IrisSpheresFragmentState computeState(
+    int fragmentIndex,
+    float time,
+    DomeParams dome,
+    PhysicsData physics
+) {
+  IrisSpheresFragmentState state;
+  state.elapsed = time;
+
+  float3 center = fragment_math::computeCenterFromIndex(
+    fragmentIndex, dome.latSegments, dome.lonSegments, dome.radius
+  );
+  float3 normal = normalize(center);
+
+  // Aperture animation: closed (1) -> open (0)
+  float aperture = clamp(time / physics.openDuration, 0.0f, 1.0f);
+
+  // Find which blade covers this point using 3D sphere check
+  int bladeIndex = findVisibleBlade(
+    center, aperture,
+    physics.bladeCount, physics.radius
+  );
+
+  if (bladeIndex < 0) {
+    state.position = float3(center.x, -1.0f, center.z);
+    state.normal = normal;
+    state.rotation = float4(0, 0, 0, 1);
+    state.visible = false;
+    state.bladeIndex = -1;
+    return state;
+  }
+
+  state.position = center;
+  state.normal = normal;
+  state.rotation = float4(0, 0, 0, 1);
+  state.visible = true;
+  state.bladeIndex = bladeIndex;
+
+  return state;
+}
+
+// =============================================================================
+// Visibility state (for FRAGMENT_VISIBILITY_KERNEL macro)
+// =============================================================================
+
+inline FragmentState computeVisibilityState(
+    int fragmentIndex,
+    float time,
+    DomeParams dome,
+    PhysicsData physics
+) {
+  IrisSpheresFragmentState full = computeState(fragmentIndex, time, dome, physics);
+  FragmentState fs;
+  fs.position = full.position;
+  fs.normal = full.normal;
+  fs.visible = full.visible;
+  return fs;
+}
+
+}  // namespace iris_spheres

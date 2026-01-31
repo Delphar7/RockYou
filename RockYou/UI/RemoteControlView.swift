@@ -184,6 +184,9 @@ struct RemoteControlView: View {
       // "Connect Hardware Keyboard" setting. Forcing focus here can make debugging harder.
       .onChange(of: scenePhase) { _, newValue in
         Task { await updateActiveStatePollingEnablement(phase: newValue) }
+        if newValue == .active {
+          Task { await reconnectOnResume() }
+        }
       }
       .onChange(of: selection.selectedDeviceId) { _, newDeviceId in
         Task { await updateActiveStatePollingEnablement(selectedDeviceId: newDeviceId) }
@@ -409,35 +412,41 @@ struct RemoteControlView: View {
   private func shellContent(in geometry: GeometryProxy) -> some View {
     switch layoutMode {
     case .portraitCompact:
-      GeometryReader { proxy in
-        RemotePortraitCompactControlsView(
-          containerSize: proxy.size,
-          selectedDeviceId: selection.selectedDeviceId,
-          hardwareControlsAvailable: selection.hardwareControlsAvailable,
-          showingConfigure: $showingConfigure,
-          phoneHomeDelay: settings.phoneHomeDelay,
-          onAction: onAction
-        )
-      }
-      // Ensure a stable "breathing gap" between header and the top purple row.
-      .padding(.top, 12)
-
-    case .landscapeSplit:
-      HStack(spacing: 0) {
+      ZStack {
+        FullScreenDomeView()
         GeometryReader { proxy in
-          // Reduce usable height by bottom clearance so button shadows don't clip into AppStrip.
-          let clearance: CGFloat = 16
-          let adjustedSize = CGSize(width: proxy.size.width, height: proxy.size.height - clearance)
           RemotePortraitCompactControlsView(
-            containerSize: adjustedSize,
+            containerSize: proxy.size,
             selectedDeviceId: selection.selectedDeviceId,
             hardwareControlsAvailable: selection.hardwareControlsAvailable,
             showingConfigure: $showingConfigure,
             phoneHomeDelay: settings.phoneHomeDelay,
             onAction: onAction
           )
-          // Ensure a stable "breathing gap" between header and the top purple row.
-          .padding(.top, 12)
+        }
+      }
+      // Ensure a stable "breathing gap" between header and the top purple row.
+      .padding(.top, 12)
+
+    case .landscapeSplit:
+      HStack(spacing: 0) {
+        ZStack {
+          FullScreenDomeView()
+          GeometryReader { proxy in
+            // Reduce usable height by bottom clearance so button shadows don't clip into AppStrip.
+            let clearance: CGFloat = 16
+            let adjustedSize = CGSize(width: proxy.size.width, height: proxy.size.height - clearance)
+            RemotePortraitCompactControlsView(
+              containerSize: adjustedSize,
+              selectedDeviceId: selection.selectedDeviceId,
+              hardwareControlsAvailable: selection.hardwareControlsAvailable,
+              showingConfigure: $showingConfigure,
+              phoneHomeDelay: settings.phoneHomeDelay,
+              onAction: onAction
+            )
+            // Ensure a stable "breathing gap" between header and the top purple row.
+            .padding(.top, 12)
+          }
         }
         .frame(maxWidth: .infinity)
 
@@ -614,6 +623,22 @@ struct RemoteControlView: View {
       await RokuECPClient.shared.setAppListRefreshEnabledDeviceIds([])
       await RokuECPClient.shared.setActiveStatePollingEnabledDeviceIds([])
       Log.warn("Remote", "Device not found for IP: \(ip)")
+    }
+  }
+
+  // MARK: - Resume Reconnection
+
+  /// Called when the app returns to foreground. Probes the WebSocket connection and
+  /// reconnects if stale, then resets gesture routers that may have been mid-flight.
+  private func reconnectOnResume() async {
+    #if os(iOS)
+      SweepableTouchRouter.resetAllOnResume()
+    #endif
+
+    guard let device = selection.selectedDevice else { return }
+    let reconnected = await RokuECPClient.shared.reconnectIfNeeded(for: device)
+    if reconnected {
+      await RokuECPClient.shared.snapshotActiveStateNow(for: device)
     }
   }
 

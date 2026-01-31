@@ -1,3 +1,4 @@
+#if 0
 // IrisSeamRibbonShader.metal
 // RockYou
 //
@@ -11,6 +12,9 @@
 #include "Algorithms/IrisSeamProjection.h"
 
 using namespace metal;
+
+// Set to 1 to enable debug warning colors on seam ribbons
+#define IRIS_SEAM_DEBUG 0
 
 // Geometry modifier: positions ribbon vertices along blade boundary arcs
 [[visible]]
@@ -37,10 +41,19 @@ void irisSeamRibbonGeometryModifier(realitykit::geometry_parameters params) {
   float aperture = 1.0f - clamp(time / physics.openDuration, 0.0f, 1.0f);
 
   // Compute seam point using unified projection
+#if IRIS_SEAM_DEBUG
+  float warning = 0.0f;
+  float3 pos3D = iris_projection::computeSeamPoint(
+    bladeIndex, arcT, aperture,
+    physics.bladeCount, physics.radius, dome.radius, physics.twistRadians,
+    &warning
+  );
+#else
   float3 pos3D = iris_projection::computeSeamPoint(
     bladeIndex, arcT, aperture,
     physics.bladeCount, physics.radius, dome.radius, physics.twistRadians
   );
+#endif
 
   // Hide vertex if seam computation returned hidden marker
   if (pos3D.y < -100.0f) {
@@ -63,49 +76,60 @@ void irisSeamRibbonGeometryModifier(realitykit::geometry_parameters params) {
   if (posPrev.y < -100.0f) posPrev = pos3D;
   if (posNext.y < -100.0f) posNext = pos3D;
 
-  // Compute tangent along the seam curve
-  float3 tangentDir = posNext - posPrev;
-  float tangentLen = length(tangentDir);
-
   // Normal is always outward from dome center
   float3 normal = normalize(pos3D);
 
-  // Binormal: perpendicular to both normal and tangent, lying on dome surface
+  // Compute tangent along the seam curve
+  // Project onto tangent plane (perpendicular to normal) to avoid numerical issues
+  // where discrete sampling gives a tangent with a radial component
+  float3 tangentDir = posNext - posPrev;
+  tangentDir = tangentDir - normal * dot(tangentDir, normal);  // Project to tangent plane
+  float tangentLen = length(tangentDir);
+
+  // Compute binormal: perpendicular to both normal and tangent, lying on dome surface
+  // Use circumferential direction as fallback (always well-defined except at exact apex)
+  float2 radialXZ = float2(pos3D.x, pos3D.z);
+  float radialLen = length(radialXZ);
+
   float3 binormal;
-  if (tangentLen < 0.0001f) {
-    // Degenerate case: no valid tangent, use arbitrary perpendicular
-    binormal = normalize(cross(normal, float3(0, 1, 0)));
-    if (length(binormal) < 0.001f) {
-      binormal = normalize(cross(normal, float3(1, 0, 0)));
-    }
-  } else {
+  if (tangentLen > 0.0001f) {
+    // Normal case: binormal from cross product
     float3 tangent = tangentDir / tangentLen;
-    binormal = cross(normal, tangent);
-    float binormalLen = length(binormal);
-    if (binormalLen < 0.001f) {
-      // Tangent nearly parallel to normal, use arbitrary perpendicular
-      binormal = normalize(cross(normal, float3(0, 1, 0)));
-      if (length(binormal) < 0.001f) {
-        binormal = normalize(cross(normal, float3(1, 0, 0)));
-      }
-    } else {
-      binormal = binormal / binormalLen;
-    }
+    binormal = normalize(cross(normal, tangent));
+  } else if (radialLen > 0.001f) {
+    // No valid tangent but not at apex: use circumferential direction
+    // Rotate radial direction 90° in XZ plane
+    float2 circumXZ = float2(-radialXZ.y, radialXZ.x) / radialLen;
+    binormal = normalize(float3(circumXZ.x, 0, circumXZ.y));
+  } else {
+    // At apex: arbitrary direction (ribbon will taper to zero anyway)
+    binormal = float3(1, 0, 0);
   }
 
-  // Apply width offset along binormal (on dome surface)
-  float ribbonWidth = 0.003f;
+  // Taper ribbon width near apex to avoid singularity where all seams converge
+  float apexTaper = smoothstep(0.0f, 0.15f, radialLen / dome.radius);
+  float ribbonWidth = 0.003f * apexTaper;
   float3 offsetPos = pos3D + binormal * widthSign * ribbonWidth;
 
-  // Apply outward offset to sit above dome surface
-  float3 finalPos = offsetPos + normal * 0.005f;
+  // Re-project to dome surface + outward offset for z-fighting avoidance
+  float3 finalPos = normalize(offsetPos) * (dome.radius + 0.008f);
 
   // Set position
   float3 meshPos = params.geometry().model_position();
   params.geometry().set_model_position_offset(finalPos - meshPos);
   params.geometry().set_normal(normal);
+
+#if IRIS_SEAM_DEBUG
+  // Pass warning to surface shader via UV (add to x, surface shader checks if x > 1)
+  if (warning > 0.0f) {
+    float2 newUV = uv;
+    newUV.x += 1.0f + warning;  // Signal: uv.x > 1 means warning active
+    params.geometry().set_uv0(newUV);
+  }
+#endif
 }
 
+#if IRIS_SEAM_DEBUG
 // Color palette for debugging blade boundaries
 constant half3 ribbonPalette[] = {
   half3(0.9h, 0.3h, 0.3h),  // Red
@@ -117,18 +141,34 @@ constant half3 ribbonPalette[] = {
   half3(0.7h, 0.3h, 0.9h),  // Purple
   half3(0.9h, 0.4h, 0.7h),  // Pink
 };
+#endif
 
-// Surface shader: colored by blade index for debugging
+// Surface shader: uniform seam color (or debug warning colors when IRIS_SEAM_DEBUG=1)
 [[visible]]
 void irisSeamRibbonSurfaceShader(realitykit::surface_parameters params) {
+#if IRIS_SEAM_DEBUG
   float2 uv = params.geometry().uv0();
   int bladeIndex = int(floor(uv.y));
   int colorIndex = bladeIndex % 8;
-
   half3 color = ribbonPalette[colorIndex];
+
+  // Warning overlay: geometry modifier encodes warning code in uv.x > 1
+  if (uv.x > 1.0f) {
+    float warningCode = uv.x - 1.0f;
+    int warningType = int(warningCode);
+    if (warningType == 1) color = half3(0.0h, 1.0h, 1.0h);      // Cyan: P_i near origin
+    else if (warningType == 2) color = half3(1.0h, 0.0h, 1.0h);  // Magenta: angleDiff large
+    else if (warningType == 3) color = half3(1.0h, 1.0h, 0.0h);  // Yellow: angleDiff small
+    else if (warningType == 4) color = half3(1.0h, 0.0h, 0.0h);  // Red: arcPoint outside dome
+  }
+
   params.surface().set_base_color(color);
+#else
+  params.surface().set_base_color(half3(0.85h, 0.85h, 0.85h));
+#endif
   params.surface().set_metallic(0.0h);
   params.surface().set_roughness(0.3h);
   params.surface().set_specular(0.5h);
-  params.surface().set_opacity(1.0h);  // Fully opaque
+  params.surface().set_opacity(1.0h);
 }
+#endif

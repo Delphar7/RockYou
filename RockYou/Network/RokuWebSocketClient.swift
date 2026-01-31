@@ -267,6 +267,27 @@ actor RokuWebSocketClient {
     state == .connected
   }
 
+  /// Probe whether the connection is actually alive by sending a lightweight query.
+  /// Returns `true` if the device responds within 3 seconds, `false` on any error.
+  /// Dead TCP connections typically fail fast (RST), so this rarely blocks the full timeout.
+  func isHealthy() async -> Bool {
+    guard state == .connected, let conn = connection else { return false }
+
+    let requestId = String(requestCounter)
+    requestCounter += 1
+
+    let json = """
+      {"request":"query-device-info","request-id":"\(requestId)"}
+      """
+
+    do {
+      let response = try await sendRequestWithTimeout(json, to: conn, requestId: requestId, timeout: 3)
+      return response.isSuccess
+    } catch {
+      return false
+    }
+  }
+
   // MARK: - Authentication
 
   private func handleAuthentication() async throws {

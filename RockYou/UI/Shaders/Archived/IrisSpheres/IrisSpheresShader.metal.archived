@@ -1,20 +1,20 @@
-// IrisShader.metal
+#if 0
+// IrisSpheresShader.metal
 // RockYou
 //
-// Iris mechanism shader.
-// Blade coverage uses dot(Q, n_i) > threshold (half-space checks).
-// Supports spiral seams via tilt parameter.
+// Sphere-based iris mechanism shader.
+// Blade coverage uses 3D sphere distance checks instead of 2D projection.
 
 #include <metal_stdlib>
 #include <RealityKit/RealityKit.h>
 #include "FragmentShaderScaffold.h"
-#include "Algorithms/IrisAlgorithm.h"
+#include "Algorithms/IrisSpheresAlgorithm.h"
 
 using namespace metal;
 
 // Geometry modifier for iris dome fragments
 [[visible]]
-void irisGeometryModifier(realitykit::geometry_parameters params) {
+void irisSpheresGeometryModifier(realitykit::geometry_parameters params) {
   float4 customParams = params.uniforms().custom_parameter();
   float time = customParams.x;
   float3 cameraPos = float3(customParams.y, customParams.z, customParams.w);
@@ -28,9 +28,9 @@ void irisGeometryModifier(realitykit::geometry_parameters params) {
   int fragmentIndex = int(round(uv.x));
 
   fragment_math::DomeParams dome = fragment_math::readDomeParams(dataTexture, texSampler, texWidth, texHeight);
-  iris::PhysicsData physics = iris::readPhysicsData(fragmentIndex, dataTexture, texSampler, texWidth, texHeight);
+  iris_spheres::PhysicsData physics = iris_spheres::readPhysicsData(fragmentIndex, dataTexture, texSampler, texWidth, texHeight);
 
-  IrisFragmentState state = iris::computeState(fragmentIndex, time, dome, physics);
+  IrisSpheresFragmentState state = iris_spheres::computeState(fragmentIndex, time, dome, physics);
 
   // Apply position offset
   float3 center = fragment_math::computeCenterFromIndex(fragmentIndex, dome.latSegments, dome.lonSegments, dome.radius);
@@ -56,10 +56,10 @@ void irisGeometryModifier(realitykit::geometry_parameters params) {
   params.geometry().set_uv1(float2(float(state.bladeIndex), 0.0f));
 }
 
-FRAGMENT_VISIBILITY_KERNEL(iris, iris)
+FRAGMENT_VISIBILITY_KERNEL(irisSpheres, iris_spheres)
 
 // HSV to RGB for rainbow blade tints
-inline half3 hsv2rgb_iris(half h, half s, half v) {
+inline half3 hsv2rgb_spheres(half h, half s, half v) {
   half c = v * s;
   half x = c * (1.0h - abs(fmod(h * 6.0h, 2.0h) - 1.0h));
   half m = v - c;
@@ -70,14 +70,14 @@ inline half3 hsv2rgb_iris(half h, half s, half v) {
   else if (h < 3.0h/6.0h) rgb = half3(0, c, x);
   else if (h < 4.0h/6.0h) rgb = half3(0, x, c);
   else if (h < 5.0h/6.0h) rgb = half3(x, 0, c);
-  else                     rgb = half3(c, 0, x);
+  else                    rgb = half3(c, 0, x);
 
   return rgb + m;
 }
 
 // Surface shader: rainbow-tinted glass
 [[visible]]
-void irisSurfaceShader(realitykit::surface_parameters params) {
+void irisSpheresSurfaceShader(realitykit::surface_parameters params) {
   float3 normal = params.geometry().normal();
   float3 view = params.geometry().view_direction();
   bool backFacing = dot(normal, view) < 0.0f;
@@ -86,7 +86,7 @@ void irisSurfaceShader(realitykit::surface_parameters params) {
   int bladeIndex = int(uv1.x);
 
   half hue = half(bladeIndex) / 12.0h;
-  half3 tintColor = hsv2rgb_iris(hue, 0.7h, 1.0h);
+  half3 tintColor = hsv2rgb_spheres(hue, 0.7h, 1.0h);
 
   params.surface().set_base_color(tintColor * 0.15h);
   params.surface().set_metallic(0.0h);
@@ -94,3 +94,4 @@ void irisSurfaceShader(realitykit::surface_parameters params) {
   params.surface().set_specular(1.0h);
   params.surface().set_opacity(backFacing ? 0.06h : 0.12h);
 }
+#endif

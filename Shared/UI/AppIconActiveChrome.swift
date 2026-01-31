@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// AppStrip-only "active app" chrome: inverting stroke + glow ring + pin stroke.
+/// AppStrip-only "active app" chrome: inverting stroke + glow ring + pin stroke + diagonal shimmer.
 ///
 /// This is intentionally separated from `AppIcon` / `AppIconWithLabel` so only AppStrip (and other
 /// strip-like surfaces) opt into this look.
@@ -10,6 +10,7 @@ extension View {
     isActive: Bool,
     glowPulseFactor: CGFloat,
     cornerRadius: CGFloat,
+    edgeLuminance: CGFloat? = nil,
     @ViewBuilder iconPixels: @escaping () -> IconPixels
   ) -> some View {
     if isActive {
@@ -17,6 +18,7 @@ extension View {
         AppIconActiveChromeOverlay(
           glowPulseFactor: glowPulseFactor,
           cornerRadius: cornerRadius,
+          edgeLuminance: edgeLuminance,
           iconPixels: iconPixels
         )
       }
@@ -39,9 +41,28 @@ private struct AppIconActiveChromeOverlay<IconPixels: View>: View {
     static var pinGlowRadius: CGFloat { 2 }
   }
 
+  private enum ShimmerStyle {
+    /// Width of the gradient band in UnitPoint space (0…1).
+    static var bandWidth: CGFloat { 0.12 }
+
+    /// Luminance threshold: below → screen (lighten), above → colorBurn (darken).
+    static var threshold: CGFloat { 0.5 }
+
+    // Screen mode (dark icons): white band lightens.
+    static var screenOpacity: CGFloat { 0.35 }
+
+    // ColorBurn mode (light icons): gray band darkens.
+    // Opacity ramps with luminance so near-white icons still show the effect.
+    static var burnBaseOpacity: CGFloat { 0.22 }
+    static var burnMaxOpacity: CGFloat { 0.48 }
+  }
+
   let glowPulseFactor: CGFloat
   let cornerRadius: CGFloat
+  let edgeLuminance: CGFloat?
   @ViewBuilder let iconPixels: () -> IconPixels
+
+  @Environment(\.glowShimmerPhase) private var shimmerPhase
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -87,6 +108,10 @@ private struct AppIconActiveChromeOverlay<IconPixels: View>: View {
         .opacity(ActiveBorderStyle.invertingStrokeOpacity)
         .mask(shape.strokeBorder(lineWidth: ActiveBorderStyle.invertingStrokeWidth))
 
+      // Diagonal shimmer: two-layer sweep (screen + multiply) for uniform
+      // visibility across all icon luminances.
+      shimmerOverlay(shape: shape)
+
       // Glow ring (behind the perimeter), but only visible outside the icon.
       shape
         .stroke(
@@ -108,5 +133,68 @@ private struct AppIconActiveChromeOverlay<IconPixels: View>: View {
         lineWidth: ActiveBorderStyle.pinStrokeWidth
       )
     }
+  }
+
+  // MARK: - Diagonal Shimmer
+
+  @ViewBuilder
+  private func shimmerOverlay(shape: RoundedRectangle) -> some View {
+    let phase = shimmerPhase
+    if phase > 0 && phase < 1 {
+      // Map phase (0…1) to a sweep position that traverses the full diagonal.
+      // The band center moves from -bandWidth (off-screen left) to 1+bandWidth (off-screen right).
+      let bw = ShimmerStyle.bandWidth
+      let center = -bw + phase * (1.0 + 2 * bw)
+
+      // Single band: luminance picks the blend mode, color, and opacity.
+      let lum = edgeLuminance ?? 0.5
+      let useScreen = lum < ShimmerStyle.threshold
+
+      let bandColor: Color = useScreen ? .white : .gray
+      let bandBlend: BlendMode = useScreen ? .screen : .colorBurn
+      let bandOpacity: CGFloat = useScreen
+        ? ShimmerStyle.screenOpacity
+        : ShimmerStyle.burnBaseOpacity + (ShimmerStyle.burnMaxOpacity - ShimmerStyle.burnBaseOpacity) * ((lum - ShimmerStyle.threshold) / (1.0 - ShimmerStyle.threshold))
+
+      Rectangle()
+        .fill(
+          LinearGradient(
+            stops: shimmerStops(
+              center: center, halfWidth: bw, color: bandColor, opacity: bandOpacity
+            ),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+          )
+        )
+        .blendMode(bandBlend)
+        .clipShape(shape)
+    }
+  }
+
+  /// Build gradient stops for a narrow band centered at `center` (in 0…1 UnitPoint space).
+  /// The band fades from clear → color → clear over `halfWidth` on each side.
+  private func shimmerStops(
+    center: CGFloat,
+    halfWidth: CGFloat,
+    color: Color,
+    opacity: CGFloat
+  ) -> [Gradient.Stop] {
+    let lo = center - halfWidth
+    let hi = center + halfWidth
+
+    // Clamp stops to [0, 1]. When the band is partially off-screen,
+    // the visible portion fades naturally.
+    var stops: [Gradient.Stop] = []
+    stops.append(.init(color: .clear, location: max(0, lo)))
+    if center >= 0 && center <= 1 {
+      stops.append(.init(color: color.opacity(opacity), location: center))
+    }
+    stops.append(.init(color: .clear, location: min(1, hi)))
+
+    // Ensure we always have at least 2 stops and they're sorted.
+    if stops.count < 2 {
+      stops = [.init(color: .clear, location: 0), .init(color: .clear, location: 1)]
+    }
+    return stops
   }
 }

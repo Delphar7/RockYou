@@ -28,18 +28,33 @@ final class ShatterContent: SceneContent {
     // Create root entity
     let root = Entity()
 
+    Log.debug("ShatterContent", "Init: mode=\(config.mode) fragments=\(config.fragmentCount) radius=\(config.domeRadius)")
+
     // Generate dome mesh
-    guard let meshGenerator = DomeMeshGenerator(),
-          let mesh = meshGenerator.generateMesh(
-            latSegments: Self.latSegments(for: config.fragmentCount),
-            lonSegments: Self.lonSegments(for: config.fragmentCount),
-            radius: config.domeRadius
-          ) else {
+    guard let meshGenerator = DomeMeshGenerator() else {
+      Log.warn("ShatterContent", "FAIL: DomeMeshGenerator init returned nil")
       shatterLog.error("Failed to generate dome mesh")
       self.entity = root
       self.domeEntity = ModelEntity()
       return
     }
+
+    let latSegs = Self.latSegments(for: config.fragmentCount)
+    let lonSegs = Self.lonSegments(for: config.fragmentCount)
+    Log.debug("ShatterContent", "Mesh gen: latSegs=\(latSegs) lonSegs=\(lonSegs)")
+
+    guard let mesh = meshGenerator.generateMesh(
+            latSegments: latSegs,
+            lonSegments: lonSegs,
+            radius: config.domeRadius
+          ) else {
+      Log.warn("ShatterContent", "FAIL: generateMesh returned nil")
+      shatterLog.error("Failed to generate dome mesh")
+      self.entity = root
+      self.domeEntity = ModelEntity()
+      return
+    }
+    Log.debug("ShatterContent", "Mesh generated OK")
 
     // Compute wave origin from camera position if wave enabled
     let waveOrigin: SIMD3<Float>? = config.waveEnabled
@@ -48,25 +63,30 @@ final class ShatterContent: SceneContent {
 
     // Create data texture for shader params
     guard let texture = Self.createDataTexture(config: config, waveOrigin: waveOrigin) else {
+      Log.warn("ShatterContent", "FAIL: createDataTexture returned nil")
       shatterLog.error("Failed to create data texture")
       self.entity = root
       self.domeEntity = ModelEntity()
       return
     }
     self.dataTexture = texture
+    Log.debug("ShatterContent", "Data texture created OK")
 
     // Create material with appropriate shaders
     guard let material = Self.createMaterial(config: config, texture: texture) else {
+      Log.warn("ShatterContent", "FAIL: createMaterial returned nil")
       shatterLog.error("Failed to create shatter material")
       self.entity = root
       self.domeEntity = ModelEntity()
       return
     }
+    Log.debug("ShatterContent", "Material created OK")
 
     // Create dome entity
     let dome = ModelEntity(mesh: mesh, materials: [material])
     root.addChild(dome)
     self.domeEntity = dome
+    Log.debug("ShatterContent", "Init complete: entity has \(root.children.count) children")
 
     self.entity = root
   }

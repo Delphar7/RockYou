@@ -1,3 +1,4 @@
+#if false
 // IrisSeamEquationsMaskDebugView.swift
 // RockYou
 //
@@ -359,3 +360,4 @@ struct IrisSeamEquationsMaskDebugView: View {
 }
 
 #endif  // os(macOS)
+#endif

@@ -44,21 +44,6 @@ struct RockYouApp: App {
       }
       .defaultSize(width: 900, height: 720)
 
-      Window("Debug — Iris Configurable", id: "debug-iris-configurable") {
-        IrisKinematicsConfigurableView()
-      }
-      .defaultSize(width: 950, height: 700)
-
-      Window("Debug — Iris Seam Equations", id: "debug-iris-seam-equations") {
-        IrisSeamEquationsDebugView()
-      }
-      .defaultSize(width: 950, height: 700)
-
-      Window("Debug — Iris Direct P_i", id: "debug-iris-direct") {
-        IrisSectorDirectDebugView()
-      }
-      .defaultSize(width: 800, height: 600)
-
       Window("Debug — Playground: Dome", id: "debug-playground-dome") {
         DomePlaygroundView()
       }
@@ -100,18 +85,6 @@ extension RockYouApp {
 
         OpenDebugRenderWindowButton(title: "Render: Dome", windowId: "debug-render-dome")
         OpenDebugRenderWindowButton(title: "Render: Breaker", windowId: "debug-render-breaker")
-
-        Divider()
-
-        OpenDebugRenderWindowButton(title: "Iris: Configurable", windowId: "debug-iris-configurable")
-        OpenDebugRenderWindowButton(
-          title: "Iris: Seam Equations",
-          windowId: "debug-iris-seam-equations"
-        )
-        OpenDebugRenderWindowButton(
-          title: "Iris: Direct P_i",
-          windowId: "debug-iris-direct"
-        )
 
         Divider()
 

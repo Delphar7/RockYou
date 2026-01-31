@@ -27,6 +27,7 @@ struct AppStripAppIconTile: View {
       return .normalFill
     }()
     let showEmbeddedLabel = (!config.showLabel && isInputIcon)
+    let iconLuminance = cache.iconEdgeLuminance(for: appId, deviceId: deviceId)
 
     VStack(spacing: config.showLabel ? 4 : 0) {
       ZStack(alignment: .bottom) {
@@ -50,7 +51,8 @@ struct AppStripAppIconTile: View {
           .appIconActiveChrome(
             isActive: isActiveApp,
             glowPulseFactor: glowPulseFactor,
-            cornerRadius: config.cornerRadius
+            cornerRadius: config.cornerRadius,
+            edgeLuminance: iconLuminance
           ) {
             // Pixels-only version used for inverting-stroke overlay.
             AppIcon(

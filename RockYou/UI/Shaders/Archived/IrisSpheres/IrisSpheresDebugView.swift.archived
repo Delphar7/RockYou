@@ -1,0 +1,25 @@
+#if false
+// IrisSpheresDebugView.swift
+// RockYou/UI/Debug/Playground
+//
+// Debug view for sphere-based iris mechanism.
+// Uses RealityDebugView with IrisSpheresEngine/IrisSpheresContent.
+// macOS-only (excluded from iOS via build settings)
+
+import SwiftUI
+
+struct IrisSpheresDebugView: View {
+  var body: some View {
+    RealityDebugView(
+      engine: IrisSpheresEngine(),
+      config: IrisSpheresEngine.propertyConfig,
+      makeDefaultEngine: { IrisSpheresEngine() }
+    )
+  }
+}
+
+#Preview("Iris Spheres") {
+  IrisSpheresDebugView()
+    .frame(width: 950, height: 700)
+}
+#endif

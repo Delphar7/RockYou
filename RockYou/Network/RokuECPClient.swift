@@ -684,6 +684,36 @@ actor RokuECPClient {
 
   // MARK: - Device Connection
 
+  /// Reconnect the WebSocket to `device` if the existing connection is stale or missing.
+  /// Returns `true` when the connection is healthy (either already alive or freshly reconnected).
+  /// Reuses `ensureConnectedSingleFlight` to avoid reconnect storms from concurrent callers.
+  func reconnectIfNeeded(for device: DeviceInfo) async -> Bool {
+    let ip = device.ipAddress
+
+    guard let client = webSocketClients[ip] else {
+      // No client at all — normal connect path.
+      return await ensureConnected(to: device, primeState: false)
+    }
+
+    let connected = await client.isConnected
+    if !connected {
+      // Client exists but is disconnected/failed — tear down and reconnect.
+      await client.disconnect()
+      webSocketClients.removeValue(forKey: ip)
+      return await ensureConnected(to: device, primeState: false)
+    }
+
+    // Client reports connected — probe the actual TCP session.
+    let healthy = await client.isHealthy()
+    if healthy { return true }
+
+    // Stale connection — tear down and reconnect fresh.
+    Log.info("ECP", "Stale WebSocket detected for \(device.name) (\(ip)); reconnecting")
+    await client.disconnect()
+    webSocketClients.removeValue(forKey: ip)
+    return await ensureConnected(to: device, primeState: false)
+  }
+
   /// Check if a device is reachable (based on WebSocket connection state)
   func isDeviceReachable(_ deviceIP: String) async -> Bool {
     if let client = webSocketClients[deviceIP] {

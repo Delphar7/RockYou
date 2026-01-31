@@ -27,6 +27,7 @@ protocol ContentEngine: AnyObject, Observable {
 
 /// Debug view for SceneContent-based engines.
 /// Wraps SceneView with playback controls, camera orbit, and config panel.
+/// Persists engine config and camera position to UserDefaults.
 struct RealityDebugView<Engine: ContentEngine>: View {
   @State var engine: Engine
   let config: [PropertyConfig<Engine>]
@@ -45,6 +46,15 @@ struct RealityDebugView<Engine: ContentEngine>: View {
   @State private var softRestartID = UUID()
   @State private var configChangeID = UUID()
   @State private var autoRestart: Bool = true
+
+  // Persistence keys
+  private var configKey: String { "PlaygroundConfig.\(String(describing: Engine.self))" }
+  private static var cameraKey: String { "PlaygroundCamera" }
+
+  // Default camera values
+  private static var defaultYaw: Double { 45 }
+  private static var defaultPitch: Double { 35 }
+  private static var defaultDistance: Double { 1.2 }
 
   private var effectiveTime: Float {
     Float(currentTime + subFrame * (1.0 / 60.0))
@@ -96,17 +106,36 @@ struct RealityDebugView<Engine: ContentEngine>: View {
             )
           }
 
-          GroupBox("Actions") {
+          GroupBox("Status") {
             HStack {
+              if let content {
+                if content.isComplete {
+                  Text("All fragments gone")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                } else {
+                  Text("Active")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                }
+              }
               Spacer()
               Button("Reset") {
+                // Clear persisted state and restore defaults
+                PropertyConfig<Engine>.clear(key: configKey)
+                UserDefaults.standard.removeObject(forKey: Self.cameraKey)
                 engine = makeDefaultEngine()
+                yawDegrees = Self.defaultYaw
+                pitchDegrees = Self.defaultPitch
+                cameraDistance = Self.defaultDistance
                 restart()
               }
               .buttonStyle(.bordered)
               .controlSize(.small)
 
               Button("Restart") {
+                // Save current config, then restart
+                saveState()
                 restart()
               }
               .buttonStyle(.bordered)
@@ -142,17 +171,32 @@ struct RealityDebugView<Engine: ContentEngine>: View {
       .frame(width: 280)
     }
     .onAppear {
+      // Load persisted config and camera
+      PropertyConfig<Engine>.load(engine, config: config, key: configKey)
+      loadCamera()
       if content == nil {
         content = engine.makeContent()
       }
     }
     .onChange(of: configChangeID) { _, _ in
       // Auto-restart on config change (soft restart - no screen flicker)
+      // Preserve current time so user can see effect of config changes at current position
       if autoRestart {
-        currentTime = 0
-        subFrame = 0
         content = engine.makeContent()
         softRestartID = UUID()
+      }
+    }
+    .onChange(of: currentTime) { _, _ in
+      // Check if animation completed - stop playing
+      if isPlaying, let content, content.isComplete {
+        isPlaying = false
+      }
+    }
+    .onChange(of: isPlaying) { _, playing in
+      // If user hits play while complete, restart from beginning
+      if playing, let content, content.isComplete {
+        restart()
+        isPlaying = true  // restart() sets isPlaying = false, so re-enable
       }
     }
   }
@@ -163,5 +207,28 @@ struct RealityDebugView<Engine: ContentEngine>: View {
     isPlaying = false
     content = engine.makeContent()
     restartID = UUID()
+  }
+
+  // MARK: - Persistence
+
+  private func saveState() {
+    PropertyConfig<Engine>.save(engine, config: config, key: configKey)
+    saveCamera()
+  }
+
+  private func saveCamera() {
+    let dict: [String: Double] = [
+      "yaw": yawDegrees,
+      "pitch": pitchDegrees,
+      "distance": cameraDistance,
+    ]
+    UserDefaults.standard.set(dict, forKey: Self.cameraKey)
+  }
+
+  private func loadCamera() {
+    guard let dict = UserDefaults.standard.dictionary(forKey: Self.cameraKey) else { return }
+    if let yaw = dict["yaw"] as? Double { yawDegrees = yaw }
+    if let pitch = dict["pitch"] as? Double { pitchDegrees = pitch }
+    if let distance = dict["distance"] as? Double { cameraDistance = distance }
   }
 }

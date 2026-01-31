@@ -218,6 +218,25 @@ final class SweepableTouchRouter: NSObject, UIGestureRecognizerDelegate {
     return candidates[idx]
   }
 
+  // MARK: - Resume reset
+
+  /// Cancel any in-flight gesture and clear stale routing state.
+  /// Call on app resume to prevent a suspended mid-gesture from blocking future touches.
+  func resetActiveGesture() {
+    if let target = activeTarget {
+      target.sweepableTouchEnded(cancelled: true)
+    }
+    activeTarget = nil
+    startPoint = .zero
+  }
+
+  /// Reset all routers across all windows. Call from the resume handler.
+  static func resetAllOnResume() {
+    for (_, router) in routersByWindow {
+      router.resetActiveGesture()
+    }
+  }
+
   // MARK: - UIGestureRecognizerDelegate
 
   func gestureRecognizer(

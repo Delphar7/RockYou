@@ -15,6 +15,10 @@ private struct GlowAnimationLastUserInteractionAtKey: EnvironmentKey {
   static let defaultValue: Date = .distantPast
 }
 
+private struct GlowShimmerPhaseKey: EnvironmentKey {
+  static let defaultValue: CGFloat = 0
+}
+
 extension EnvironmentValues {
   /// True when the app/window is considered "foreground" for glow animations.
   var glowAnimationForegroundEnabled: Bool {
@@ -27,5 +31,12 @@ extension EnvironmentValues {
   var glowAnimationLastUserInteractionAt: Date {
     get { self[GlowAnimationLastUserInteractionAtKey.self] }
     set { self[GlowAnimationLastUserInteractionAtKey.self] = newValue }
+  }
+
+  /// Linear sweep phase (0…1) for the active-app shimmer effect.
+  /// Driven by the same pulse loop that animates `glowPulseFactor`.
+  var glowShimmerPhase: CGFloat {
+    get { self[GlowShimmerPhaseKey.self] }
+    set { self[GlowShimmerPhaseKey.self] = newValue }
   }
 }

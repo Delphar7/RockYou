@@ -176,6 +176,93 @@ public enum PlatformImage {
     return native.cgImage
 #endif
   }
+
+  // MARK: - Edge Luminance
+
+  /// Compute weighted average luminance along all four edges of the image.
+  ///
+  /// Algorithm: start `inset` pixels inward (to skip borders/transparency), then
+  /// sample `depth` rows/columns further inward with diminishing weight.
+  /// Returns 0 (black) … 1 (white), or `nil` if the image is too small or unreadable.
+  public static func edgeLuminance(of native: PlatformNativeImage) -> CGFloat? {
+    guard let cg = cgImage(from: native) else { return nil }
+    let w = cg.width
+    let h = cg.height
+
+    // Need enough room for inset + sample depth on each side.
+    guard w >= 18, h >= 18 else { return nil }
+
+    // Render into a known RGBA8 layout so pixel math is predictable.
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+    let rowBytes = w * 4
+    guard let ctx = CGContext(
+      data: nil, width: w, height: h,
+      bitsPerComponent: 8, bytesPerRow: rowBytes,
+      space: colorSpace, bitmapInfo: bitmapInfo
+    ) else { return nil }
+    ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+    guard let pixels = ctx.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+
+    // Anchor row/col is `inset` pixels from the edge (weight 1.0).
+    // Sample 4 pixels shallower (toward edge) and 4 deeper (toward center)
+    // with diminishing weight by distance from the anchor.
+    let inset = 5
+    let spread = 4
+    // offsets: -4, -3, -2, -1, 0, +1, +2, +3, +4  (0 = anchor at `inset`)
+    // weights:  0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 0.75, 0.5, 0.25
+    let offsets: [Int]     = [-4, -3, -2, -1, 0, 1, 2, 3, 4]
+    let weights: [CGFloat] = [0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 0.75, 0.5, 0.25]
+
+    var totalLuminance: CGFloat = 0
+    var totalWeight: CGFloat = 0
+
+    func sample(x: Int, y: Int, weight: CGFloat) {
+      guard x >= 0, x < w, y >= 0, y < h else { return }
+      let off = y * rowBytes + x * 4
+      let a = CGFloat(pixels[off + 3]) / 255.0
+      guard a > 0.1 else { return }  // skip transparent pixels
+      // Un-premultiply
+      let r = CGFloat(pixels[off]) / (255.0 * a)
+      let g = CGFloat(pixels[off + 1]) / (255.0 * a)
+      let b = CGFloat(pixels[off + 2]) / (255.0 * a)
+      let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b  // BT.709
+      totalLuminance += lum * weight
+      totalWeight += weight
+    }
+
+    // Top edge: sample rows around y=inset, sweep columns from inset to w-inset
+    for (i, d) in offsets.enumerated() {
+      let y = inset + d
+      for x in (inset - spread)..<(w - inset + spread) {
+        sample(x: x, y: y, weight: weights[i])
+      }
+    }
+    // Bottom edge
+    for (i, d) in offsets.enumerated() {
+      let y = h - 1 - inset - d
+      for x in (inset - spread)..<(w - inset + spread) {
+        sample(x: x, y: y, weight: weights[i])
+      }
+    }
+    // Left edge
+    for (i, d) in offsets.enumerated() {
+      let x = inset + d
+      for y in (inset - spread)..<(h - inset + spread) {
+        sample(x: x, y: y, weight: weights[i])
+      }
+    }
+    // Right edge
+    for (i, d) in offsets.enumerated() {
+      let x = w - 1 - inset - d
+      for y in (inset - spread)..<(h - inset + spread) {
+        sample(x: x, y: y, weight: weights[i])
+      }
+    }
+
+    guard totalWeight > 0 else { return nil }
+    return totalLuminance / totalWeight
+  }
 }
 
 /// Backwards compatibility: keep existing call sites working (`PlatformSwiftUIImage.cachedContentsOfFile`).

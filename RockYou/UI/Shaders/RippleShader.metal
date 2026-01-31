@@ -101,32 +101,33 @@ void rippleSurfaceShader(realitykit::surface_parameters params) {
   float wavePhase = fmod(uv.y, 10.0f);
   wavePhase = clamp(wavePhase, 0.0f, 1.0f);
 
-  // Use smoothstep for pleasing transitions at extremes
-  // This makes the metal/glass regions more distinct
-  float glassAmount = smoothstep(0.2f, 0.8f, wavePhase);
+  // wavePhase: 0 = trough (sin=-1), 0.5 = rest, 1 = peak (sin=1)
+  // We want: base/rest/peak = metal, only troughs = clear glass
+  // Glass only appears when wavePhase < 0.4 (the valleys)
+  float glassAmount = smoothstep(0.4f, 0.1f, wavePhase);
 
   // Material properties
-  // Metal (trough): metallic, opaque, reflective
-  // Glass (peak): non-metallic, translucent, dark (like fragmentSurfaceShader)
+  // Metal (peak): metallic, opaque, reflective
+  // Glass (trough): non-metallic, clear, high specular
 
-  // Base colors - glass is dark and clear, not bright white
-  half3 metalColor = half3(0.75h, 0.75h, 0.8h);   // Silver (matches fragmentSurfaceShader)
-  half3 glassColor = half3(0.1h, 0.12h, 0.15h);   // Dark clear glass
+  // Base colors
+  half3 metalColor = half3(0.85h, 0.85h, 0.9h);   // Cool silver
+  half3 glassColor = half3(0.02h, 0.02h, 0.03h);  // Nearly black - clear glass has no diffuse color
 
   // Interpolate properties
   half3 baseColor = mix(metalColor, glassColor, half(glassAmount));
-  half metallic = mix(0.9h, 0.0h, half(glassAmount));
-  half roughness = mix(0.15h, 0.05h, half(glassAmount));  // Glass is smoother
-  half opacity = mix(1.0h, 0.15h, half(glassAmount));     // Glass is translucent
-  half specular = mix(0.5h, 0.8h, half(glassAmount));     // Glass is more specular
+  half metallic = mix(0.95h, 0.0h, half(glassAmount));
+  half roughness = mix(0.15h, 0.02h, half(glassAmount));  // Glass is very smooth
+  half opacity = mix(1.0h, 0.1h, half(glassAmount));      // Glass is nearly clear
+  half specular = mix(0.5h, 1.0h, half(glassAmount));     // Glass has high specular
 
-  // Back faces: darker, more matte
+  // Back faces: pure clear glass
   if (backFacing) {
-    baseColor *= 0.4h;
-    roughness = 0.5h;
-    metallic = 0.1h;
+    baseColor = half3(0.02h, 0.02h, 0.03h);
+    roughness = 0.02h;
+    metallic = 0.0h;
     specular = 0.1h;
-    opacity = 1.0h;  // Back always opaque
+    opacity = 0.05h;
   }
 
   params.surface().set_base_color(baseColor);

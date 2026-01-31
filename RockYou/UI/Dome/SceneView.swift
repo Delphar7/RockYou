@@ -12,13 +12,21 @@ import SwiftUI
 /// Protocol for content that can be hosted in a SceneView.
 /// Content provides its entity and knows how to update itself based on time and camera.
 @MainActor
-protocol SceneContent {
+protocol SceneContent: AnyObject {
   /// The root entity for this content. Added to the scene on setup.
   var entity: Entity { get }
 
   /// Called each frame with current time and camera position.
   /// Content should update its material uniforms, animations, etc.
   func update(time: Float, cameraPosition: SIMD3<Float>)
+
+  /// Whether the animation has completed (all fragments gone, etc.)
+  /// Default implementation returns false.
+  var isComplete: Bool { get }
+}
+
+extension SceneContent {
+  var isComplete: Bool { false }
 }
 
 // MARK: - Scene View
