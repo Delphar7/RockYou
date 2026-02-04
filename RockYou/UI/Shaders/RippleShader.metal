@@ -19,19 +19,19 @@ void rippleGeometryModifier(realitykit::geometry_parameters params) {
   float3 cameraPos = float3(customParams.y, customParams.z, customParams.w);
 
   auto dataTexture = params.textures().custom();
-  constexpr sampler texSampler(address::clamp_to_edge, filter::nearest);
   float texWidth = float(dataTexture.get_width());
   float texHeight = float(dataTexture.get_height());
+  TextureParamReader reader = { dataTexture, 1.0f / texWidth, 1.0f / texHeight };
 
   float2 uv = params.geometry().uv0();
   int fragmentIndex = int(round(uv.x));
 
-  DomeParams dome = readDomeParams(dataTexture, texSampler, texWidth, texHeight);
+  DomeParams dome = readDomeParams(reader);
   if (dome.latSegments < 2 || dome.lonSegments < 4 || dome.radius < 0.01f) {
     return;
   }
 
-  auto physics = ripple::readPhysicsData(fragmentIndex, dataTexture, texSampler, texWidth, texHeight);
+  auto physics = ripple::readPhysicsData(fragmentIndex, reader);
   auto state = ripple::computeState(fragmentIndex, time, dome, physics);
 
   float3 newCenter = state.position;

@@ -93,8 +93,8 @@ import SwiftUI
     @ObservedObject var manager: TooltipManager
     let onBubbleRect: (CGRect) -> Void
 
-    private let tooltipColor = Color(red: 1, green: 1, blue: 0.9)
-    private let textColor = rokuPurple
+  private let tooltipColor = Color(red: 0.78, green: 0.78, blue: 0.95)
+  private let textColor = Color(red: 0.22, green: 0.22, blue: 0.38)
     private let tooltipFontSize: CGFloat = 14
 
     private let bubbleHorizontalPadding: CGFloat = 10

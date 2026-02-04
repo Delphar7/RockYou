@@ -19,20 +19,14 @@ final class RippleContent: SceneContent {
   let config: RippleAnimationConfig
   let entity: Entity
 
-  /// Published visibility result - true when compute shader detects all fragments gone
-  private(set) var allFragmentsGone: Bool = false
-
   /// SceneContent protocol - animation complete when all fragments gone
-  var isComplete: Bool { allFragmentsGone }
+  var isComplete: Bool { visibilityTracker.allFragmentsGone }
 
   private let domeEntity: ModelEntity
   private var dataTexture: TextureResource?
   private var mtlDataTexture: MTLTexture?  // Raw Metal texture for compute shader
   private let fragmentCount: Int
-
-  // Visibility checking
-  private var visibilityChecker: VisibilityChecker?
-  private var lastVisibilityCheckTime: Float = -1
+  private let visibilityTracker = VisibilityTracker()
 
   init(config: RippleAnimationConfig, cameraPosition: SIMD3<Float> = [0.6, 0.4, 0.6]) {
     self.config = config
@@ -41,11 +35,11 @@ final class RippleContent: SceneContent {
     let root = Entity()
 
     // Compute tessellation segments
-    let latSegs = Self.latSegments(for: config.fragmentCount)
-    let lonSegs = Self.lonSegments(for: config.fragmentCount)
+    let latSegs = DomeMeshGenerator.latSegments(for: config.fragmentCount)
+    let lonSegs = DomeMeshGenerator.lonSegments(for: config.fragmentCount)
 
     // Actual fragment count from tessellation
-    self.fragmentCount = lonSegs + (latSegs - 1) * lonSegs * 2
+    self.fragmentCount = DomeMeshGenerator.fragmentCount(latSegments: latSegs, lonSegments: lonSegs)
 
     // Generate dome mesh
     guard let meshGenerator = DomeMeshGenerator(),
@@ -110,52 +104,19 @@ final class RippleContent: SceneContent {
       domeEntity.model?.materials = [material]
     }
 
-    // Check visibility periodically (not every frame)
-    let checkInterval: Float = 0.5  // Check twice per second
-    if time - lastVisibilityCheckTime >= checkInterval {
-      lastVisibilityCheckTime = time
-      checkVisibility(at: time)
-    }
+    checkVisibility(at: time)
   }
 
   // MARK: - Visibility Checking
 
-  /// Check if any fragments are still visible using GPU compute shader
   private func checkVisibility(at time: Float) {
-    guard !allFragmentsGone else { return }
     guard let mtlTexture = mtlDataTexture else { return }
-
-    // Lazily create visibility checker
-    if visibilityChecker == nil {
-      visibilityChecker = VisibilityChecker()
+    visibilityTracker.checkIfNeeded(
+      at: time,
+      animation: RippleVisibilityAdapter(texture: mtlTexture, fragmentCount: fragmentCount)
+    ) {
+      rippleLog.info("All fragments gone at t=\(time)")
     }
-    guard let checker = visibilityChecker else { return }
-
-    // Use async check to avoid blocking main thread
-    let count = fragmentCount
-    checker.checkVisibilityAsync(
-      animation: RippleVisibilityAdapter(texture: mtlTexture, fragmentCount: count),
-      time: time
-    ) { [weak self] result in
-      DispatchQueue.main.async {
-        guard let self = self else { return }
-        if result == .allGone {
-          self.allFragmentsGone = true
-          rippleLog.info("All fragments gone at t=\(time)")
-        }
-      }
-    }
-  }
-
-  // MARK: - Mesh Generation Helpers
-
-  private static func latSegments(for fragmentCount: Int) -> Int {
-    let segments = max(4, Int(sqrt(Double(fragmentCount))))
-    return segments / 2
-  }
-
-  private static func lonSegments(for fragmentCount: Int) -> Int {
-    return max(4, Int(sqrt(Double(fragmentCount))))
   }
 
   // MARK: - Material Creation
@@ -196,184 +157,42 @@ final class RippleContent: SceneContent {
 
   // MARK: - Data Texture
 
-  private static let textureWidth = 32
-  private static let textureHeight = 4096
-
-  /// Result of texture creation - includes both RealityKit and Metal textures
-  private struct TextureResult {
-    let resource: TextureResource?
-    let mtlTexture: MTLTexture?
-  }
-
   private static func createDataTexture(
     config: RippleAnimationConfig,
     waveOrigin: SIMD3<Float>
-  ) -> TextureResult {
-    let width = textureWidth
-    let height = textureHeight
+  ) -> TextureParamWriter.TextureResult {
+    let latSegs = DomeMeshGenerator.latSegments(for: config.fragmentCount)
+    let lonSegs = DomeMeshGenerator.lonSegments(for: config.fragmentCount)
 
-    let latSegs = latSegments(for: config.fragmentCount)
-    let lonSegs = lonSegments(for: config.fragmentCount)
+    var params = TextureParamWriter()
 
-    var pixels: [UInt8] = []
-    pixels.reserveCapacity(width * height * 4)
+    // Shared dome params
+    params.writeFloat16(config.domeRadius, at: TextureParam.radius, min: 0.0, max: 2.0)
+    params.writeInt16(latSegs, at: TextureParam.latSegments)
+    params.writeInt16(lonSegs, at: TextureParam.lonSegments)
 
-    for rowIdx in 0..<height {
-      // Cols 0-2: Lookup table data (random physics values)
-      pixels.append(contentsOf: [128, 128, 128, 128])  // col 0
-      pixels.append(contentsOf: [128, 128, 128, 128])  // col 1
-      pixels.append(contentsOf: [128, 128, 128, 128])  // col 2
+    // Wave origin (always enabled for ripple)
+    params.writeFloat16(waveOrigin.x, at: TextureParam.waveOriginX, min: -2.0, max: 2.0)
+    params.writeFloat16(waveOrigin.y, at: TextureParam.waveOriginY, min: -2.0, max: 2.0)
+    params.writeFloat16(waveOrigin.z, at: TextureParam.waveOriginZ, min: -2.0, max: 2.0)
+    params.writeInt16(1, at: TextureParam.waveEnabled)
 
-      if rowIdx == 0 {
-        // Header row with dome/physics params
+    // Algorithm ID
+    params.writeInt16(2, at: TextureParam.algorithmID)
 
-        // Col 3: radius (RG), latSegments (BA)
-        let radius16 = encode16bit(config.domeRadius, min: 0.0, max: 2.0)
-        let latSegs16 = UInt16(clamping: latSegs)
-        pixels.append(UInt8((radius16 >> 8) & 0xFF))
-        pixels.append(UInt8(radius16 & 0xFF))
-        pixels.append(UInt8((latSegs16 >> 8) & 0xFF))
-        pixels.append(UInt8(latSegs16 & 0xFF))
+    // Physics config
+    params.writeFloat16(config.baseGravity, at: TextureParam.baseGravity, min: 0.0, max: 2.0)
+    params.writeFloat16(config.gravityMin, at: TextureParam.gravityMin, min: 0.0, max: 2.0)
+    params.writeFloat16(config.gravityMax, at: TextureParam.gravityMax, min: 0.0, max: 2.0)
+    params.writeFloat16(config.spinRateMin, at: TextureParam.spinRateMin, min: 0.0, max: 20.0)
+    params.writeFloat16(config.spinRateMax, at: TextureParam.spinRateMax, min: 0.0, max: 20.0)
 
-        // Col 4: lonSegments (RG), waveSpeed (BA) - waveSpeed not used by ripple
-        let lonSegs16 = UInt16(clamping: lonSegs)
-        pixels.append(UInt8((lonSegs16 >> 8) & 0xFF))
-        pixels.append(UInt8(lonSegs16 & 0xFF))
-        pixels.append(contentsOf: [0, 0])
+    // Ripple-specific
+    params.writeFloat16(config.waveFrequency, at: TextureParam.waveFrequency, min: 1.0, max: 10.0)
+    params.writeFloat16(config.waveAmplitude, at: TextureParam.waveAmplitude, min: 0.0, max: 0.2)
+    params.writeFloat16(config.rippleSpeed, at: TextureParam.rippleSpeed, min: 0.0, max: 2.0)
 
-        // Col 5-6: wave origin
-        let ox16 = encode16bit(waveOrigin.x, min: -2.0, max: 2.0)
-        let oy16 = encode16bit(waveOrigin.y, min: -2.0, max: 2.0)
-        let oz16 = encode16bit(waveOrigin.z, min: -2.0, max: 2.0)
-        pixels.append(UInt8((ox16 >> 8) & 0xFF))
-        pixels.append(UInt8(ox16 & 0xFF))
-        pixels.append(UInt8((oy16 >> 8) & 0xFF))
-        pixels.append(UInt8(oy16 & 0xFF))
-        pixels.append(UInt8((oz16 >> 8) & 0xFF))
-        pixels.append(UInt8(oz16 & 0xFF))
-        pixels.append(1)  // wave enabled
-        pixels.append(0)
-
-        // Col 7: Algorithm ID (R = 2 for ripple)
-        pixels.append(2)  // ALGORITHM_RIPPLE
-        pixels.append(contentsOf: [0, 0, 0])
-
-        // Col 8: baseGravity (RG), gravityMin (BA)
-        let baseGrav16 = encode16bit(config.baseGravity, min: 0.0, max: 2.0)
-        let gravMin16 = encode16bit(config.gravityMin, min: 0.0, max: 2.0)
-        pixels.append(UInt8((baseGrav16 >> 8) & 0xFF))
-        pixels.append(UInt8(baseGrav16 & 0xFF))
-        pixels.append(UInt8((gravMin16 >> 8) & 0xFF))
-        pixels.append(UInt8(gravMin16 & 0xFF))
-
-        // Col 9: gravityMax (RG), spinRateMin (BA)
-        let gravMax16 = encode16bit(config.gravityMax, min: 0.0, max: 2.0)
-        let spinMin16 = encode16bit(config.spinRateMin, min: 0.0, max: 20.0)
-        pixels.append(UInt8((gravMax16 >> 8) & 0xFF))
-        pixels.append(UInt8(gravMax16 & 0xFF))
-        pixels.append(UInt8((spinMin16 >> 8) & 0xFF))
-        pixels.append(UInt8(spinMin16 & 0xFF))
-
-        // Col 10: spinRateMax (RG), baseSpeed (BA) - baseSpeed not used by ripple
-        let spinMax16 = encode16bit(config.spinRateMax, min: 0.0, max: 20.0)
-        pixels.append(UInt8((spinMax16 >> 8) & 0xFF))
-        pixels.append(UInt8(spinMax16 & 0xFF))
-        pixels.append(contentsOf: [128, 128])  // baseSpeed = 0 (neutral)
-
-        // Col 11: spreadAngle (RG), upwardBias (BA) - not used by ripple
-        pixels.append(contentsOf: [128, 128, 128, 128])
-
-        // Col 12: waveFrequency (RG), waveAmplitude (BA)
-        let waveFreq16 = encode16bit(config.waveFrequency, min: 1.0, max: 10.0)
-        let waveAmp16 = encode16bit(config.waveAmplitude, min: 0.0, max: 0.2)
-        pixels.append(UInt8((waveFreq16 >> 8) & 0xFF))
-        pixels.append(UInt8(waveFreq16 & 0xFF))
-        pixels.append(UInt8((waveAmp16 >> 8) & 0xFF))
-        pixels.append(UInt8(waveAmp16 & 0xFF))
-
-        // Col 13: collapseSpeed (RG), rippleSpeed (BA)
-        let collapse16 = encode16bit(config.collapseSpeed, min: 0.0, max: 2.0)
-        let rippleSpd16 = encode16bit(config.rippleSpeed, min: 0.0, max: 2.0)
-        pixels.append(UInt8((collapse16 >> 8) & 0xFF))
-        pixels.append(UInt8(collapse16 & 0xFF))
-        pixels.append(UInt8((rippleSpd16 >> 8) & 0xFF))
-        pixels.append(UInt8(rippleSpd16 & 0xFF))
-
-        // Cols 14-31: padding
-        for _ in 14..<width {
-          pixels.append(contentsOf: [128, 128, 128, 128])
-        }
-      } else {
-        // Non-header rows: padding
-        for _ in 3..<width {
-          pixels.append(contentsOf: [128, 128, 128, 128])
-        }
-      }
-    }
-
-    // Create CGImage from pixel data
-    let bytesPerRow = width * 4
-    let nsData = Data(pixels)
-    guard let provider = CGDataProvider(data: nsData as CFData) else {
-      rippleLog.error("CGDataProvider creation failed")
-      return TextureResult(resource: nil, mtlTexture: nil)
-    }
-
-    guard let linearColorSpace = CGColorSpace(name: CGColorSpace.linearSRGB),
-          let cgImage = CGImage(
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            bytesPerRow: bytesPerRow,
-            space: linearColorSpace,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: false,
-            intent: .defaultIntent
-          ) else {
-      rippleLog.error("CGImage creation failed")
-      return TextureResult(resource: nil, mtlTexture: nil)
-    }
-
-    // Create Metal texture for compute shader visibility checking
-    var mtlTexture: MTLTexture?
-    if let device = MTLCreateSystemDefaultDevice() {
-      let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-        pixelFormat: .rgba8Unorm,
-        width: width,
-        height: height,
-        mipmapped: false
-      )
-      descriptor.usage = [.shaderRead]
-      if let mtlTex = device.makeTexture(descriptor: descriptor) {
-        let region = MTLRegion(
-          origin: MTLOrigin(x: 0, y: 0, z: 0),
-          size: MTLSize(width: width, height: height, depth: 1)
-        )
-        pixels.withUnsafeBytes { ptr in
-          mtlTex.replace(region: region, mipmapLevel: 0, withBytes: ptr.baseAddress!, bytesPerRow: bytesPerRow)
-        }
-        mtlTexture = mtlTex
-      }
-    }
-
-    do {
-      let resource = try TextureResource(image: cgImage, withName: "RippleData", options: .init(semantic: .raw))
-      return TextureResult(resource: resource, mtlTexture: mtlTexture)
-    } catch {
-      rippleLog.error("Failed to create texture: \(error)")
-      return TextureResult(resource: nil, mtlTexture: mtlTexture)
-    }
-  }
-
-  // MARK: - Encoding Helpers
-
-  private static func encode16bit(_ value: Float, min: Float, max: Float) -> UInt16 {
-    let normalized = (value - min) / (max - min)
-    let clamped = Swift.max(0, Swift.min(1, normalized))
-    return UInt16(clamped * 65535)
+    return params.createTexture(name: "RippleData")
   }
 
   // MARK: - Backdrop

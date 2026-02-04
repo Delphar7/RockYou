@@ -424,6 +424,7 @@ struct RemoteControlView: View {
             onAction: onAction
           )
         }
+        DomeTapThroughOverlay()
       }
       // Ensure a stable "breathing gap" between header and the top purple row.
       .padding(.top, 12)
@@ -447,6 +448,7 @@ struct RemoteControlView: View {
             // Ensure a stable "breathing gap" between header and the top purple row.
             .padding(.top, 12)
           }
+          DomeTapThroughOverlay()
         }
         .frame(maxWidth: .infinity)
 

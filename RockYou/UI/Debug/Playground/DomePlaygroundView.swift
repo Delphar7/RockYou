@@ -25,6 +25,7 @@ enum ShatterAlgorithm: String, CaseIterable {
   case ripple = "Ripple"
   case irisDebug = "Iris Debug"
   case iris = "Iris"
+  case irisPlane = "Iris Plane"
 }
 
 // MARK: - Playground View
@@ -175,6 +176,8 @@ struct DomePlaygroundView: View {
         IrisDebugView()
       case .iris:
         IrisProductionDebugView()
+      case .irisPlane:
+        IrisPlaneDebugView()
       }
     }
   }

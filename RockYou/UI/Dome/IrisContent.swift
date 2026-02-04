@@ -21,31 +21,44 @@ final class IrisContent: SceneContent {
   let config: IrisAnimationConfig
   let entity: Entity
 
+  /// SceneContent protocol - animation complete when all fragments invisible (iris open)
+  var isComplete: Bool { visibilityTracker.allFragmentsGone }
+
   private let domeEntity: ModelEntity
   private let ribbonEntity: ModelEntity?
   private var dataTexture: TextureResource?
+  private var mtlDataTexture: MTLTexture?  // Raw Metal texture for compute shader
+  private let fragmentCount: Int
+  private let visibilityTracker = VisibilityTracker()
 
   init(config: IrisAnimationConfig) {
     self.config = config
 
     let root = Entity()
 
+    let latSegs = DomeMeshGenerator.latSegments(for: config.fragmentCount)
+    let lonSegs = DomeMeshGenerator.lonSegments(for: config.fragmentCount)
+
     // Generate dome mesh
     guard let meshGenerator = DomeMeshGenerator(),
           let mesh = meshGenerator.generateMesh(
-            latSegments: Self.latSegments(for: config.fragmentCount),
-            lonSegments: Self.lonSegments(for: config.fragmentCount),
+            latSegments: latSegs,
+            lonSegments: lonSegs,
             radius: config.domeRadius
           ) else {
       log.error("Failed to generate dome mesh")
       self.entity = root
       self.domeEntity = ModelEntity()
       self.ribbonEntity = nil
+      self.fragmentCount = 0
       return
     }
 
-    // Create data texture for shader params
-    guard let texture = Self.createDataTexture(config: config) else {
+    self.fragmentCount = DomeMeshGenerator.fragmentCount(latSegments: latSegs, lonSegments: lonSegs)
+
+    // Create data texture for shader params (also creates MTLTexture for compute)
+    let textureResult = Self.createDataTexture(config: config)
+    guard let texture = textureResult.resource else {
       log.error("Failed to create data texture")
       self.entity = root
       self.domeEntity = ModelEntity()
@@ -53,6 +66,7 @@ final class IrisContent: SceneContent {
       return
     }
     self.dataTexture = texture
+    self.mtlDataTexture = textureResult.mtlTexture
 
     // Create material with iris shaders
     guard let material = Self.createDomeMaterial(texture: texture) else {
@@ -95,17 +109,20 @@ final class IrisContent: SceneContent {
       material.custom.value = [time, cameraPosition.x, cameraPosition.y, cameraPosition.z]
       ribbon.model?.materials = [material]
     }
+
+    checkVisibility(at: time)
   }
 
-  // MARK: - Mesh Helpers
+  // MARK: - Visibility Checking
 
-  private static func latSegments(for fragmentCount: Int) -> Int {
-    let segments = max(4, Int(sqrt(Double(fragmentCount))))
-    return segments / 2
-  }
-
-  private static func lonSegments(for fragmentCount: Int) -> Int {
-    return max(4, Int(sqrt(Double(fragmentCount))))
+  private func checkVisibility(at time: Float) {
+    guard let mtlTexture = mtlDataTexture else { return }
+    visibilityTracker.checkIfNeeded(
+      at: time,
+      animation: IrisVisibilityAdapter(texture: mtlTexture, fragmentCount: fragmentCount)
+    ) {
+      log.info("All fragments gone (iris fully open) at t=\(time)")
+    }
   }
 
   // MARK: - Material Creation
@@ -133,6 +150,7 @@ final class IrisContent: SceneContent {
       )
 
       material.faceCulling = .none
+      material.blending = .transparent(opacity: .init(floatLiteral: 1.0))  // Let shader control opacity
       material.custom.value = [0, 0, 0, 0]
       material.custom.texture = .init(texture)
 
@@ -166,6 +184,7 @@ final class IrisContent: SceneContent {
       )
 
       material.faceCulling = .none
+      material.blending = .transparent(opacity: 1.0)
       material.custom.value = [0, 0, 0, 0]
       material.custom.texture = .init(texture)
 
@@ -233,132 +252,48 @@ final class IrisContent: SceneContent {
 
   // MARK: - Data Texture
 
-  private static let textureWidth = 32
-  private static let textureHeight = 4096
+  private static func createDataTexture(config: IrisAnimationConfig) -> TextureParamWriter.TextureResult {
+    let latSegs = DomeMeshGenerator.latSegments(for: config.fragmentCount)
+    let lonSegs = DomeMeshGenerator.lonSegments(for: config.fragmentCount)
 
-  private static func createDataTexture(config: IrisAnimationConfig) -> TextureResource? {
-    let width = textureWidth
-    let height = textureHeight
+    var params = TextureParamWriter()
 
-    let latSegs = latSegments(for: config.fragmentCount)
-    let lonSegs = lonSegments(for: config.fragmentCount)
+    // Shared dome params
+    params.writeFloat16(config.domeRadius, at: TextureParam.radius, min: 0.0, max: 2.0)
+    params.writeInt16(latSegs, at: TextureParam.latSegments)
+    params.writeInt16(lonSegs, at: TextureParam.lonSegments)
 
-    var pixels: [UInt8] = []
-    pixels.reserveCapacity(width * height * 4)
+    // Algorithm ID
+    params.writeInt16(5, at: TextureParam.algorithmID)
 
-    for rowIdx in 0..<height {
-      // Cols 0-2: Placeholder data
-      pixels.append(contentsOf: [128, 128, 128, 128])
-      pixels.append(contentsOf: [128, 128, 128, 128])
-      pixels.append(contentsOf: [128, 128, 128, 128])
+    // baseSpeed stores domeRadius (used by iris for radius lookup in physics config path)
+    params.writeFloat16(config.domeRadius, at: TextureParam.baseSpeed, min: -2.0, max: 2.0)
 
-      if rowIdx == 0 {
-        // Header row with dome/iris params
+    // Iris-specific params
+    params.writeInt16(config.bladeCount, at: TextureParam.bladeCount)
+    params.writeFloat16(config.openDuration, at: TextureParam.openDuration, min: 0.1, max: 10.0)
+    params.writeFloat16(config.tilt, at: TextureParam.tilt, min: 0.0, max: Float.pi / 2)
+    params.writeFloat16(config.elevation, at: TextureParam.elevation, min: 0.0, max: Float.pi / 4)
 
-        // Col 3: radius (RG), latSegments (BA)
-        let radius16 = encode16bit(config.domeRadius, min: 0.0, max: 2.0)
-        let latSegs16 = UInt16(clamping: latSegs)
-        pixels.append(UInt8((radius16 >> 8) & 0xFF))
-        pixels.append(UInt8(radius16 & 0xFF))
-        pixels.append(UInt8((latSegs16 >> 8) & 0xFF))
-        pixels.append(UInt8(latSegs16 & 0xFF))
-
-        // Col 4: lonSegments (RG), unused (BA)
-        let lonSegs16 = UInt16(clamping: lonSegs)
-        pixels.append(UInt8((lonSegs16 >> 8) & 0xFF))
-        pixels.append(UInt8(lonSegs16 & 0xFF))
-        pixels.append(contentsOf: [0, 0])
-
-        // Col 5-6: unused
-        pixels.append(contentsOf: [128, 128, 128, 128])
-        pixels.append(contentsOf: [128, 128, 0, 0])
-
-        // Col 7: Algorithm ID
-        pixels.append(5)  // iris algorithm
-        pixels.append(contentsOf: [0, 0, 0])
-
-        // Col 8-11: Physics config (baseSpeed stores domeRadius)
-        let baseSpeed16 = encode16bit(config.domeRadius, min: -2.0, max: 2.0)
-        pixels.append(contentsOf: [128, 128, 128, 128])  // col 8
-        pixels.append(contentsOf: [128, 128, 128, 128])  // col 9
-        pixels.append(UInt8((baseSpeed16 >> 8) & 0xFF))  // col 10: baseSpeed
-        pixels.append(UInt8(baseSpeed16 & 0xFF))
-        pixels.append(contentsOf: [128, 128])
-        pixels.append(contentsOf: [128, 128, 128, 128])  // col 11
-
-        // Col 12-13: unused
-        pixels.append(contentsOf: [128, 128, 128, 128])
-        pixels.append(contentsOf: [128, 128, 128, 128])
-
-        // Col 14: bladeCount (RG), openDuration (BA)
-        let blades16 = UInt16(clamping: config.bladeCount)
-        let duration16 = encode16bit(config.openDuration, min: 0.1, max: 10.0)
-        pixels.append(UInt8((blades16 >> 8) & 0xFF))
-        pixels.append(UInt8(blades16 & 0xFF))
-        pixels.append(UInt8((duration16 >> 8) & 0xFF))
-        pixels.append(UInt8(duration16 & 0xFF))
-
-        // Col 15: unused
-        pixels.append(contentsOf: [128, 128, 128, 128])
-
-        // Col 16: tilt (RG) [0, π/2], elevation (BA) [0, π/4]
-        let tilt16 = encode16bit(config.tilt, min: 0.0, max: Float.pi / 2)
-        let elev16 = encode16bit(config.elevation, min: 0.0, max: Float.pi / 4)
-        pixels.append(UInt8((tilt16 >> 8) & 0xFF))
-        pixels.append(UInt8(tilt16 & 0xFF))
-        pixels.append(UInt8((elev16 >> 8) & 0xFF))
-        pixels.append(UInt8(elev16 & 0xFF))
-
-        // Remaining cols: padding
-        for _ in 17..<width {
-          pixels.append(contentsOf: [128, 128, 128, 128])
-        }
-      } else {
-        // Non-header rows: padding
-        for _ in 3..<width {
-          pixels.append(contentsOf: [128, 128, 128, 128])
-        }
-      }
-    }
-
-    let bytesPerRow = width * 4
-    let nsData = Data(pixels)
-    guard let provider = CGDataProvider(data: nsData as CFData) else {
-      log.error("CGDataProvider creation failed")
-      return nil
-    }
-
-    guard let linearColorSpace = CGColorSpace(name: CGColorSpace.linearSRGB),
-          let cgImage = CGImage(
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            bytesPerRow: bytesPerRow,
-            space: linearColorSpace,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: false,
-            intent: .defaultIntent
-          ) else {
-      log.error("CGImage creation failed")
-      return nil
-    }
-
-    do {
-      return try TextureResource(image: cgImage, withName: "IrisData", options: .init(semantic: .raw))
-    } catch {
-      log.error("Failed to create texture: \(error)")
-      return nil
-    }
+    return params.createTexture(name: "IrisData")
   }
+}
 
-  // MARK: - Encoding Helpers
+// MARK: - Visibility Adapter
 
-  private static func encode16bit(_ value: Float, min: Float, max: Float) -> UInt16 {
-    let normalized = (value - min) / (max - min)
-    let clamped = Swift.max(0, Swift.min(1, normalized))
-    return UInt16(clamped * 65535)
+/// Adapter to make IrisContent work with VisibilityChecker
+private struct IrisVisibilityAdapter: VisibilityCheckable {
+  let texture: MTLTexture
+  let fragmentCount: Int
+
+  var visibilityKernelName: String { "irisVisibilityKernel" }
+
+  func encodeVisibilityParameters(encoder: MTLComputeCommandEncoder) {
+    // Buffer 2: fragment count (buffer 0 = anyVisible, buffer 1 = time)
+    var count = UInt32(fragmentCount)
+    encoder.setBytes(&count, length: MemoryLayout<UInt32>.size, index: 2)
+
+    // Texture 0: data texture
+    encoder.setTexture(texture, index: 0)
   }
 }

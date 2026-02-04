@@ -31,6 +31,7 @@ struct IrisFragmentState {
   float4 rotation;
   float elapsed;
   bool visible;
+  bool paramError;  // true when texture data is garbage (race / uninitialized)
   int bladeIndex;
 };
 
@@ -111,6 +112,7 @@ struct SeamPointResult {
   float3 position;
   float3 tangent;
   bool valid;
+  bool interiorArc;  // true when Y axis (apex) is on concave side of arc
 };
 
 /// Compute the intersection circle of a blade's half-space plane with the dome sphere.
@@ -170,9 +172,9 @@ inline float2 solveTrigEquation(float alpha, float beta, float gamma) {
 // Seam arc endpoint computation
 // =============================================================================
 //
-// The seam between blade i and blade i+1 follows blade i's boundary circle
-// from the equator (Y=0) up to the seam point where blade i+1's boundary
-// circle also crosses. The arc stays in the upper hemisphere.
+// The seam arc for blade i follows blade i's boundary circle from the equator
+// (Y=0) up to the seam point where blade i-1's boundary circle also crosses.
+// This traces the full blade boundary including the aperture edge.
 
 /// Find the equator crossing theta where Y=0 and Y is increasing (entering
 /// the upper hemisphere). Returns the theta value, or -1000 if no crossing.
@@ -191,21 +193,21 @@ inline float findEquatorEntry(SeamCircle sc) {
   return dY0 > 0 ? roots.x : roots.y;
 }
 
-/// Find the seam point theta: where blade i's boundary circle meets blade i+1's
-/// half-space plane. This is the two-plane + sphere intersection point.
-/// Condition: dot(P(θ), n_{i+1}) = threshold.
+/// Find the seam point theta: where blade i's boundary circle meets another
+/// blade's half-space plane. This is the two-plane + sphere intersection point.
+/// Condition: dot(P(θ), otherNormal) = threshold.
 /// Returns the theta with Y > 0 (upper hemisphere), or -1000 if invalid.
 inline float findSeamPointTheta(
     SeamCircle sc,
-    float3 nextNormal,
+    float3 otherNormal,
     float threshold
 ) {
-  // Expand dot(center + r*(cos θ * u + sin θ * v), n_next) = threshold
-  // → dot(center, n_next) + r*cos θ*dot(u, n_next) + r*sin θ*dot(v, n_next) = threshold
-  // Since center = n_i * threshold: dot(center, n_next) = threshold * dot(n_i, n_next)
-  float alpha = sc.circleRadius * dot(sc.u, nextNormal);
-  float beta  = sc.circleRadius * dot(sc.v, nextNormal);
-  float gamma = threshold * (1.0f - dot(sc.normal, nextNormal));
+  // Expand dot(center + r*(cos θ * u + sin θ * v), otherNormal) = threshold
+  // → dot(center, other) + r*cos θ*dot(u, other) + r*sin θ*dot(v, other) = threshold
+  // Since center = n_i * threshold: dot(center, other) = threshold * dot(n_i, other)
+  float alpha = sc.circleRadius * dot(sc.u, otherNormal);
+  float beta  = sc.circleRadius * dot(sc.v, otherNormal);
+  float gamma = threshold * (1.0f - dot(sc.normal, otherNormal));
 
   float2 roots = solveTrigEquation(alpha, beta, gamma);
   if (roots.x < -999.0f) return -1000.0f;
@@ -222,8 +224,9 @@ inline float findSeamPointTheta(
 
 /// Compute position and analytical tangent along blade i's seam arc.
 /// arcT: 0 = equator crossing (Y=0, entering upper hemisphere),
-///       1 = seam point (where blade i meets blade i+1).
-/// The arc follows blade i's boundary circle through the upper hemisphere.
+///       1 = seam point (where blade i-1 meets blade i).
+/// The arc follows blade i's boundary circle through the upper hemisphere,
+/// ending at the previous blade's seam point (closing the aperture edge).
 inline SeamPointResult computeSeamPointAndTangent(
     int bladeIndex,
     float arcT,
@@ -235,11 +238,12 @@ inline SeamPointResult computeSeamPointAndTangent(
 ) {
   SeamPointResult result;
   result.valid = false;
+  result.interiorArc = false;
   result.position = float3(0, -1000.0f, 0);
   result.tangent = float3(0, 0, 0);
 
-  // Hide seams when threshold is near dome radius (iris nearly fully open)
-  if (threshold > radius * 0.9f) {
+  // Hide seams when circle is near-degenerate (|threshold| ≈ R)
+  if (abs(threshold) > radius * 0.99f) {
     return result;
   }
 
@@ -247,6 +251,14 @@ inline SeamPointResult computeSeamPointAndTangent(
   SeamCircle sc = computeSeamCircle(ni, threshold, radius);
 
   if (!sc.valid) {
+    return result;
+  }
+
+  // If entire circle is below equator, discard all vertices at once.
+  // maxY = center.y + circleRadius * sqrt(u.y² + v.y²)
+  float ySpan = sqrt(sc.u.y * sc.u.y + sc.v.y * sc.v.y);
+  float maxCircleY = sc.center.y + sc.circleRadius * ySpan;
+  if (maxCircleY < 0.0f) {
     return result;
   }
 
@@ -258,10 +270,12 @@ inline SeamPointResult computeSeamPointAndTangent(
     thetaStart = thetaMinY;
   }
 
-  // End: seam point (where blade i's boundary meets blade i+1's plane)
-  int successor = (bladeIndex + 1) % bladeCount;
-  float3 nNext = computeBladeNormal(successor, bladeCount, tilt, elevation);
-  float thetaEnd = findSeamPointTheta(sc, nNext, threshold);
+  // End: where the PREVIOUS blade's boundary meets this blade's circle.
+  // This point is on blade i's circle (satisfies both dot(P,n_i)=threshold
+  // and dot(P,n_{i-1})=threshold), closing the aperture edge for this blade.
+  int predecessor = (bladeIndex - 1 + bladeCount) % bladeCount;
+  float3 nPrev = computeBladeNormal(predecessor, bladeCount, tilt, elevation);
+  float thetaEnd = findSeamPointTheta(sc, nPrev, threshold);
   if (thetaEnd < -999.0f) {
     return result;
   }
@@ -277,6 +291,11 @@ inline SeamPointResult computeSeamPointAndTangent(
   float yNeg = seamCirclePoint(sc, thetaStart + spanNeg * 0.5f).y;
   float thetaSpan = yPos >= yNeg ? spanPos : spanNeg;
 
+  // Safety: verify Y axis is on the interior (concave side) of the chosen arc.
+  // midY > 0 means the arc curves toward the apex — correct swirl direction.
+  float midY = seamCirclePoint(sc, thetaStart + thetaSpan * 0.5f).y;
+  result.interiorArc = midY > 0.0f;
+
   // Interpolate along the arc
   float theta = thetaStart + arcT * thetaSpan;
 
@@ -286,6 +305,18 @@ inline SeamPointResult computeSeamPointAndTangent(
   float len = length(pos);
   if (len > 0.001f) {
     pos = pos * (radius / len);
+  }
+
+  // Clamp at equator: during phase 2 elevation ramp, the circle drops
+  // below Y=0 progressively. Clamping to Y=0 (instead of hiding) keeps
+  // adjacent ribbon vertices connected — the ribbon pinches shut at the
+  // equator rather than stretching to hidden vertices at Y=-1000.
+  if (pos.y < 0.0f) {
+    pos.y = 0.0f;
+    len = length(pos);
+    if (len > 0.001f) {
+      pos = pos * (radius / len);
+    }
   }
 
   // Analytical tangent: d/dt of circle parameterization
@@ -309,34 +340,32 @@ struct PhysicsData {
   float elevation;
 };
 
-template<typename T>
 inline PhysicsData readPhysicsData(
     int fragmentIndex,
-    texture2d<T, access::sample> tex,
-    sampler texSampler,
-    float texWidth,
-    float texHeight
+    thread const TextureParamReader& reader
 ) {
   PhysicsData pd;
-
-  // Col 3 RG: radius
-  float2 h3UV = float2(3.5f / texWidth, 0.5f / texHeight);
-  float4 h3 = float4(tex.sample(texSampler, h3UV));
-  pd.radius = fragment_math::decode16bit(h3.r, h3.g, 0.0f, 2.0f);
-
-  // Col 14: bladeCount (RG), openDuration (BA)
-  float2 c14UV = float2(14.5f / texWidth, 0.5f / texHeight);
-  float4 c14 = float4(tex.sample(texSampler, c14UV));
-  pd.bladeCount = int(fragment_math::decode16bitInt(c14.r, c14.g));
-  pd.openDuration = fragment_math::decode16bit(c14.b, c14.a, 0.1f, 10.0f);
-
-  // Col 16: tilt (RG) [0, π/2], elevation (BA) [0, π/4]
-  float2 c16UV = float2(16.5f / texWidth, 0.5f / texHeight);
-  float4 c16 = float4(tex.sample(texSampler, c16UV));
-  pd.tilt = fragment_math::decode16bit(c16.r, c16.g, 0.0f, M_PI_2_F);
-  pd.elevation = fragment_math::decode16bit(c16.b, c16.a, 0.0f, M_PI_4_F);
-
+  pd.radius       = reader.readFloat16<tex_param::RADIUS>(0.0f, 2.0f);
+  pd.bladeCount   = reader.readInt16<tex_param::BLADE_COUNT>();
+  pd.openDuration = reader.readFloat16<tex_param::OPEN_DURATION>(0.1f, 10.0f);
+  pd.tilt         = reader.readFloat16<tex_param::TILT>(0.0f, M_PI_2_F);
+  pd.elevation    = reader.readFloat16<tex_param::ELEVATION>(0.0f, M_PI_4_F);
   return pd;
+}
+
+// =============================================================================
+// Phase budget
+// =============================================================================
+
+/// Fraction of openDuration allocated to the threshold sweep (phase 1).
+/// The remainder (1 - kPhase1Fraction) is the elevation ramp (phase 2).
+/// Both phases sum to exactly openDuration.
+constant float kPhase1Fraction = 2.0f / 3.0f;
+
+/// Shader time at which the threshold sweep (phase 1) completes.
+/// Phase 2 (elevation ramp) runs from sweepEnd to openDuration.
+inline float computeSweepEnd(float openDuration) {
+  return openDuration * kPhase1Fraction;
 }
 
 // =============================================================================
@@ -355,7 +384,12 @@ inline float computeClosedThreshold(int bladeCount, float radius, float elevatio
 }
 
 /// Compute threshold at the given time.
-/// t=0 → closed (full blade coverage), t=openDuration → open (0.95R, minimal coverage).
+/// Through-center animation: threshold sweeps from closedThreshold (positive)
+/// through zero to -0.9R (negative) over phase 1 (first kPhase1Fraction of
+/// openDuration). Arcs become concave toward the Y-axis, and the aperture
+/// opens from the apex outward.
+/// ε-snapping avoids the degenerate zone near threshold=0 where all blade
+/// boundaries pass through the origin and seam geometry collapses.
 inline float computeThreshold(
     float time,
     float openDuration,
@@ -364,9 +398,54 @@ inline float computeThreshold(
     float elevation
 ) {
   float closed = computeClosedThreshold(bladeCount, radius, elevation);
-  float open = radius * 0.95f;
-  float progress = clamp(time / openDuration, 0.0f, 1.0f);
-  return closed + progress * (open - closed);
+  float open = -radius * 0.9f;  // through center
+  float sweepEnd = computeSweepEnd(openDuration);
+  float progress = clamp(time / sweepEnd, 0.0f, 1.0f);
+  float raw = closed + progress * (open - closed);
+  // Snap past degenerate zone near 0
+  float eps = 0.03f;
+  if (abs(raw) < eps) {
+    return raw >= 0.0f ? eps : -eps;
+  }
+  return raw;
+}
+
+// =============================================================================
+// Phase 2: elevation ramp (cleanup after threshold sweep)
+// =============================================================================
+//
+// After phase 1 exhausts the threshold sweep (time > openDuration), remaining
+// equatorial fragments form a "bracelet" when cos(elevation) > threshold/R.
+// Phase 2 holds the threshold fixed and ramps elevation until all intersection
+// circles drop below Y=0, naturally clearing the bracelet.
+//
+// Critical elevation: tan(E) = sqrt(1 - α²) / α, where α = |threshold/R|.
+// At α=0.9: E_crit ≈ 25.8°. Add 5° safety margin.
+
+/// Compute effective elevation: base during phase 1, ramping during phase 2.
+/// Phase 2 LERPs from base to target over its full budget (openDuration - sweepEnd),
+/// so the ramp always finishes exactly at openDuration. Rate adapts naturally:
+/// small elevation gap → gentle sweep, large gap → faster sweep.
+inline float computePhase2Elevation(
+    float time,
+    float openDuration,
+    float baseElevation
+) {
+  float sweepEnd = computeSweepEnd(openDuration);
+  float dropTime = max(0.0f, time - sweepEnd);
+  if (dropTime <= 0.0f) return baseElevation;
+
+  float alpha = 0.9f;  // |threshold/R| at end of phase 1
+  float criticalElev = atan(sqrt(1.0f - alpha * alpha) / alpha);
+  float margin = 5.0f * M_PI_F / 180.0f;  // 5°
+  float targetElev = criticalElev + margin;
+
+  if (targetElev <= baseElevation) return baseElevation;
+
+  // LERP over the phase 2 budget so it finishes exactly at openDuration
+  float phase2Duration = openDuration - sweepEnd;
+  float progress = clamp(dropTime / phase2Duration, 0.0f, 1.0f);
+  return baseElevation + progress * (targetElev - baseElevation);
 }
 
 // =============================================================================
@@ -381,21 +460,42 @@ inline IrisFragmentState computeState(
 ) {
   IrisFragmentState state;
   state.elapsed = time;
+  state.paramError = false;
 
   float3 center = fragment_math::computeCenterFromIndex(
     fragmentIndex, dome.latSegments, dome.lonSegments, dome.radius
   );
   float3 normal = normalize(center);
 
-  // t=0 → closed (closedThreshold), t=openDuration → open (0.95R)
+  // Guard: texture not yet uploaded or garbage data.
+  // bladeCount outside [3,24] means the texture read is bogus.
+  // Show the dome in error state rather than running a huge loop or producing garbage.
+  if (physics.bladeCount < 3 || physics.bladeCount > 24) {
+    state.position = center;
+    state.normal = normal;
+    state.rotation = float4(0, 0, 0, 1);
+    state.visible = true;
+    state.paramError = true;
+    state.bladeIndex = 0;
+    return state;
+  }
+
+  // Phase 1: threshold sweeps from closedThreshold → -0.9R (through center)
   float threshold = computeThreshold(
     time, physics.openDuration,
     physics.bladeCount, physics.radius, physics.elevation
   );
 
+  // Phase 2: elevation ramps to clear equatorial bracelet.
+  // When all blades cover a point uniformly (no edge transition),
+  // findVisibleBlade returns -1 (opening) — fragment disappears in place.
+  float effectiveElevation = computePhase2Elevation(
+    time, physics.openDuration, physics.elevation
+  );
+
   int bladeIndex = findVisibleBlade(
     center, threshold,
-    physics.bladeCount, physics.tilt, physics.elevation
+    physics.bladeCount, physics.tilt, effectiveElevation
   );
 
   if (bladeIndex < 0) {
@@ -412,6 +512,24 @@ inline IrisFragmentState computeState(
   state.rotation = float4(0, 0, 0, 1);
   state.visible = true;
   state.bladeIndex = bladeIndex;
+
+  // --- Drop phase: sink leftover visible fragments below Y=0 ---
+  // Only activates after threshold math is exhausted (time > openDuration).
+  // Fixes equatorial "bracelet" where cos(elevation) > 0.95 prevents
+  // threshold from clearing fragments near Y=0.
+  float dropTime = max(0.0f, time - physics.openDuration);
+  if (dropTime > 0.0f) {
+    // Normalize over half the openDuration for a natural fall speed
+    float dropT = clamp(dropTime / (physics.openDuration * 0.5f), 0.0f, 1.0f);
+    // heightFactor: 0 at apex (Y=R), 1 at equator (Y=0), >1 below equator
+    float heightFactor = clamp(1.0f - center.y / physics.radius, 0.0f, 2.0f);
+    float dropDistance = dropT * dropT * heightFactor * physics.radius * 2.0f;
+
+    state.position.y -= dropDistance;
+    if (state.position.y < 0.0f) {
+      state.visible = false;
+    }
+  }
 
   return state;
 }

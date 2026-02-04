@@ -122,9 +122,9 @@ kernel void irisSeamDiagnostics(
   }
   diag.thetaStart = thetaStart;
 
-  int successor = (bladeIndex + 1) % params.bladeCount;
-  float3 nNext = iris::computeBladeNormal(successor, params.bladeCount, params.tilt, params.elevation);
-  float thetaEnd = iris::findSeamPointTheta(sc, nNext, threshold);
+  int predecessor = (bladeIndex - 1 + params.bladeCount) % params.bladeCount;
+  float3 nPrev = iris::computeBladeNormal(predecessor, params.bladeCount, params.tilt, params.elevation);
+  float thetaEnd = iris::findSeamPointTheta(sc, nPrev, threshold);
   diag.thetaEnd = thetaEnd;
   if (thetaEnd < -999.0f) { output[tid] = diag; return; }
 

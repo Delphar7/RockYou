@@ -11,9 +11,7 @@
 //   .z = cameraY
 //   .w = cameraZ
 //
-// Texture layout (16 x 4096):
-//   Row 0, Cols 3-6: Dome/wave params (shared by all algorithms)
-//   Rows 0-4095, Cols 0-2: Physics lookup tables (algorithm interprets these)
+// Texture layout: see TextureParams.h for the virtual byte buffer format.
 
 #pragma once
 
@@ -47,19 +45,19 @@ void name##GeometryModifier(realitykit::geometry_parameters params) { \
   float3 cameraPos = float3(customParams.y, customParams.z, customParams.w); \
   \
   auto dataTexture = params.textures().custom(); \
-  constexpr sampler texSampler(address::clamp_to_edge, filter::nearest); \
   float texWidth = float(dataTexture.get_width()); \
   float texHeight = float(dataTexture.get_height()); \
+  TextureParamReader reader = { dataTexture, 1.0f / texWidth, 1.0f / texHeight }; \
   \
   float2 uv = params.geometry().uv0(); \
   int fragmentIndex = int(round(uv.x)); \
   \
-  DomeParams dome = readDomeParams(dataTexture, texSampler, texWidth, texHeight); \
+  DomeParams dome = readDomeParams(reader); \
   if (dome.latSegments < 2 || dome.lonSegments < 4 || dome.radius < 0.01f) { \
     return; \
   } \
   \
-  auto physics = AlgoNS::readPhysicsData(fragmentIndex, dataTexture, texSampler, texWidth, texHeight); \
+  auto physics = AlgoNS::readPhysicsData(fragmentIndex, reader); \
   auto state = AlgoNS::computeState(fragmentIndex, time, dome, physics); \
   \
   float3 newCenter = state.position; \
@@ -119,17 +117,17 @@ void name##VisibilityKernel( \
     device atomic_uint* anyVisible [[buffer(0)]], \
     constant float& time [[buffer(1)]], \
     constant uint& fragmentCount [[buffer(2)]], \
-    texture2d<float, access::sample> dataTexture [[texture(0)]], \
+    texture2d<half, access::sample> dataTexture [[texture(0)]], \
     uint idx [[thread_position_in_grid]] \
 ) { \
   if (idx >= fragmentCount) return; \
   \
-  constexpr sampler texSampler(address::clamp_to_edge, filter::nearest); \
   float texWidth = float(dataTexture.get_width()); \
   float texHeight = float(dataTexture.get_height()); \
+  TextureParamReader reader = { dataTexture, 1.0f / texWidth, 1.0f / texHeight }; \
   \
-  DomeParams dome = readDomeParams(dataTexture, texSampler, texWidth, texHeight); \
-  auto physics = AlgoNS::readPhysicsData(int(idx), dataTexture, texSampler, texWidth, texHeight); \
+  DomeParams dome = readDomeParams(reader); \
+  auto physics = AlgoNS::readPhysicsData(int(idx), reader); \
   FragmentState state = AlgoNS::computeVisibilityState(int(idx), time, dome, physics); \
   \
   if (state.visible) { \

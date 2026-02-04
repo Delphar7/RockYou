@@ -188,3 +188,40 @@ final class VisibilityChecker {
     }
   }
 }
+
+// MARK: - Visibility Tracker
+
+/// Encapsulates periodic visibility checking state.
+/// Used by Content classes to avoid duplicating check-interval logic.
+@MainActor
+final class VisibilityTracker {
+  private(set) var allFragmentsGone = false
+  private var checker: VisibilityChecker?
+  private var lastCheckTime: Float = -1
+  private let checkInterval: Float = 0.5  // Check twice per second
+
+  /// Check visibility if enough time has elapsed since the last check.
+  /// Calls `onAllGone` (on the main thread) once when all fragments are gone.
+  func checkIfNeeded(
+    at time: Float,
+    animation: VisibilityCheckable,
+    onAllGone: @escaping () -> Void = {}
+  ) {
+    guard !allFragmentsGone else { return }
+    guard time - lastCheckTime >= checkInterval else { return }
+    lastCheckTime = time
+
+    if checker == nil { checker = VisibilityChecker() }
+    guard let checker else { return }
+
+    checker.checkVisibilityAsync(animation: animation, time: time) { [weak self] result in
+      DispatchQueue.main.async {
+        guard let self, !self.allFragmentsGone else { return }
+        if result == .allGone {
+          self.allFragmentsGone = true
+          onAllGone()
+        }
+      }
+    }
+  }
+}

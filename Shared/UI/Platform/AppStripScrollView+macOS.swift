@@ -19,9 +19,14 @@
     let deviceId: String
     let onScrollGestureChanged: (Bool) -> Void
 
+    // Force NSHostingView to re-diff when MRU ordering changes.
+    // The NSViewRepresentable bridge can't detect closure-captured reordering
+    // inside ForEach(0..<n, id: \.self), so we stamp the content with mruVersion.
+    @ObservedObject private var cache = AppCacheManager.shared
+
     var body: some View {
       MacAppStripScrollView(
-        content: content.padding(.top, 2),
+        content: content.id(cache.mruVersion).padding(.top, 2),
         axis: axis,
         direction: direction,
         deviceId: deviceId,

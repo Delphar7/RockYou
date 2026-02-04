@@ -95,7 +95,7 @@ struct SweepableModifier: ViewModifier {
   // we only get one threshold, so we use the "initial" phase there.
   private enum SweepCancelTuning {
     static let initialMultiplier: CGFloat = 1.10  // "tiny bit bigger"
-    static let lockedMultiplier: CGFloat = 2.20  // +220% once committed (when supported)
+    static let lockedMultiplier: CGFloat = 2.40  // +240% once committed (when supported)
   }
 
   // Baseline distance (used by the touch-router path).

@@ -28,19 +28,21 @@ struct IrisAnimationConfig {
   var fragmentCount: Int = 30000
 
   /// Dome radius in meters
-  var domeRadius: Float = 0.6
+  var domeRadius: Float = 0.5
 
   /// Number of iris blades
   var bladeCount: Int = 12
 
-  /// Duration of animation (seconds)
-  var openDuration: Float = 4.0
+  /// Shader time budget (seconds). Wall-clock duration is DomeSceneConfig.duration.
+  var openDuration: Float = 2.5
 
-  /// Tilt angle: 0 = radial (no spiral), π/2 = full tangential
+  /// Tilt angle in radians: 0 = radial (no spiral), π/2 = full tangential.
+  /// Range 0.3...0.8 ≈ 17°...46°.
   var tilt: Float = 0.5
 
-  /// Elevation: lifts blade normals toward dome apex
-  var elevation: Float = 0.3
+  /// Elevation in radians: lifts blade normals toward dome apex.
+  /// Encoded to GPU as [0, π/4]. Range 0.4...0.6 ≈ 22.9°...34.4°.
+  var elevation: Float = 0.5
 
   /// Whether to render seam ribbons between blades
   var showSeamRibbons: Bool = true
@@ -54,7 +56,7 @@ struct IrisAnimationConfig {
     IrisAnimationConfig(
       bladeCount: [8, 10, 12, 14, 16].randomElement(using: &rng) ?? 12,
       tilt: Float.random(in: 0.3...0.8, using: &rng),
-      elevation: Float.random(in: 0.1...0.4, using: &rng)
+      elevation: Float.random(in: 0.4...0.6, using: &rng)
     )
   }
 
@@ -122,10 +124,13 @@ struct ShatterAnimationConfig {
   /// Initial upward velocity (confetti mode)
   var cannonPower: Float = 0.0
 
+  /// Shader time budget (seconds). Wall-clock duration is DomeSceneConfig.duration.
+  var openDuration: Float = 4.0
+
   // MARK: - Debug
 
   /// Whether to show debug DPad texture
-  var showDpadTexture: Bool = true
+  var showDpadTexture: Bool = false
 
   // MARK: - Presets
 
@@ -148,9 +153,10 @@ struct ShatterAnimationConfig {
   static func randomized(using rng: inout some RandomNumberGenerator) -> Self {
     let mode: ShatterMode = Bool.random(using: &rng) ? .explode : .confetti
     var config = ShatterAnimationConfig(mode: mode)
-    config.baseGravity = Float.random(in: 0.1...0.4, using: &rng)
+    config.baseGravity = Float.random(in: 0.15...0.5, using: &rng)
     config.baseSpeed = Float.random(in: 0.1...0.25, using: &rng)
-    config.cannonPower = mode == .confetti ? Float.random(in: 0.3...0.7, using: &rng) : 0.0
+    config.waveSpeed = Float.random(in: 2.0...3.5, using: &rng)
+    config.cannonPower = mode == .confetti ? Float.random(in: 0.4...0.8, using: &rng) : 0.0
     return config
   }
 
@@ -180,8 +186,11 @@ struct RippleAnimationConfig {
   /// Wave height - how much fragments move in/out
   var waveAmplitude: Float = 0.006
 
-  /// How fast waves expand outward from origin
-  var rippleSpeed: Float = 0.1
+  /// How fast waves expand outward from origin (0.2 = reaches far side in 5s)
+  var rippleSpeed: Float = 0.2
+
+  /// Shader time budget (seconds). Wall-clock duration is DomeSceneConfig.duration.
+  var openDuration: Float = 5.0
 
   // MARK: - Physics
 
@@ -190,19 +199,16 @@ struct RippleAnimationConfig {
 
   /// Gravity variation range
   var gravityMin: Float = 0.5
-  var gravityMax: Float = 1.5
+  var gravityMax: Float = 2.0
 
   /// Spin/tumble rate range
   var spinRateMin: Float = 4.0
   var spinRateMax: Float = 8.0
 
-  /// How fast collapse wave propagates (legacy, kept for compatibility)
-  var collapseSpeed: Float = 0.3
-
   // MARK: - Debug
 
   /// Whether to show debug DPad texture
-  var showDpadTexture: Bool = true
+  var showDpadTexture: Bool = false
 
   // MARK: - Presets
 
@@ -211,9 +217,9 @@ struct RippleAnimationConfig {
   /// Randomized config for production variety
   static func randomized(using rng: inout some RandomNumberGenerator) -> Self {
     RippleAnimationConfig(
-      waveFrequency: Float.random(in: 4...12, using: &rng),
-      waveAmplitude: Float.random(in: 0.003...0.01, using: &rng),
-      rippleSpeed: Float.random(in: 0.05...0.2, using: &rng)
+      waveFrequency: Float.random(in: 4...8, using: &rng),
+      waveAmplitude: Float.random(in: 0.005...0.012, using: &rng),
+      rippleSpeed: Float.random(in: 0.2...0.3, using: &rng)
     )
   }
 
@@ -241,8 +247,8 @@ struct FlowerAnimationConfig {
   /// Dome radius in meters
   var domeRadius: Float = 0.5
 
-  /// Duration of open animation (seconds)
-  var openDuration: Float = 4.0
+  /// Shader time budget (seconds). Wall-clock duration is DomeSceneConfig.duration.
+  var openDuration: Float = 2.5
 
   // MARK: - Presets
 
@@ -251,7 +257,7 @@ struct FlowerAnimationConfig {
   /// Randomized config for production variety
   static func randomized(using rng: inout some RandomNumberGenerator) -> Self {
     FlowerAnimationConfig(
-      bladeCount: [8, 10, 12, 14].randomElement(using: &rng) ?? 10,
+      bladeCount: [10, 12, 14, 16, 18].randomElement(using: &rng) ?? 10,
       bladeCoverage: Float.random(in: 0.75...0.95, using: &rng),
       bladeOverlap: Float.random(in: 0.01...0.04, using: &rng)
     )
@@ -269,12 +275,9 @@ struct FlowerAnimationConfig {
 /// Fixed configuration for dome scene layout and camera animation.
 /// Used by DoorsView for production rendering.
 enum DomeSceneConfig {
-  /// Target wall-clock duration for the full animation (seconds).
-  /// Shader time is decoupled: openDuration / duration = playback speed multiplier.
-  static let duration: Float = 1.0
-
-  static let baseDomeRadius: Float = 0.5
-  static let domeRadius: Float = baseDomeRadius
+  /// Wall-clock duration for the main animation phase (seconds).
+  /// At progress=1 the DPad surfaces. Shader time = progress × max(openDuration, duration).
+  static let duration: Float = 5.0
 
   /// Used by LockableDPadView to size the dome render canvas relative to the DPad.
   static let renderCanvasScale: Float = 1.25
@@ -284,9 +287,6 @@ enum DomeSceneConfig {
 
   /// Scale factor for dome entity to fit within ellipse
   static let domeEntityScale: Float = ellipseHeightScale / renderCanvasScale
-
-  /// Duration of open animation (seconds) - matches LockableDPadView's openDurationSeconds
-  static let openDuration: Float = 8.0
 
   /// Base pixel size used by RockYouApp+macOS to compute render backing size.
   /// This is a UI/layout constant, not part of the iris math.

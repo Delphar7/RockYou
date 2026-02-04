@@ -19,8 +19,14 @@ final class ShatterContent: SceneContent {
   let config: ShatterAnimationConfig
   let entity: Entity
 
+  /// SceneContent protocol - animation complete when all fragments gone
+  var isComplete: Bool { visibilityTracker.allFragmentsGone }
+
   private let domeEntity: ModelEntity
   private var dataTexture: TextureResource?
+  private var mtlDataTexture: MTLTexture?  // Raw Metal texture for compute shader
+  private let fragmentCount: Int
+  private let visibilityTracker = VisibilityTracker()
 
   init(config: ShatterAnimationConfig, cameraPosition: SIMD3<Float> = [0.6, 0.4, 0.6]) {
     self.config = config
@@ -28,65 +34,53 @@ final class ShatterContent: SceneContent {
     // Create root entity
     let root = Entity()
 
-    Log.debug("ShatterContent", "Init: mode=\(config.mode) fragments=\(config.fragmentCount) radius=\(config.domeRadius)")
-
     // Generate dome mesh
-    guard let meshGenerator = DomeMeshGenerator() else {
-      Log.warn("ShatterContent", "FAIL: DomeMeshGenerator init returned nil")
-      shatterLog.error("Failed to generate dome mesh")
-      self.entity = root
-      self.domeEntity = ModelEntity()
-      return
-    }
+    let latSegs = DomeMeshGenerator.latSegments(for: config.fragmentCount)
+    let lonSegs = DomeMeshGenerator.lonSegments(for: config.fragmentCount)
 
-    let latSegs = Self.latSegments(for: config.fragmentCount)
-    let lonSegs = Self.lonSegments(for: config.fragmentCount)
-    Log.debug("ShatterContent", "Mesh gen: latSegs=\(latSegs) lonSegs=\(lonSegs)")
-
-    guard let mesh = meshGenerator.generateMesh(
+    guard let meshGenerator = DomeMeshGenerator(),
+          let mesh = meshGenerator.generateMesh(
             latSegments: latSegs,
             lonSegments: lonSegs,
             radius: config.domeRadius
           ) else {
-      Log.warn("ShatterContent", "FAIL: generateMesh returned nil")
       shatterLog.error("Failed to generate dome mesh")
       self.entity = root
       self.domeEntity = ModelEntity()
+      self.fragmentCount = 0
       return
     }
-    Log.debug("ShatterContent", "Mesh generated OK")
+
+    self.fragmentCount = DomeMeshGenerator.fragmentCount(latSegments: latSegs, lonSegments: lonSegs)
 
     // Compute wave origin from camera position if wave enabled
     let waveOrigin: SIMD3<Float>? = config.waveEnabled
       ? simd_normalize(cameraPosition) * config.domeRadius * 0.8
       : nil
 
-    // Create data texture for shader params
-    guard let texture = Self.createDataTexture(config: config, waveOrigin: waveOrigin) else {
-      Log.warn("ShatterContent", "FAIL: createDataTexture returned nil")
+    // Create data texture for shader params (also creates MTLTexture for compute)
+    let textureResult = Self.createDataTexture(config: config, waveOrigin: waveOrigin)
+    guard let texture = textureResult.resource else {
       shatterLog.error("Failed to create data texture")
       self.entity = root
       self.domeEntity = ModelEntity()
       return
     }
     self.dataTexture = texture
-    Log.debug("ShatterContent", "Data texture created OK")
+    self.mtlDataTexture = textureResult.mtlTexture
 
     // Create material with appropriate shaders
     guard let material = Self.createMaterial(config: config, texture: texture) else {
-      Log.warn("ShatterContent", "FAIL: createMaterial returned nil")
       shatterLog.error("Failed to create shatter material")
       self.entity = root
       self.domeEntity = ModelEntity()
       return
     }
-    Log.debug("ShatterContent", "Material created OK")
 
     // Create dome entity
     let dome = ModelEntity(mesh: mesh, materials: [material])
     root.addChild(dome)
     self.domeEntity = dome
-    Log.debug("ShatterContent", "Init complete: entity has \(root.children.count) children")
 
     self.entity = root
   }
@@ -97,17 +91,20 @@ final class ShatterContent: SceneContent {
       material.custom.value = [time, cameraPosition.x, cameraPosition.y, cameraPosition.z]
       domeEntity.model?.materials = [material]
     }
+
+    checkVisibility(at: time)
   }
 
-  // MARK: - Mesh Generation Helpers
+  // MARK: - Visibility Checking
 
-  private static func latSegments(for fragmentCount: Int) -> Int {
-    let segments = max(4, Int(sqrt(Double(fragmentCount))))
-    return segments / 2
-  }
-
-  private static func lonSegments(for fragmentCount: Int) -> Int {
-    return max(4, Int(sqrt(Double(fragmentCount))))
+  private func checkVisibility(at time: Float) {
+    guard let mtlTexture = mtlDataTexture else { return }
+    visibilityTracker.checkIfNeeded(
+      at: time,
+      animation: ShatterVisibilityAdapter(texture: mtlTexture, fragmentCount: fragmentCount, mode: config.mode)
+    ) {
+      shatterLog.info("All fragments gone at t=\(time)")
+    }
   }
 
   // MARK: - Material Creation
@@ -161,156 +158,69 @@ final class ShatterContent: SceneContent {
 
   // MARK: - Data Texture
 
-  private static let textureWidth = 32
-  private static let textureHeight = 4096
-
   private static func createDataTexture(
     config: ShatterAnimationConfig,
     waveOrigin: SIMD3<Float>?
-  ) -> TextureResource? {
-    let width = textureWidth
-    let height = textureHeight
+  ) -> TextureParamWriter.TextureResult {
+    let latSegs = DomeMeshGenerator.latSegments(for: config.fragmentCount)
+    let lonSegs = DomeMeshGenerator.lonSegments(for: config.fragmentCount)
 
-    let latSegs = latSegments(for: config.fragmentCount)
-    let lonSegs = lonSegments(for: config.fragmentCount)
+    var params = TextureParamWriter()
 
-    var pixels: [UInt8] = []
-    pixels.reserveCapacity(width * height * 4)
+    // Shared dome params
+    params.writeFloat16(config.domeRadius, at: TextureParam.radius, min: 0.0, max: 2.0)
+    params.writeInt16(latSegs, at: TextureParam.latSegments)
+    params.writeInt16(lonSegs, at: TextureParam.lonSegments)
+    params.writeFloat16(config.waveSpeed, at: TextureParam.waveSpeed, min: 0.0, max: 20.0)
 
-    for rowIdx in 0..<height {
-      // Cols 0-2: Lookup table data (random physics values - used by shaders via stable_random)
-      pixels.append(contentsOf: [128, 128, 128, 128])  // col 0
-      pixels.append(contentsOf: [128, 128, 128, 128])  // col 1
-      pixels.append(contentsOf: [128, 128, 128, 128])  // col 2
-
-      if rowIdx == 0 {
-        // Header row with dome/physics params
-
-        // Col 3: radius (RG), latSegments (BA)
-        let radius16 = encode16bit(config.domeRadius, min: 0.0, max: 2.0)
-        let latSegs16 = UInt16(clamping: latSegs)
-        pixels.append(UInt8((radius16 >> 8) & 0xFF))
-        pixels.append(UInt8(radius16 & 0xFF))
-        pixels.append(UInt8((latSegs16 >> 8) & 0xFF))
-        pixels.append(UInt8(latSegs16 & 0xFF))
-
-        // Col 4: lonSegments (RG), waveSpeed (BA)
-        let lonSegs16 = UInt16(clamping: lonSegs)
-        let waveSpeed16 = encode16bit(config.waveSpeed, min: 0.0, max: 10.0)
-        pixels.append(UInt8((lonSegs16 >> 8) & 0xFF))
-        pixels.append(UInt8(lonSegs16 & 0xFF))
-        pixels.append(UInt8((waveSpeed16 >> 8) & 0xFF))
-        pixels.append(UInt8(waveSpeed16 & 0xFF))
-
-        // Col 5-6: wave origin
-        if let origin = waveOrigin {
-          let ox16 = encode16bit(origin.x, min: -2.0, max: 2.0)
-          let oy16 = encode16bit(origin.y, min: -2.0, max: 2.0)
-          let oz16 = encode16bit(origin.z, min: -2.0, max: 2.0)
-          pixels.append(UInt8((ox16 >> 8) & 0xFF))
-          pixels.append(UInt8(ox16 & 0xFF))
-          pixels.append(UInt8((oy16 >> 8) & 0xFF))
-          pixels.append(UInt8(oy16 & 0xFF))
-          pixels.append(UInt8((oz16 >> 8) & 0xFF))
-          pixels.append(UInt8(oz16 & 0xFF))
-          pixels.append(1)  // wave enabled
-          pixels.append(0)
-        } else {
-          pixels.append(contentsOf: [128, 128, 128, 128])  // col 5
-          pixels.append(contentsOf: [128, 128, 0, 0])      // col 6: wave disabled
-        }
-
-        // Col 7: Algorithm ID (R), cannon power (GB)
-        let algorithmID: UInt8 = config.mode == .explode ? 0 : 1
-        let cannonPower16 = encode16bit(config.cannonPower, min: 0.0, max: 5.0)
-        pixels.append(algorithmID)
-        pixels.append(UInt8((cannonPower16 >> 8) & 0xFF))
-        pixels.append(UInt8(cannonPower16 & 0xFF))
-        pixels.append(0)
-
-        // Col 8: baseGravity (RG), gravityMin (BA) - must match FragmentMath.h layout
-        let baseGrav16 = encode16bit(config.baseGravity, min: 0.0, max: 2.0)
-        let gravMin16 = encode16bit(config.gravityMin, min: 0.0, max: 2.0)
-        pixels.append(UInt8((baseGrav16 >> 8) & 0xFF))
-        pixels.append(UInt8(baseGrav16 & 0xFF))
-        pixels.append(UInt8((gravMin16 >> 8) & 0xFF))
-        pixels.append(UInt8(gravMin16 & 0xFF))
-
-        // Col 9: gravityMax (RG), spinRateMin (BA)
-        let gravMax16 = encode16bit(config.gravityMax, min: 0.0, max: 2.0)
-        let spinMin16 = encode16bit(config.spinRateMin, min: 0.0, max: 20.0)
-        pixels.append(UInt8((gravMax16 >> 8) & 0xFF))
-        pixels.append(UInt8(gravMax16 & 0xFF))
-        pixels.append(UInt8((spinMin16 >> 8) & 0xFF))
-        pixels.append(UInt8(spinMin16 & 0xFF))
-
-        // Col 10: spinRateMax (RG), baseSpeed (BA)
-        let spinMax16 = encode16bit(config.spinRateMax, min: 0.0, max: 20.0)
-        let baseSpeed16 = encode16bit(config.baseSpeed, min: -2.0, max: 2.0)
-        pixels.append(UInt8((spinMax16 >> 8) & 0xFF))
-        pixels.append(UInt8(spinMax16 & 0xFF))
-        pixels.append(UInt8((baseSpeed16 >> 8) & 0xFF))
-        pixels.append(UInt8(baseSpeed16 & 0xFF))
-
-        // Col 11: spreadAngle (RG), upwardBias (BA)
-        let spread16 = encode16bit(config.spreadAngle, min: 0.0, max: 2.0)
-        let upward16 = encode16bit(config.upwardBias, min: -2.0, max: 2.0)
-        pixels.append(UInt8((spread16 >> 8) & 0xFF))
-        pixels.append(UInt8(spread16 & 0xFF))
-        pixels.append(UInt8((upward16 >> 8) & 0xFF))
-        pixels.append(UInt8(upward16 & 0xFF))
-
-        // Cols 12-31: padding
-        for _ in 12..<width {
-          pixels.append(contentsOf: [128, 128, 128, 128])
-        }
-      } else {
-        // Non-header rows: padding
-        for _ in 3..<width {
-          pixels.append(contentsOf: [128, 128, 128, 128])
-        }
-      }
+    // Wave origin
+    if let origin = waveOrigin {
+      params.writeFloat16(origin.x, at: TextureParam.waveOriginX, min: -2.0, max: 2.0)
+      params.writeFloat16(origin.y, at: TextureParam.waveOriginY, min: -2.0, max: 2.0)
+      params.writeFloat16(origin.z, at: TextureParam.waveOriginZ, min: -2.0, max: 2.0)
+      params.writeInt16(1, at: TextureParam.waveEnabled)
     }
 
-    // Create CGImage from pixel data
-    let bytesPerRow = width * 4
-    let nsData = Data(pixels)
-    guard let provider = CGDataProvider(data: nsData as CFData) else {
-      shatterLog.error("CGDataProvider creation failed")
-      return nil
-    }
+    // Algorithm ID + cannon power
+    let algorithmID = config.mode == .explode ? 0 : 1
+    params.writeInt16(algorithmID, at: TextureParam.algorithmID)
+    params.writeFloat16(config.cannonPower, at: TextureParam.cannonPower, min: 0.0, max: 5.0)
 
-    guard let linearColorSpace = CGColorSpace(name: CGColorSpace.linearSRGB),
-          let cgImage = CGImage(
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            bytesPerRow: bytesPerRow,
-            space: linearColorSpace,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: false,
-            intent: .defaultIntent
-          ) else {
-      shatterLog.error("CGImage creation failed")
-      return nil
-    }
+    // Physics config
+    params.writeFloat16(config.baseGravity, at: TextureParam.baseGravity, min: 0.0, max: 2.0)
+    params.writeFloat16(config.gravityMin, at: TextureParam.gravityMin, min: 0.0, max: 2.0)
+    params.writeFloat16(config.gravityMax, at: TextureParam.gravityMax, min: 0.0, max: 2.0)
+    params.writeFloat16(config.spinRateMin, at: TextureParam.spinRateMin, min: 0.0, max: 20.0)
+    params.writeFloat16(config.spinRateMax, at: TextureParam.spinRateMax, min: 0.0, max: 20.0)
+    params.writeFloat16(config.baseSpeed, at: TextureParam.baseSpeed, min: -2.0, max: 2.0)
+    params.writeFloat16(config.spreadAngle, at: TextureParam.spreadAngle, min: 0.0, max: 2.0)
+    params.writeFloat16(config.upwardBias, at: TextureParam.upwardBias, min: -2.0, max: 2.0)
 
-    do {
-      return try TextureResource(image: cgImage, withName: "ShatterData", options: .init(semantic: .raw))
-    } catch {
-      shatterLog.error("Failed to create texture: \(error)")
-      return nil
+    return params.createTexture(name: "ShatterData")
+  }
+}
+
+// MARK: - Visibility Adapter
+
+/// Adapter to make ShatterContent work with VisibilityChecker
+private struct ShatterVisibilityAdapter: VisibilityCheckable {
+  let texture: MTLTexture
+  let fragmentCount: Int
+  let mode: ShatterMode
+
+  var visibilityKernelName: String {
+    switch mode {
+    case .explode: return "explodeVisibilityKernel"
+    case .confetti: return "confettiVisibilityKernel"
     }
   }
 
-  // MARK: - Encoding Helpers
+  func encodeVisibilityParameters(encoder: MTLComputeCommandEncoder) {
+    // Buffer 2: fragment count (buffer 0 = anyVisible, buffer 1 = time)
+    var count = UInt32(fragmentCount)
+    encoder.setBytes(&count, length: MemoryLayout<UInt32>.size, index: 2)
 
-  private static func encode16bit(_ value: Float, min: Float, max: Float) -> UInt16 {
-    let normalized = (value - min) / (max - min)
-    let clamped = Swift.max(0, Swift.min(1, normalized))
-    return UInt16(clamped * 65535)
+    // Texture 0: data texture
+    encoder.setTexture(texture, index: 0)
   }
 }

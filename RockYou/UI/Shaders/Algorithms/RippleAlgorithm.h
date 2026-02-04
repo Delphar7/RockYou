@@ -53,52 +53,33 @@ struct PhysicsData {
   // Fade properties
   float fadeOutY;         // Y position where fragment disappears (40%-120% to zero)
 
-  // Collapse properties (keeping for backwards compat)
-  float collapseSpeed;    // How fast collapse wave propagates
 };
 
-// Read ripple-specific config from texture header (col 12-13)
-template<typename T>
+// Read ripple-specific config from texture header
 inline void readRippleConfig(
-    texture2d<T, access::sample> tex,
-    sampler texSampler,
-    float texWidth,
-    float texHeight,
+    thread const TextureParamReader& reader,
     thread float& waveFrequency,
     thread float& waveAmplitude,
-    thread float& rippleSpeed,
-    thread float& collapseSpeed
+    thread float& rippleSpeed
 ) {
-  // Col 12: waveFrequency (RG), waveAmplitude (BA)
-  float2 c12UV = float2(12.5f / texWidth, 0.5f / texHeight);
-  float4 c12 = float4(tex.sample(texSampler, c12UV));
-  waveFrequency = decode16bit(c12.r, c12.g, 1.0f, 10.0f);  // 1-10 cycles
-  waveAmplitude = decode16bit(c12.b, c12.a, 0.0f, 0.2f);   // 0-0.2 units
-
-  // Col 13: collapseSpeed (RG), rippleSpeed (BA)
-  float2 c13UV = float2(13.5f / texWidth, 0.5f / texHeight);
-  float4 c13 = float4(tex.sample(texSampler, c13UV));
-  collapseSpeed = decode16bit(c13.r, c13.g, 0.0f, 2.0f);   // 0-2 units/sec
-  rippleSpeed = decode16bit(c13.b, c13.a, 0.0f, 2.0f);     // 0-2 units/sec
+  waveFrequency = reader.readFloat16<tex_param::WAVE_FREQUENCY>(1.0f, 10.0f);
+  waveAmplitude = reader.readFloat16<tex_param::WAVE_AMPLITUDE>(0.0f, 0.2f);
+  rippleSpeed   = reader.readFloat16<tex_param::RIPPLE_SPEED>(0.0f, 2.0f);
 }
 
 // Generate physics data
-template<typename T>
 inline PhysicsData readPhysicsData(
     int fragmentIndex,
-    texture2d<T, access::sample> tex,
-    sampler texSampler,
-    float texWidth,
-    float texHeight
+    thread const TextureParamReader& reader
 ) {
   PhysicsData pd;
 
   // Read shared physics config
-  PhysicsConfig config = readPhysicsConfig(tex, texSampler, texWidth, texHeight);
+  PhysicsConfig config = readPhysicsConfig(reader);
 
   // Read ripple-specific config (includes rippleSpeed)
-  readRippleConfig(tex, texSampler, texWidth, texHeight,
-                   pd.waveFrequency, pd.waveAmplitude, pd.rippleSpeed, pd.collapseSpeed);
+  readRippleConfig(reader,
+                   pd.waveFrequency, pd.waveAmplitude, pd.rippleSpeed);
 
   // Random detach: after 2-6 waves pass over the fragment (seed 300)
   pd.detachWaveCount = stable_random(fragmentIndex, 300, 2.0f, 6.0f);

@@ -81,12 +81,13 @@ struct IrisAlgorithm {
   }
 
   /// Seam point: intersection of two adjacent boundary planes with the dome sphere.
+  /// Uses predecessor (i-1) to match the production seam arc endpoint.
   /// Returns the upper-hemisphere point, or nil if none exists.
   func seamPoint(bladeIndex: Int, aperture: Float) -> SIMD3<Float>? {
     let R = domeRadius
     let d = aperture
     let ni = bladeNormal(index: bladeIndex)
-    let nj = bladeNormal(index: (bladeIndex + 1) % bladeCount)
+    let nj = bladeNormal(index: (bladeIndex - 1 + bladeCount) % bladeCount)
 
     let c = simd_dot(ni, nj)
     guard abs(1 + c) > 0.0001 else { return nil }
@@ -168,7 +169,7 @@ struct IrisAlgorithm {
     return dY > 0 ? r1 : r2
   }
 
-  /// Seam point theta: where blade i's boundary circle meets blade (i+1)'s plane.
+  /// Seam point theta: where blade i's boundary circle meets another blade's plane.
   /// Picks the root in the upper hemisphere (higher Y).
   func findSeamPointTheta(_ sc: SeamCircle, nextNormal: SIMD3<Float>, threshold: Float) -> Float? {
     let alpha = sc.circleRadius * simd_dot(sc.u, nextNormal)
@@ -193,9 +194,9 @@ struct IrisAlgorithm {
       thetaStart = atan2(sc.v.y, sc.u.y) + .pi
     }
 
-    let successor = (index + 1) % bladeCount
-    let nNext = bladeNormal(index: successor)
-    guard let thetaEnd = findSeamPointTheta(sc, nextNormal: nNext, threshold: aperture) else { return [] }
+    let predecessor = (index - 1 + bladeCount) % bladeCount
+    let nPrev = bladeNormal(index: predecessor)
+    guard let thetaEnd = findSeamPointTheta(sc, nextNormal: nPrev, threshold: aperture) else { return [] }
 
     // Pick the arc whose midpoint has higher Y (apex on interior)
     var spanPos = thetaEnd - thetaStart

@@ -29,6 +29,25 @@ class DomeMeshGenerator {
   // Vertex stride must match DomeVertex in Metal (float3 + float3 + float2 = 32 bytes)
   private static let vertexStride = 32
 
+  // MARK: - Tessellation Helpers
+
+  /// Latitude segments for a given target fragment count.
+  static func latSegments(for fragmentCount: Int) -> Int {
+    let segments = max(4, Int(sqrt(Double(fragmentCount))))
+    return segments / 2
+  }
+
+  /// Longitude segments for a given target fragment count.
+  static func lonSegments(for fragmentCount: Int) -> Int {
+    return max(4, Int(sqrt(Double(fragmentCount))))
+  }
+
+  /// Actual fragment (triangle) count produced by the tessellation.
+  /// Must stay in sync with generateMesh() triangle layout.
+  static func fragmentCount(latSegments: Int, lonSegments: Int) -> Int {
+    return lonSegments + (latSegments - 1) * lonSegments * 2
+  }
+
   init?() {
     guard let device = MTLCreateSystemDefaultDevice() else {
       Log.warn("DomeMesh", "FAIL: No Metal device available")

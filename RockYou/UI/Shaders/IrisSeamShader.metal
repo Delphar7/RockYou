@@ -19,12 +19,12 @@ void irisSeamGeometryModifier(realitykit::geometry_parameters params) {
   float time = customParams.x;
 
   auto dataTexture = params.textures().custom();
-  constexpr sampler texSampler(address::clamp_to_edge, filter::nearest);
   float texWidth = float(dataTexture.get_width());
   float texHeight = float(dataTexture.get_height());
+  TextureParamReader reader = { dataTexture, 1.0f / texWidth, 1.0f / texHeight };
 
-  fragment_math::DomeParams dome = fragment_math::readDomeParams(dataTexture, texSampler, texWidth, texHeight);
-  iris::PhysicsData physics = iris::readPhysicsData(0, dataTexture, texSampler, texWidth, texHeight);
+  fragment_math::DomeParams dome = fragment_math::readDomeParams(reader);
+  iris::PhysicsData physics = iris::readPhysicsData(0, reader);
 
   // Decode UV: x = arcT (0-1), y = bladeIndex + widthSign*0.25
   float2 uv = params.geometry().uv0();
@@ -32,17 +32,22 @@ void irisSeamGeometryModifier(realitykit::geometry_parameters params) {
   int bladeIndex = int(floor(uv.y));
   float widthSign = (fract(uv.y) > 0.1f) ? 1.0f : -1.0f;
 
-  // Compute threshold from time (t=0 → closed, t=openDuration → open)
+  // Compute threshold from time (t=0 → closed, t=openDuration → -0.9R)
   float threshold = iris::computeThreshold(
     time, physics.openDuration,
     physics.bladeCount, physics.radius, physics.elevation
+  );
+
+  // Phase 2: elevation ramp to clear equatorial seams (matches dome fragments)
+  float effectiveElevation = iris::computePhase2Elevation(
+    time, physics.openDuration, physics.elevation
   );
 
   // Compute seam point and analytical tangent in one call
   iris::SeamPointResult seamResult = iris::computeSeamPointAndTangent(
     bladeIndex, arcT, threshold,
     physics.bladeCount, physics.radius,
-    physics.tilt, physics.elevation
+    physics.tilt, effectiveElevation
   );
 
   float3 pos3D = seamResult.position;
@@ -88,6 +93,10 @@ void irisSeamGeometryModifier(realitykit::geometry_parameters params) {
   float3 meshPos = params.geometry().model_position();
   params.geometry().set_model_position_offset(finalPos - meshPos);
   params.geometry().set_normal(normal);
+  // Phase 2 Y-clipping is handled in computeSeamPointAndTangent (valid=false).
+  // No drop phase needed — seams disappear naturally via elevation ramp.
+  // UV1.y = 1 signals exterior arc (wrong side) — surface shader renders red.
+  params.geometry().set_uv1(float2(1.0f, seamResult.interiorArc ? 0.0f : 1.0f));
 }
 
 // Color palette for blade boundaries
@@ -106,9 +115,24 @@ constant half3 irisRibbonPalette[] = {
   half3(1.0h, 1.0h, 0.5h),
 };
 
-// Surface shader: colored by blade index
+// Surface shader: colored by blade index.
+// Renders bright red if the arc is exterior (Y axis on the wrong side) —
+// this should never happen in correct operation.
 [[visible]]
 void irisSeamSurfaceShader(realitykit::surface_parameters params) {
+  float2 uv1 = params.geometry().uv1();
+  bool exteriorArc = uv1.y > 0.5f;
+
+  if (exteriorArc) {
+    params.surface().set_base_color(half3(1.0h, 0.0h, 0.0h));
+    params.surface().set_emissive_color(half3(1.0h, 0.0h, 0.0h));
+    params.surface().set_metallic(0.0h);
+    params.surface().set_roughness(1.0h);
+    params.surface().set_specular(0.0h);
+    params.surface().set_opacity(1.0h);
+    return;
+  }
+
   float2 uv = params.geometry().uv0();
   int bladeIndex = int(floor(uv.y));
   int colorIndex = bladeIndex % 12;

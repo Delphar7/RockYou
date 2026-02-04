@@ -21,7 +21,8 @@ struct RemoteDPadClusterView: View {
           baseColor: rokuDarkPurple
         ) { onAction(.options) }
 
-        Spacer().frame(width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor)
+        Spacer()
+          .frame(width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor)
 
         TopKeyButton(
           systemName: "gobackward.15",

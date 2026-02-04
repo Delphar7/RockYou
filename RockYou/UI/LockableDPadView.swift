@@ -149,6 +149,7 @@ struct LockableDPadView: View {
     )
     .allowsHitTesting(!isLocked)
     .opacity(domeManager.isActive && !domeManager.dpadSurfaced ? 0 : 1)
+    .animation(.easeIn(duration: 0.3), value: domeManager.dpadSurfaced)
     .simultaneousGesture(
       DragGesture(minimumDistance: 0)
         .onChanged { _ in
@@ -160,6 +161,17 @@ struct LockableDPadView: View {
     .onAppear {
       requestSnapshot(dpadSize: dpadSize)
     }
+    .background(
+      GeometryReader { geo in
+        Color.clear
+          .onAppear {
+            domeManager.dpadGlobalCenterY = geo.frame(in: .global).midY
+          }
+          .onChange(of: geo.frame(in: .global).midY) { _, newY in
+            domeManager.dpadGlobalCenterY = newY
+          }
+      }
+    )
     .overlay {
       if isLocked {
         lockOverlay(dpadSize: dpadSize)

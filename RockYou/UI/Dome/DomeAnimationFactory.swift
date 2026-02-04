@@ -70,41 +70,13 @@ extension DomeAnimation {
     }
   }
 
-  /// Returns a copy with production overrides applied (radius, duration, fragmentCount, no debug texture).
-  func withProductionDefaults() -> DomeAnimation {
-    switch self {
-    case .iris(var config):
-      config.domeRadius = DomeSceneConfig.domeRadius
-      config.openDuration = DomeSceneConfig.openDuration
-      config.fragmentCount = 30000
-      config.showSeamRibbons = true
-      return .iris(config)
-    case .shatter(var config):
-      config.domeRadius = DomeSceneConfig.domeRadius
-      config.fragmentCount = 50000
-      config.showDpadTexture = false
-      return .shatter(config)
-    case .ripple(var config):
-      config.domeRadius = DomeSceneConfig.domeRadius
-      config.fragmentCount = 50000
-      config.showDpadTexture = false
-      return .ripple(config)
-    case .flower(var config):
-      config.domeRadius = DomeSceneConfig.domeRadius
-      config.openDuration = DomeSceneConfig.openDuration
-      return .flower(config)
-    }
-  }
-
-  /// The open duration for this animation, used for time scaling.
+  /// The shader time budget for this animation, used for time scaling.
   var openDuration: Float {
     switch self {
-    case .iris(let config):
-      return config.openDuration
-    case .shatter, .ripple:
-      return DomeSceneConfig.openDuration
-    case .flower(let config):
-      return config.openDuration
+    case .iris(let config): return config.openDuration
+    case .shatter(let config): return config.openDuration
+    case .ripple(let config): return config.openDuration
+    case .flower(let config): return config.openDuration
     }
   }
 }

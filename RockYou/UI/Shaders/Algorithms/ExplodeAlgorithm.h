@@ -45,19 +45,15 @@ struct PhysicsData {
 };
 
 // Generate physics data using stable_random with configurable ranges
-template<typename T>
 inline PhysicsData readPhysicsData(
     int fragmentIndex,
-    texture2d<T, access::sample> tex,
-    sampler texSampler,
-    float texWidth,
-    float texHeight
+    thread const TextureParamReader& reader
 ) {
   PhysicsData pd;
 
   // Read physics config and dome params from texture header
-  PhysicsConfig config = readPhysicsConfig(tex, texSampler, texWidth, texHeight);
-  DomeParams dome = readDomeParams(tex, texSampler, texWidth, texHeight);
+  PhysicsConfig config = readPhysicsConfig(reader);
+  DomeParams dome = readDomeParams(reader);
 
   // Compute fragment center once, store for reuse in computeState
   pd.center = computeCenterFromIndex(fragmentIndex, dome.latSegments, dome.lonSegments, dome.radius);

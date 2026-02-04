@@ -194,11 +194,7 @@ struct SafetyDelaysGrid: View {
 
         Spacer(minLength: 2)
 
-        Text(title)
-          .font(.body.weight(.medium))
-          .lineLimit(2)
-          .multilineTextAlignment(.trailing)
-          .frame(maxWidth: .infinity, alignment: .trailing)
+        AdaptiveTextView(title: title)
       }
       .frame(maxWidth: .infinity)
 
@@ -235,7 +231,37 @@ struct SafetyDelaysGrid: View {
     }
   }
 }
+/// Adaptive text view that shrinks font size to fit on 1 line, or wraps to 2 lines at a minimum font size.
+private struct AdaptiveTextView: View {
+  let title: String
+  @State private var isSingleLine: Bool = true
 
+  private let minFontSize: CGFloat = 14
+  private let maxFontSize: CGFloat = 16
+
+  var body: some View {
+    ViewThatFits(in: .horizontal) {
+      // Try single line with max font size first
+      Text(title)
+        .font(.body.weight(.medium))
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .onAppear {
+          isSingleLine = true
+        }
+
+      // Fall back to 2 lines if it doesn't fit
+      Text(title)
+        .font(.system(size: minFontSize, weight: .medium))
+        .lineLimit(2)
+        .multilineTextAlignment(.trailing)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .onAppear {
+          isSingleLine = false
+        }
+    }
+  }
+}
 /// Purely-visual app strip “label” (no gestures, no scrolling, no device state).
 private struct MiniAppStripPlaceholder: View {
   let rowHeight: CGFloat
