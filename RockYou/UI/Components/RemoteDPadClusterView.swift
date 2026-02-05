@@ -11,6 +11,9 @@ struct RemoteDPadClusterView: View {
   /// This avoids RealityKit interference when used in hidden measurement probes.
   var forMeasurement: Bool = false
 
+  @ObservedObject private var domeManager = DomeAnimationManager.shared
+  @State private var showDomeMenu = false
+
   var body: some View {
     VStack(spacing: topRowToDPadSpacing * scaleFactor) {
       HStack(spacing: RemoteCoreButtonMetrics.topKeyHorizontalPadding * scaleFactor) {
@@ -21,8 +24,32 @@ struct RemoteDPadClusterView: View {
           baseColor: rokuDarkPurple
         ) { onAction(.options) }
 
-        Spacer()
+        Color.clear
           .frame(width: RemoteCoreButtonMetrics.topKeyWidth * scaleFactor)
+          .contentShape(Rectangle())
+          .onLongPressGesture(minimumDuration: 0.35) {
+            showDomeMenu = true
+          }
+          .popover(isPresented: $showDomeMenu, attachmentAnchor: .rect(.bounds)) {
+            VStack(alignment: .leading, spacing: 6) {
+              Text("Breaker Finish Animation")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              ForEach(DomeAnimationFactory.presets, id: \.name) { preset in
+                Button(preset.name) {
+                  triggerDomeAnimation(named: preset.name)
+                  showDomeMenu = false
+                }
+                .buttonStyle(.plain)
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+              }
+            }
+            .padding(10)
+            .frame(minWidth: 200)
+            .presentationCompactAdaptation(.popover)
+          }
 
         TopKeyButton(
           systemName: "gobackward.15",
@@ -48,5 +75,12 @@ struct RemoteDPadClusterView: View {
       }
     }
     .padding(.vertical, RemoteCoreButtonMetrics.topKeyVerticalPadding * scaleFactor)
+  }
+
+  private func triggerDomeAnimation(named name: String) {
+    domeManager.setNextPresetName(name)
+    let dpadSize = 210 * scaleFactor
+    let domeSize = dpadSize * CGFloat(DomeSceneConfig.renderCanvasScale)
+    domeManager.start(referenceDomeSize: domeSize)
   }
 }

@@ -90,7 +90,10 @@ final class RippleContent: SceneContent {
 
     // Add DPad backdrop plane if enabled
     if config.showDpadTexture,
-       let backdrop = Self.makeBackdropEntity(radius: config.domeRadius) {
+       let backdrop = DPadBackdrop.makeEntity(
+         radius: config.domeRadius,
+         name: "DPad-Ripple-Backdrop"
+       ) {
       root.addChild(backdrop)
     }
 
@@ -195,32 +198,6 @@ final class RippleContent: SceneContent {
     return params.createTexture(name: "RippleData")
   }
 
-  // MARK: - Backdrop
-
-  private static func makeBackdropEntity(radius: Float) -> ModelEntity? {
-    guard let path = Bundle.main.path(forResource: "DPad-Refracted", ofType: "png"),
-          let native = PlatformImage.cachedNativeContentsOfFile(path),
-          let cg = PlatformImage.cgImage(from: native) else {
-      return nil
-    }
-
-    let tex: TextureResource
-    do {
-      tex = try TextureResource(image: cg, withName: "DPad-Ripple-Backdrop", options: .init(semantic: .color))
-    } catch {
-      return nil
-    }
-
-    // Create plane sized to match dome diameter
-    let mesh = MeshResource.generatePlane(width: radius * 2, depth: radius * 2)
-    var mat = UnlitMaterial()
-    mat.color = .init(texture: .init(tex))
-    mat.blending = .transparent(opacity: 1.0)
-
-    let entity = ModelEntity(mesh: mesh, materials: [mat])
-    entity.position = [0, -0.01, 0]  // Slightly below dome
-    return entity
-  }
 }
 
 // MARK: - Visibility Adapter

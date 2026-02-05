@@ -79,6 +79,14 @@ final class FlowerContent: SceneContent {
 
     self.entity = root
     self.bladeAnchors = anchors
+
+    if config.showDpadTexture,
+       let backdrop = DPadBackdrop.makeEntity(
+         radius: config.domeRadius,
+         name: "DPad-Flower-Backdrop"
+       ) {
+      root.addChild(backdrop)
+    }
   }
 
   func update(time: Float, cameraPosition: SIMD3<Float>) {

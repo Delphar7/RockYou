@@ -250,6 +250,9 @@ struct FlowerAnimationConfig {
   /// Shader time budget (seconds). Wall-clock duration is DomeSceneConfig.duration.
   var openDuration: Float = 2.5
 
+  /// Whether to show DPad backdrop texture
+  var showDpadTexture: Bool = true
+
   // MARK: - Presets
 
   static let `default` = FlowerAnimationConfig()
@@ -259,7 +262,8 @@ struct FlowerAnimationConfig {
     FlowerAnimationConfig(
       bladeCount: [10, 12, 14, 16, 18].randomElement(using: &rng) ?? 10,
       bladeCoverage: Float.random(in: 0.75...0.95, using: &rng),
-      bladeOverlap: Float.random(in: 0.01...0.04, using: &rng)
+      bladeOverlap: Float.random(in: 0.01...0.04, using: &rng),
+      showDpadTexture: true
     )
   }
 

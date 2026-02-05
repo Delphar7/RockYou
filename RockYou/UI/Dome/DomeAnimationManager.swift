@@ -28,9 +28,22 @@ final class DomeAnimationManager: ObservableObject {
   /// Used by FullScreenDomeView to center the dome on the DPad.
   var dpadGlobalCenterY: CGFloat = 0
 
+  private var nextPresetName: String?
+
   private var nonce: UInt64 = 0
 
   private init() {}
+
+  /// Sets the next dome animation preset to use (one-shot).
+  func setNextPresetName(_ name: String?) {
+    nextPresetName = name
+  }
+
+  /// Consumes and clears the next preset override (if any).
+  func consumeNextPresetName() -> String? {
+    defer { nextPresetName = nil }
+    return nextPresetName
+  }
 
   /// Activates the dome animation and drives `openProgress` from 0→1
   /// over `DomeSceneConfig.duration` wall-clock seconds. At progress=1

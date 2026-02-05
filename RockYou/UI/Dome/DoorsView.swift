@@ -48,7 +48,8 @@ struct DomeDoorsView: View {
 
     // iOS Simulator can't render RealityKit content (Apple2 GPU, no CustomMaterial support).
     // Dome animations are device/Mac only; simulator shows nothing — test on-device.
-    let selected = DomeAnimationFactory.random()
+    let overrideName = DomeAnimationManager.shared.consumeNextPresetName()
+    let selected = DomeAnimationFactory.select(overrideName: overrideName)
     _animation = State(initialValue: selected.animation)
     _selectedName = State(initialValue: selected.name)
     doorsLog.debug("Dome animation: \(selected.name)")
@@ -90,8 +91,8 @@ struct DomeDoorsView: View {
         Log.debug("DoorsView", "Content created: entity.children=\(content?.entity.children.count ?? -1)")
       }
     }
-    .onChange(of: openProgress) { _, _ in
-      if content?.isComplete == true {
+    .onChange(of: openProgress) { _, newValue in
+      if newValue >= 1.0, content?.isComplete == true {
         onComplete?()
       }
     }

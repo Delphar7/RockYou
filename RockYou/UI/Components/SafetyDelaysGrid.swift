@@ -24,6 +24,25 @@ enum LockTimeoutOptions {
     return opts
   }()
 
+  static func options(including selection: TimeInterval?) -> [TimeInterval?] {
+    var hasNil = options.contains { $0 == nil }
+    var values = options.compactMap { $0 }
+
+    if let selection, !values.contains(selection) {
+      values.append(selection)
+    }
+    values.sort()
+
+    if selection == nil {
+      hasNil = true
+    }
+
+    if hasNil {
+      return [nil] + values
+    }
+    return values.map { Optional($0) }
+  }
+
   static func label(for timeout: TimeInterval?) -> String {
     guard let timeout else { return "Off" }
     if timeout < 60 {
@@ -133,7 +152,7 @@ struct SafetyDelaysGrid: View {
           selection: $phoneDPadLockTimeout,
           alignment: .center,
           targetHeight: pickerHeight,
-          options: LockTimeoutOptions.options,
+          options: LockTimeoutOptions.options(including: phoneDPadLockTimeout),
           labelFormatter: LockTimeoutOptions.label(for:)
         )
       )

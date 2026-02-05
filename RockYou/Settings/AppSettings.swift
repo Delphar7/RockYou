@@ -56,7 +56,7 @@ final class AppSettings {
 
   /// D-Pad lock timeout. nil = Off.
   var dpadLockTimeout: TimeInterval? {
-    get { loadDelay(key: "dpadLockTimeout", defaultValue: 5.0) }
+    get { loadDelay(key: "dpadLockTimeout", defaultValue: 300.0) }
     set { setDelay(newValue, key: "dpadLockTimeout") }
   }
 

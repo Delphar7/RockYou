@@ -35,6 +35,18 @@ enum DomeAnimationFactory {
     .init(name: "Flower") { .flower(.randomized()) },
   ]
 
+  static func preset(named name: String) -> DomeAnimationPreset? {
+    presets.first { $0.name == name }
+  }
+
+  /// Pick a preset by name (if provided), otherwise random.
+  static func select(overrideName: String?) -> (name: String, animation: DomeAnimation) {
+    if let overrideName, let preset = preset(named: overrideName) {
+      return (preset.name, preset.make())
+    }
+    return random()
+  }
+
   /// Pick a random preset (weighted), invoke its closure to get a fresh animation.
   static func random() -> (name: String, animation: DomeAnimation) {
     let totalWeight = presets.reduce(0.0) { $0 + $1.weight }

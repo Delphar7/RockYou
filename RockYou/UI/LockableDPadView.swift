@@ -123,6 +123,13 @@ struct LockableDPadView: View {
       guard newValue == .active else { return }
       handleAppBecameActive()
     }
+    .onChange(of: settings.dpadLockTimeout) { _, _ in
+      guard isLocked else { return }
+      withAnimation(.easeInOut(duration: 0.3)) {
+        isLocked = false
+      }
+      resetLockSessionState()
+    }
     .modifier(
       DebugCrashAlertModifier(title: "Invariant Violation") {
         guard DebugBuild.isEnabled else { return nil }
