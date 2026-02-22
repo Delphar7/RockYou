@@ -1,6 +1,8 @@
 #!/bin/zsh
 set -euo pipefail
 
+xcodebuild -downloadComponent MetalToolchain 2>/dev/null || true
+
 if [[ -z "${ASC_ISSUER_ID:-}" || -z "${ASC_KEY_ID:-}" || -z "${ASC_PRIVATE_KEY:-}" ]]; then
   echo "Missing ASC_ISSUER_ID, ASC_KEY_ID, or ASC_PRIVATE_KEY." >&2
   echo "Set them as Xcode Cloud environment variables." >&2

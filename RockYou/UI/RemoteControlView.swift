@@ -630,18 +630,16 @@ struct RemoteControlView: View {
 
   // MARK: - Resume Reconnection
 
-  /// Called when the app returns to foreground. Probes the WebSocket connection and
-  /// reconnects if stale, then resets gesture routers that may have been mid-flight.
+  /// Called when the app returns to foreground. Tears down any stale WebSocket and
+  /// reconnects fresh, then resets gesture routers that may have been mid-flight.
   private func reconnectOnResume() async {
     #if os(iOS)
       SweepableTouchRouter.resetAllOnResume()
     #endif
 
     guard let device = selection.selectedDevice else { return }
-    let reconnected = await RokuECPClient.shared.reconnectIfNeeded(for: device)
-    if reconnected {
-      await RokuECPClient.shared.snapshotActiveStateNow(for: device)
-    }
+    await RokuECPClient.shared.tearDownConnection(for: device.ipAddress)
+    await RokuECPClient.shared.ensureConnected(to: device, primeState: true)
   }
 
   // MARK: - Active State Polling Enablement
