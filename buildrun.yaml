@@ -1,0 +1,33 @@
+bundle_id: com.jtr.RockYou
+watch_bundle_id: com.jtr.RockYou.watchkitapp
+
+products:
+  RockYou:
+    default: true
+    devices:
+      default: [phone]
+    watch:
+      include: [Shared, RockYou, Resources]
+
+  RockYou Watch App:
+    devices:
+      default: [watch]
+    watch:
+      include: [Shared, RockYou Watch App, RockYou Watch Widgets, Resources]
+
+aliases:
+  products:
+    main: RockYou
+    all: "*"
+  devices:
+    iphone: phone
+    ios: [phone, ipad]
+
+devices:
+  iphone: "jtr iPhone 16e (small)"
+  watch: "Apple Watch SE (40mm)"
+  iphone_alt: "jtr iPhone 16 Pro"
+  watch_alt: "Apple Watch Series 10 (46mm)"
+
+features:
+  tmux_support: true
