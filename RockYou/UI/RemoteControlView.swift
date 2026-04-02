@@ -597,6 +597,9 @@ struct RemoteControlView: View {
     // Find the device and try to connect
     let device = discovery.discoveredDevices.first { $0.ipAddress == ip }
     if let device = device {
+      DeviceStateManager.shared.setConnecting(true, for: device.id)
+      defer { DeviceStateManager.shared.setConnecting(false, for: device.id) }
+
       await RokuECPClient.shared.setMediaProgressEnabledDeviceIds([device.id])
       await RokuECPClient.shared.setAppListRefreshEnabledDeviceIds([device.id])
       let shouldEnable = RemoteControlPlatform.shouldEnableActiveStatePolling(
@@ -632,14 +635,20 @@ struct RemoteControlView: View {
 
   /// Called when the app returns to foreground. Tears down any stale WebSocket and
   /// reconnects fresh, then resets gesture routers that may have been mid-flight.
+  /// Key presses are discarded while the reconnecting flag is set (see `sendActionInSilo`).
   private func reconnectOnResume() async {
     #if os(iOS)
       SweepableTouchRouter.resetAllOnResume()
     #endif
 
     guard let device = selection.selectedDevice else { return }
-    await RokuECPClient.shared.tearDownConnection(for: device.ipAddress)
+
+    DeviceStateManager.shared.setConnecting(true, for: device.id)
+    defer { DeviceStateManager.shared.setConnecting(false, for: device.id) }
+
+    await RokuECPClient.shared.tearDownAndBeginReconnect(for: device.ipAddress)
     await RokuECPClient.shared.ensureConnected(to: device, primeState: true)
+    await RokuECPClient.shared.clearReconnecting(for: device.ipAddress)
   }
 
   // MARK: - Active State Polling Enablement

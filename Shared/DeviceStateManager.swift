@@ -20,6 +20,9 @@ public final class DeviceStateManager {
   /// Device states keyed by device ID
   public private(set) var states: [String: DeviceState] = [:]
 
+  /// Devices currently (re)connecting their WebSocket. Transient UI state -- not synced to Watch.
+  public private(set) var connectingDeviceIds: Set<String> = []
+
   // MARK: - Change Notification (for non-SwiftUI observers like WatchConnectivity)
 
   public typealias StateChangedHandler =
@@ -95,5 +98,12 @@ public final class DeviceStateManager {
     guard state.activeApp != appId else { return }
     state.activeApp = appId
     updateState(state, for: deviceId)
+  }
+
+  // MARK: - Connection Phase (transient, not synced)
+
+  public func setConnecting(_ connecting: Bool, for deviceId: String) {
+    if connecting { connectingDeviceIds.insert(deviceId) }
+    else { connectingDeviceIds.remove(deviceId) }
   }
 }

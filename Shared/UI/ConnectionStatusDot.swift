@@ -7,8 +7,8 @@
 
 import SwiftUI
 
-/// Shows device power state as a colored dot
-/// Green = on, Orange = standby/unknown, Red = off
+/// Shows device power/connection state as a colored dot or wifi animation.
+/// Green = on, Orange = standby/unknown, Red = off, Wifi animation = (re)connecting.
 public struct ConnectionStatusDot: View {
   let deviceId: String?
 
@@ -17,9 +17,22 @@ public struct ConnectionStatusDot: View {
   }
 
   public var body: some View {
-    Circle()
-      .fill(currentPowerMode.statusColor)
-      .frame(width: 8, height: 8)
+    if isConnecting {
+      Image(systemName: "wifi.circle.fill")
+        .symbolRenderingMode(.hierarchical)
+        .foregroundStyle(.white)
+        .symbolEffect(.variableColor.iterative.dimInactiveLayers.nonReversing)
+        .font(.system(size: 12))
+    } else {
+      Circle()
+        .fill(currentPowerMode.statusColor)
+        .frame(width: 8, height: 8)
+    }
+  }
+
+  private var isConnecting: Bool {
+    guard let id = deviceId else { return false }
+    return DeviceStateManager.shared.connectingDeviceIds.contains(id)
   }
 
   private var currentPowerMode: PowerMode {

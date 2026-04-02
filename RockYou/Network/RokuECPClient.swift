@@ -99,6 +99,9 @@ actor RokuECPClient {
   // Track which devices are in "limited mode" (HTTP returned 403)
   private var limitedModeDevices: Set<String> = []
 
+  // Device IPs currently being torn down and reconnected (gates key sends).
+  private var reconnectingIPs: Set<String> = []
+
   // Media progress ticking while playing (ECP-2 does not send progress updates)
   private var mediaProgressTasks: [String: Task<Void, Never>] = [:]
   private var mediaResyncTasks: [String: Task<Void, Never>] = [:]
@@ -194,6 +197,8 @@ actor RokuECPClient {
     requiredDevices: [DeviceInfo],
     targetDevice: DeviceInfo
   ) async -> KeypressResult {
+    if reconnectingIPs.contains(targetDevice.ipAddress) { return .reconnecting }
+
     // If a wake is already in-flight for this silo, a new gated request should extend the timeout.
     if action == .home {
       extendWakeDeadlineIfNeeded(siloId: siloId, waitTimeout: 5.0)
@@ -232,6 +237,8 @@ actor RokuECPClient {
     requiredDevices: [DeviceInfo],
     targetDevice: DeviceInfo
   ) async -> KeypressResult {
+    if reconnectingIPs.contains(targetDevice.ipAddress) { return .reconnecting }
+
     // Keep ordering consistent with other button presses.
     cancelWakeWaitIfNeeded(siloId: siloId)
 
@@ -335,6 +342,8 @@ actor RokuECPClient {
     requiredDevices: [DeviceInfo],
     targetDevice: DeviceInfo
   ) async -> Bool {
+    if reconnectingIPs.contains(targetDevice.ipAddress) { return false }
+
     // If a wake is already in-flight for this silo, a new gated request should extend the timeout.
     extendWakeDeadlineIfNeeded(siloId: siloId, waitTimeout: 5.0)
 
@@ -694,6 +703,23 @@ actor RokuECPClient {
     if let client = webSocketClients.removeValue(forKey: ip) {
       await client.disconnect()
     }
+  }
+
+  /// Atomically marks an IP as reconnecting and tears down the existing connection.
+  /// Key sends are gated while the IP is in this set (see `sendActionInSilo`).
+  func tearDownAndBeginReconnect(for ip: String) async {
+    reconnectingIPs.insert(ip)
+    connectTasksByIP[ip]?.cancel()
+    connectTasksByIP[ip] = nil
+
+    if let client = webSocketClients.removeValue(forKey: ip) {
+      await client.disconnect()
+    }
+  }
+
+  /// Clears the reconnecting flag so key sends resume for this IP.
+  func clearReconnecting(for ip: String) {
+    reconnectingIPs.remove(ip)
   }
 
   /// Check if a device is reachable (based on WebSocket connection state)
@@ -1324,6 +1350,7 @@ actor RokuECPClient {
     case failed
     case limitedMode  // HTTP returned 403, device needs "Permissive" mode
     case unreachable  // Device is off or not on network
+    case reconnecting // Key discarded -- WebSocket is being re-established
   }
 
   /// Send a keypress to a Roku device
