@@ -28,6 +28,7 @@ final class IrisContent: SceneContent {
   private let ribbonEntity: ModelEntity?
   private var dataTexture: TextureResource?
   private var mtlDataTexture: MTLTexture?  // Raw Metal texture for compute shader
+  private var lowLevelMesh: LowLevelMesh?  // Retains zero-copy buffers backing the dome mesh
   private let fragmentCount: Int
   private let visibilityTracker = VisibilityTracker()
 
@@ -41,7 +42,7 @@ final class IrisContent: SceneContent {
 
     // Generate dome mesh
     guard let meshGenerator = DomeMeshGenerator(),
-          let mesh = meshGenerator.generateMesh(
+          let generated = meshGenerator.generateMesh(
             latSegments: latSegs,
             lonSegments: lonSegs,
             radius: config.domeRadius
@@ -53,6 +54,7 @@ final class IrisContent: SceneContent {
       self.fragmentCount = 0
       return
     }
+    self.lowLevelMesh = generated.lowLevelMesh
 
     self.fragmentCount = DomeMeshGenerator.fragmentCount(latSegments: latSegs, lonSegments: lonSegs)
 
@@ -77,7 +79,7 @@ final class IrisContent: SceneContent {
       return
     }
 
-    let dome = ModelEntity(mesh: mesh, materials: [material])
+    let dome = ModelEntity(mesh: generated.resource, materials: [material])
     root.addChild(dome)
     self.domeEntity = dome
 

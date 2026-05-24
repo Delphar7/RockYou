@@ -25,6 +25,7 @@ final class RippleContent: SceneContent {
   private let domeEntity: ModelEntity
   private var dataTexture: TextureResource?
   private var mtlDataTexture: MTLTexture?  // Raw Metal texture for compute shader
+  private var lowLevelMesh: LowLevelMesh?  // Retains zero-copy buffers backing the dome mesh
   private let fragmentCount: Int
   private let visibilityTracker = VisibilityTracker()
 
@@ -43,7 +44,7 @@ final class RippleContent: SceneContent {
 
     // Generate dome mesh
     guard let meshGenerator = DomeMeshGenerator(),
-          let mesh = meshGenerator.generateMesh(
+          let generated = meshGenerator.generateMesh(
             latSegments: latSegs,
             lonSegments: lonSegs,
             radius: config.domeRadius
@@ -53,6 +54,7 @@ final class RippleContent: SceneContent {
       self.domeEntity = ModelEntity()
       return
     }
+    self.lowLevelMesh = generated.lowLevelMesh
 
     // Compute wave origin: 45 degrees around Y from camera-facing point
     let cameraDir = simd_normalize(cameraPosition)
@@ -84,7 +86,7 @@ final class RippleContent: SceneContent {
     }
 
     // Create dome entity
-    let dome = ModelEntity(mesh: mesh, materials: [material])
+    let dome = ModelEntity(mesh: generated.resource, materials: [material])
     root.addChild(dome)
     self.domeEntity = dome
 

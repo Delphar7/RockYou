@@ -48,9 +48,11 @@ struct BreakerSwitchView: View {
         content.add(axes)
       }
 
-      // Load the breaker switch model (from cache)
+      // Load the breaker switch model. Use a private clone (never the shared cache
+      // template) so this live scene's display setup and lever mutations can't race
+      // an offscreen snapshot reading/cloning the same entity.
       do {
-        let entity = try await BreakerModelCache.shared.loadModel()
+        let entity = try await BreakerModelCache.shared.makeInstance()
         content.add(entity)
         leverEntity = prepareBreakerEntityForDisplay(entity)
 

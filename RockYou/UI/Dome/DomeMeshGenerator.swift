@@ -96,12 +96,25 @@ class DomeMeshGenerator {
     latSegments: Int,
     lonSegments: Int,
     radius: Float
-  ) -> MeshResource? {
+  ) -> GeneratedMesh? {
+    // Validate inputs before producing geometry. Degenerate or non-finite parameters
+    // would yield a malformed mesh that can crash RealityKit's render thread.
+    guard radius.isFinite, radius > 0, latSegments >= 1, lonSegments >= 3 else {
+      meshLog.error(
+        "Invalid mesh params: radius=\(radius) latSegments=\(latSegments) lonSegments=\(lonSegments)")
+      return nil
+    }
+
     // Calculate triangle count (same formula as CPU path)
     let poleTriangles = lonSegments
     let bandTriangles = (latSegments - 1) * lonSegments * 2
     let totalTriangles = poleTriangles + bandTriangles
     let totalVertices = totalTriangles * 3
+
+    guard totalVertices > 0 else {
+      meshLog.error("Mesh would have zero vertices (lat=\(latSegments) lon=\(lonSegments))")
+      return nil
+    }
 
     // Set up compute parameters
     var params = DomeComputeParams(
@@ -193,12 +206,32 @@ class DomeMeshGenerator {
       mesh.parts.replaceAll([part])
 
       // Convert to MeshResource for use with ModelEntity
-      return try MeshResource(from: mesh)
+      let resource = try MeshResource(from: mesh)
+
+      // Validation gate: reject non-finite/inverted bounds before this reaches RealityKit.
+      if let reason = RenderResourceValidation.validate(mesh: resource, label: "dome") {
+        meshLog.error("Generated dome mesh failed validation: \(reason)")
+        return nil
+      }
+
+      // Retain the LowLevelMesh alongside the MeshResource: `MeshResource(from:)` references
+      // the LowLevelMesh's GPU buffers (zero-copy), so the buffers must outlive the resource.
+      return GeneratedMesh(resource: resource, lowLevelMesh: mesh)
 
     } catch {
       meshLog.error("Failed to create LowLevelMesh: \(error)")
       return nil
     }
+  }
+
+  /// A generated dome mesh plus its backing zero-copy buffer source.
+  ///
+  /// `MeshResource(from: LowLevelMesh)` does not copy the vertex/index buffers — it references
+  /// the `LowLevelMesh`'s Metal buffers. The owner must retain `lowLevelMesh` for as long as
+  /// `resource` is in use, or the render thread can read freed GPU memory.
+  struct GeneratedMesh {
+    let resource: MeshResource
+    let lowLevelMesh: LowLevelMesh
   }
 
 }

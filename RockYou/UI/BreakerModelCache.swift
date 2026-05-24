@@ -7,18 +7,36 @@
 
 import RealityKit
 
-/// Caches the loaded Entity to avoid re-parsing USDZ on each view instance.
-/// Reuses the same entity instance - RealityKit should orphan it when the view disappears.
-actor BreakerModelCache {
+/// Caches the parsed breaker USDZ as a **template** and vends a fresh clone to each caller.
+///
+/// Ownership rule (defense-in-depth): the cached `templateEntity` is never added to a scene
+/// and never mutated by display code. Every renderer — the live `BreakerSwitchView` and the
+/// offscreen snapshot `ARView` — gets its own `makeInstance()` clone. This prevents the same
+/// `Entity` from being parented into two scenes at once, and stops one renderer's display
+/// setup (transforms, `stopAllAnimations`, components) from mutating an entity another
+/// renderer is reading. Clones still share immutable GPU `MeshResource`/material buffers,
+/// which is safe for read-only rendering; the hazard we close here is shared *Entity* state.
+// `Entity` (and `clone(recursive:)`) are MainActor-isolated, so the cache that holds and
+// clones them is MainActor-isolated too. All callers (the live RealityView closure and the
+// @MainActor snapshot manager) already run on the main actor.
+@MainActor
+final class BreakerModelCache {
   static let shared = BreakerModelCache()
 
-  private var cachedEntity: Entity?
+  private var templateEntity: Entity?
   private var loadTask: Task<Entity, Error>?
 
-  func loadModel() async throws -> Entity {
-    // Return cached model if available (no clone - reuse directly)
-    // Note: Entity may have stale parent ref, but adding to new content auto-reparents
-    if let cached = cachedEntity {
+  /// Returns a fresh clone of the breaker model, safe to add to a scene and mutate.
+  /// Callers must use this rather than rendering a shared instance.
+  func makeInstance() async throws -> Entity {
+    let template = try await loadTemplate()
+    return template.clone(recursive: true)
+  }
+
+  /// Loads (and caches) the immutable template entity. Coalesces concurrent loads.
+  /// The returned entity is the shared template — do not add it to a scene directly.
+  private func loadTemplate() async throws -> Entity {
+    if let cached = templateEntity {
       return cached
     }
 
@@ -36,7 +54,7 @@ actor BreakerModelCache {
 
     do {
       let entity = try await task.value
-      cachedEntity = entity
+      templateEntity = entity
       loadTask = nil
       return entity
     } catch {

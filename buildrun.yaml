@@ -30,4 +30,4 @@ devices:
   watch_alt: "Apple Watch Series 10 (46mm)"
 
 features:
-  tmux_support: true
+  device_support: true

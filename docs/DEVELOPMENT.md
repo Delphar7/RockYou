@@ -2,18 +2,33 @@
 
 ## Build Commands
 
-**ALWAYS use the project build script for testing builds:**
+**Always use `buildrun` directly for builds, and always pass `--lint` for verification work.** Never invoke `xcodebuild` directly. `buildrun` is on `PATH`; run it from the project root, where it auto-discovers `buildrun.yaml` (no wrapper script). It handles scheme selection, simulator dispatch, build locking, and log capture.
 
 ```bash
-./BuildRunAll.sh --lint mac
+# Canonical build + lint for the fast mac target
+buildrun --lint RockYou:mac
+
+# Other targets (Product:device)
+buildrun --lint RockYou:phone
+buildrun --lint RockYou:ipad
+buildrun --lint "RockYou Watch App"     # product name has a space — quote it
+
+# Inspect merged config (products, devices, aliases)
+buildrun --list
 ```
 
-Never use `xcodebuild` directly. Other targets if needed:
+### Before running `buildrun`: don't battle a live build
+
+The user may have a `buildrun`/`watchexec` build running in another tmux pane that auto-rebuilds on save. Starting a second `buildrun` contends for the build lock and burns CPU. Check first:
+
 ```bash
-./BuildRunAll.sh --lint iphone
-./BuildRunAll.sh --lint ipad
-./BuildRunAll.sh --lint watch
+pgrep -fil 'buildrun.*RockYou'
 ```
+
+- **Hits:** a build is already running — your edits are being picked up automatically. Don't start another; read the log after it settles instead.
+- **No hits:** running `buildrun --lint RockYou:mac` yourself is fine.
+
+**Build log:** lint logs land under `DerivedData/Logs/BuildRunall/` (e.g. `RockYou.mac.lint.log`). A stable tail (no new lines for ~10s) means the build finished.
 
 ## Project Structure
 

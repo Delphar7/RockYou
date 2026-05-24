@@ -29,6 +29,12 @@ final class BreakerSwitchSnapshotManager: ObservableObject {
   private var renderTimer: Timer?
   private var currentSize: CGSize = .zero
 
+  /// Single-flight guard: only one offscreen `ARView` may render at a time. Two concurrent
+  /// offscreen renderers would race on the shared breaker GPU resources. A request that
+  /// arrives mid-render is coalesced and run once the in-flight render finishes.
+  private var isRendering = false
+  private var pendingRender: (size: CGSize, reason: String)?
+
   // Snapshot configuration
   private let snapshotInitialDelaySeconds: TimeInterval = 2.0
   /// Prefer waiting for actual frame/update ticks over blind sleeps, but keep a small fallback.
@@ -88,6 +94,26 @@ final class BreakerSwitchSnapshotManager: ObservableObject {
   }
 
   private func renderSnapshot(size: CGSize, reason: String) async {
+    // Single-flight: never run two offscreen ARViews at once. Coalesce to the latest request.
+    guard !isRendering else {
+      pendingRender = (size, reason)
+      DebugBuild.run {
+        Log.debug("BreakerSwitch", "📸 Snapshot render coalesced (busy) reason=\(reason)")
+      }
+      return
+    }
+    isRendering = true
+    defer {
+      isRendering = false
+      if let next = pendingRender {
+        pendingRender = nil
+        Task { @MainActor in await self.renderSnapshot(size: next.size, reason: next.reason) }
+      }
+    }
+
+    // Release-safe breadcrumb: the offscreen RealityKit render is the first GPU work at launch.
+    Log.info("BreakerSwitch", "Offscreen snapshot render begin reason=\(reason)")
+
     DebugBuild.run {
       Log.debug(
         "BreakerSwitch",
@@ -114,11 +140,22 @@ final class BreakerSwitchSnapshotManager: ObservableObject {
       view.scene.addAnchor(axesAnchor)
     }
 
-    // Load model - use a clone so the live view doesn't steal our entity mid-snapshot
+    // Load model — `makeInstance()` returns our own clone, so the live view can't
+    // steal or mutate our entity mid-snapshot.
     do {
-      let sourceEntity = try await BreakerModelCache.shared.loadModel()
-      let entity = sourceEntity.clone(recursive: true)
+      let entity = try await BreakerModelCache.shared.makeInstance()
       _ = prepareBreakerEntityForDisplay(entity)
+
+      // Validation gate: don't render a malformed model (non-geometry entities, or
+      // non-finite/inverted mesh bounds). Handing that to the renderer risks a crash
+      // deep in CoreRE with no app frames on the stack.
+      if let reason = validateBreakerModelIsClean(entity)
+        ?? RenderResourceValidation.validate(entity: entity, label: "breaker-snapshot")
+      {
+        Log.error("BreakerSwitch", "📸 Snapshot skipped — invalid model: \(reason)")
+        view.removeFromSuperview()
+        return
+      }
 
       let anchor = AnchorEntity(world: .zero)
       anchor.addChild(entity)
@@ -175,11 +212,19 @@ final class BreakerSwitchSnapshotManager: ObservableObject {
         }
       }
 
-      view.removeFromSuperview()
-
       if let finalImage {
         self.snapshot = finalImage
       }
+
+      // Tear down only after the render thread has settled. The snapshot callback fires
+      // post-frame, but detaching the ARView (and releasing its scene/resources)
+      // synchronously can still race an in-flight frame on RealityKit's render thread.
+      // Wait one more bounded update tick before detaching.
+      _ = await waitForSceneUpdates(view: view, frames: 1, timeout: .seconds(1))
+      view.removeFromSuperview()
+      Log.info(
+        "BreakerSwitch",
+        "Offscreen snapshot render done reason=\(reason) gotImage=\(finalImage != nil)")
     } catch {
       Log.error("BreakerSwitch", "Snapshot render failed: \(error)")
       view.removeFromSuperview()
