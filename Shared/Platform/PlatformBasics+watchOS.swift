@@ -21,7 +21,7 @@ enum PlatformURLHandler {
   }
 
   static func open(_ url: URL) {
-    WKExtension.shared().openSystemURL(url)
+    WKApplication.shared().openSystemURL(url)
   }
 
   static func openAppSettingsFallback() {

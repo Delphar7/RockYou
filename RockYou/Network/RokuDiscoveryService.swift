@@ -323,8 +323,9 @@ final class RokuDiscoveryService {
 
     // Core handler that adds/updates devices in cache (logs only new devices)
     let handleDeviceFound: @Sendable (DeviceInfo) -> Void = { device in
-      let updateTask = Task { @MainActor [weak self] in
-        guard let self else { return }
+      let updateTask = Task { @MainActor in
+        // `self` is a long-lived singleton; capture it strongly. (A nested `[weak self]` here only
+        // conflicted with the strong capture already present in the enclosing scope.)
         // Update existing or add new
         if let index = self.discoveredDevices.firstIndex(where: { $0.id == device.id }) {
           let existing = self.discoveredDevices[index]

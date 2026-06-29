@@ -116,9 +116,12 @@ final class CloudKitHouseholdStore {
   private var cachedPairings: [TVPairing] = []
   private var cachedMRUByDevice: [String: [String: Date]] = [:]
 
-  // For MRU write-side filtering
+  // MRU observation transition guard: the last active appId we recorded per device. Used so idle
+  // polling that keeps reporting the same channel does NOT trigger redundant records/writes.
   private var lastSeenActiveAppByDevice: [String: String] = [:]
   private var pendingMRURetryTaskByDevice: [String: Task<Void, Never>] = [:]
+
+  // MRU write-side debounce/throttle (per device).
   private var pendingMRUWriteTaskByDevice: [String: Task<Void, Never>] = [:]
   private var lastMRUWriteAtByDevice: [String: Date] = [:]
 
@@ -142,7 +145,10 @@ final class CloudKitHouseholdStore {
     guard !started else { return }
     started = true
 
-    // Observe device state changes so we can record MRU.
+    // Observe device-state changes so we record MRU for *any* genuine channel change — app launch,
+    // hardware remote, or another household member. The transition guard (see `recordUse`) ensures
+    // idle polling that keeps reporting the same channel writes nothing. Ordering correctness on
+    // resume is guaranteed by the newest-wins merge, not by suppressing this observer.
     DeviceStateManager.shared.addStateChangedHandler { [weak self] deviceId, state in
       self?.handleDeviceStateChanged(deviceId: deviceId, state: state)
     }
@@ -291,7 +297,7 @@ final class CloudKitHouseholdStore {
           NSLocalizedDescriptionKey: "iCloud sync is not ready yet. Please try again shortly."
         ])
     }
-    try await container.accept(metadata)
+    _ = try await container.accept(metadata)
     invalidateSharedZoneCache()
     await persistActiveHouseholdHintFromAcceptedShare(metadata: metadata)
     await refreshFromCloud(force: true)
@@ -385,7 +391,7 @@ final class CloudKitHouseholdStore {
       record.parent = CKRecord.Reference(recordID: rootID, action: .none)
 
       do {
-        try await database.save(record)
+        _ = try await database.save(record)
       } catch let error as CKError {
         // Handle conflict errors (two devices writing simultaneously)
         if error.code == .serverRecordChanged {
@@ -430,60 +436,32 @@ final class CloudKitHouseholdStore {
     return String(input.map { allowed.contains($0) ? $0 : "_" })
   }
 
-  private func handleDeviceStateChanged(deviceId: String, state: DeviceState) {
-    guard let appId = state.activeApp, !appId.isEmpty else { return }
+  /// Record a channel as the most-recent-use for `deviceId`.
+  ///
+  /// This is the single MRU writer. Both paths funnel here:
+  /// - explicit in-app launches (immediate, via `AppCacheManager.onExplicitLaunch`), and
+  /// - observed active-app changes (hardware remote / household), via `handleDeviceStateChanged`.
+  ///
+  /// Updates the local cache immediately for responsiveness (newest-wins: never moves an entry
+  /// backward in time), then debounces + throttles a CloudKit write so household members converge
+  /// on the same ordering. Write-spam is bounded by three guards: the transition guard below
+  /// (`lastSeenActiveAppByDevice`), a 1.5s debounce, and a 15s per-device throttle.
+  func recordUse(deviceId: String, appId: String, at timestamp: Date = Date(), source: String) {
+    guard !appId.isEmpty else { return }
 
-    let old = lastSeenActiveAppByDevice[deviceId]
-    guard old != appId else { return }
-
-    // Only record MRU for apps that exist in the installed list we currently have.
-    // IMPORTANT: Don't mark as "seen" until we successfully record MRU; otherwise if the app list
-    // isn't loaded yet, we lose the chance to record when it arrives (common with Netflix).
-    let installed = AppCacheManager.shared.apps(for: deviceId)
-    guard installed.contains(where: { $0.id == appId }) else {
-      Log.debug(
-        "CloudKit",
-        "Deferring MRU write for unknown appId=\(appId) deviceId=\(deviceId) (not in installed list yet)"
-      )
-      scheduleMRURetry(deviceId: deviceId, appId: appId)
-      return
-    }
-
-    recordMRU(deviceId: deviceId, appId: appId, source: "active-app")
-  }
-
-  private func scheduleMRURetry(deviceId: String, appId: String) {
-    pendingMRURetryTaskByDevice[deviceId]?.cancel()
-    pendingMRURetryTaskByDevice[deviceId] = Task { [weak self] in
-      guard let self else { return }
-      // Short delay to allow app list to load from cache/network.
-      try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1.0s
-      guard !Task.isCancelled else { return }
-
-      // Ensure the active app is still the same.
-      let current = DeviceStateManager.shared.state(for: deviceId).activeApp
-      guard current == appId else { return }
-
-      let installed = AppCacheManager.shared.apps(for: deviceId)
-      guard installed.contains(where: { $0.id == appId }) else { return }
-
-      self.recordMRU(deviceId: deviceId, appId: appId, source: "active-app-retry")
-    }
-  }
-
-  private func recordMRU(deviceId: String, appId: String, source: String) {
+    // Unify transition tracking so the observer won't re-fire for an app we just recorded.
     lastSeenActiveAppByDevice[deviceId] = appId
 
-    // Capture timestamp once to use consistently for local cache and CloudKit write
-    let timestamp = Date()
-
-    // Update local MRU immediately for UI responsiveness.
+    // Update local MRU immediately (UI responsiveness). Newest-wins: never move an entry backward.
     var map = cachedMRUByDevice[deviceId] ?? [:]
-    map[appId] = timestamp
-    cachedMRUByDevice[deviceId] = map
-    saveMRUCache()
-    AppCacheManager.shared.setMRU(map, for: deviceId)
-    onMRUUpdated?(deviceId, map)
+    let effective = max(map[appId] ?? .distantPast, timestamp)
+    if map[appId] != effective {
+      map[appId] = effective
+      cachedMRUByDevice[deviceId] = map
+      saveMRUCache()
+      AppCacheManager.shared.setMRU(map, for: deviceId)
+      onMRUUpdated?(deviceId, map)
+    }
 
     // Debounce + throttle CloudKit writes.
     pendingMRUWriteTaskByDevice[deviceId]?.cancel()
@@ -491,10 +469,6 @@ final class CloudKitHouseholdStore {
       guard let self else { return }
       try? await Task.sleep(nanoseconds: 1_500_000_000)  // 1.5s debounce
       guard !Task.isCancelled else { return }
-
-      // Ensure app is still current.
-      let current = DeviceStateManager.shared.state(for: deviceId).activeApp
-      guard current == appId else { return }
 
       // Throttle per device.
       let now = Date()
@@ -509,9 +483,54 @@ final class CloudKitHouseholdStore {
 
       guard !Task.isCancelled else { return }
       self.lastMRUWriteAtByDevice[deviceId] = now
-      // Use the same timestamp we used for local cache to maintain consistency
       await self.upsertMRU(
-        deviceId: deviceId, appId: appId, lastUsedAt: timestamp, source: source)
+        deviceId: deviceId, appId: appId, lastUsedAt: effective, source: source)
+    }
+  }
+
+  /// Observe device-state changes and record MRU on a genuine channel transition.
+  ///
+  /// Captures changes from any source (hardware remote, another household member, or an app launch
+  /// we observe slightly after the immediate explicit record). The transition guard ensures idle
+  /// polling that keeps reporting the same channel does not write.
+  private func handleDeviceStateChanged(deviceId: String, state: DeviceState) {
+    guard let appId = state.activeApp, !appId.isEmpty else { return }
+
+    // Transition guard: only act when the active app actually changed.
+    guard lastSeenActiveAppByDevice[deviceId] != appId else { return }
+
+    // Only record MRU for apps that exist in the installed list we currently have.
+    // IMPORTANT: Don't mark as "seen" until we successfully record; otherwise if the app list
+    // isn't loaded yet, we lose the chance to record when it arrives (common with Netflix).
+    let installed = AppCacheManager.shared.apps(for: deviceId)
+    guard installed.contains(where: { $0.id == appId }) else {
+      Log.debug(
+        "CloudKit",
+        "Deferring MRU record for unknown appId=\(appId) deviceId=\(deviceId) (not in installed list yet)"
+      )
+      scheduleMRURetry(deviceId: deviceId, appId: appId)
+      return
+    }
+
+    recordUse(deviceId: deviceId, appId: appId, source: "active-app")
+  }
+
+  private func scheduleMRURetry(deviceId: String, appId: String) {
+    pendingMRURetryTaskByDevice[deviceId]?.cancel()
+    pendingMRURetryTaskByDevice[deviceId] = Task { [weak self] in
+      guard let self else { return }
+      // Short delay to allow the app list to load from cache/network.
+      try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1.0s
+      guard !Task.isCancelled else { return }
+
+      // Ensure the active app is still the same.
+      let current = DeviceStateManager.shared.state(for: deviceId).activeApp
+      guard current == appId else { return }
+
+      let installed = AppCacheManager.shared.apps(for: deviceId)
+      guard installed.contains(where: { $0.id == appId }) else { return }
+
+      self.recordUse(deviceId: deviceId, appId: appId, source: "active-app-retry")
     }
   }
 
@@ -1157,8 +1176,12 @@ final class CloudKitHouseholdStore {
         let lastUsedAt = record["lastUsedAt"] as? Date
       else { return }
 
+      // Newest-wins merge: a stale cloud record (or one we already superseded locally with a
+      // just-launched-but-not-yet-synced value) must never move an entry backward in time.
       var map = cachedMRUByDevice[deviceId] ?? [:]
-      map[appId] = lastUsedAt
+      let merged = max(map[appId] ?? .distantPast, lastUsedAt)
+      guard map[appId] != merged else { return }
+      map[appId] = merged
       cachedMRUByDevice[deviceId] = map
       saveMRUCache()
       AppCacheManager.shared.setMRU(map, for: deviceId)

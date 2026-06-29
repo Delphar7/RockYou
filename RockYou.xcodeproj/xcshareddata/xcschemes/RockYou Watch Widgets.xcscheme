@@ -77,7 +77,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "D81AB0E82EC2C06400DA3A6E"
             BuildableName = "RockYou Watch App.app"
-            BlueprintName = "RockYou Watch App"
             ReferencedContainer = "container:RockYou.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -111,7 +110,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "D8AA01012F1C000100000001"
             BuildableName = "RockYou Watch Widgets.appex"
-            BlueprintName = "RockYou Watch Widgets"
             ReferencedContainer = "container:RockYou.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

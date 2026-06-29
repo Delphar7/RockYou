@@ -172,7 +172,6 @@ struct ConfigPanel<E: AnyObject & Observable>: View {
       Spacer()
       // Handle both String and Int
       if prop.getValue(engine) is Int {
-        let intValue = (prop.getValue(engine) as? Int) ?? 0
         TextField(
           "",
           value: Binding(

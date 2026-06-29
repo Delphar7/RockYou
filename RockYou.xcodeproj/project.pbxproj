@@ -19,6 +19,8 @@
 		D8DAD200000000000000001 /* DPad-Ring.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000001 /* DPad-Ring.png */; };
 		D8DAD200000000000000003 /* Stick.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000003 /* Stick.png */; };
 		D8DAD200000000000000004 /* StickShadow.png in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000004 /* StickShadow.png */; };
+		D8DAD100000000000000010 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000010 /* AppIcon.icon */; };
+		D8DAD200000000000000010 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = D8DAD000000000000000010 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,6 +108,7 @@
 		D8DAD000000000000000006 /* breaker.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; name = breaker.usdz; path = Resources/Shipping/breaker.usdz; sourceTree = "<group>"; };
 		D8DAD000000000000000007 /* DPad-Refracted.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "DPad-Refracted.png"; path = "Resources/Shipping/DPad-Refracted.png"; sourceTree = "<group>"; };
 		D8DAD000000000000000008 /* DPad-Regular.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "DPad-Regular.png"; path = "Resources/Shipping/DPad-Regular.png"; sourceTree = "<group>"; };
+		D8DAD000000000000000010 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = Resources/AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -256,6 +259,7 @@
 				D8DAD000000000000000004 /* StickShadow.png */,
 				D8DAD000000000000000005 /* PlasticTexture.png */,
 				D8DAD000000000000000006 /* breaker.usdz */,
+				D8DAD000000000000000010 /* AppIcon.icon */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -528,6 +532,7 @@
 				D8DAD200000000000000001 /* DPad-Ring.png in Resources */,
 				D8DAD200000000000000003 /* Stick.png in Resources */,
 				D8DAD200000000000000004 /* StickShadow.png in Resources */,
+				D8DAD200000000000000010 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -556,6 +561,7 @@
 				D8DAD100000000000000004 /* StickShadow.png in Resources */,
 				D8DAD100000000000000005 /* PlasticTexture.png in Resources */,
 				D8DAD100000000000000006 /* breaker.usdz in Resources */,
+				D8DAD100000000000000010 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

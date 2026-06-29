@@ -49,6 +49,10 @@ final class BreakerSwitchSnapshotManager: ObservableObject {
   /// If no snapshot exists yet, we render immediately (to avoid the first-lock case where
   /// a debounced timer hasn't fired yet).
   func requestSnapshot(size: CGSize) {
+    // Offscreen `ARView` snapshotting asserts in MPS (VideoLightSpillGenerator warm-up) on the
+    // simulator's software-Metal stack under the Xcode 27 / SDK 26 beta. The live `RealityView`
+    // path is unaffected, so the static-snapshot optimization is disabled on the simulator.
+    #if !targetEnvironment(simulator)
     guard size.width > 0, size.height > 0 else { return }
     guard size != currentSize || snapshot == nil else { return }
     currentSize = size
@@ -80,10 +84,13 @@ final class BreakerSwitchSnapshotManager: ObservableObject {
         await self?.renderSnapshot(size: size, reason: "debounced")
       }
     }
+    #endif
   }
 
   /// Forces a snapshot render immediately (no debounce). Intended for the lock overlay path.
   func forceSnapshot(size: CGSize, reason: String) {
+    // Disabled on the simulator — see `requestSnapshot` (ARView/MPS warm-up assert under the beta).
+    #if !targetEnvironment(simulator)
     guard size.width > 0, size.height > 0 else { return }
     currentSize = size
     renderTimer?.invalidate()
@@ -91,9 +98,14 @@ final class BreakerSwitchSnapshotManager: ObservableObject {
     Task { @MainActor in
       await self.renderSnapshot(size: size, reason: reason)
     }
+    #endif
   }
 
   private func renderSnapshot(size: CGSize, reason: String) async {
+    // NOTE: On the simulator this is never reached — `requestSnapshot`/`forceSnapshot` (the only
+    // callers) short-circuit before scheduling, because the offscreen `ARView` asserts in MPS
+    // (VideoLightSpillGenerator warm-up) on the beta simulator's software-Metal stack.
+
     // Single-flight: never run two offscreen ARViews at once. Coalesce to the latest request.
     guard !isRendering else {
       pendingRender = (size, reason)

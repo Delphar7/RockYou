@@ -63,7 +63,17 @@ final class AppCacheManager: ObservableObject {
     }
   }
 
+  /// Invoked when the user *explicitly* launches a channel (user-initiated), so platform layers
+  /// (e.g. CloudKit household sync) can record and share the most-recent-use. Set at app bootstrap.
+  /// This is intentionally the only signal that moves a channel to the head of the strip — passive
+  /// active-app observation does not reorder.
+  var onExplicitLaunch: (@MainActor (_ appId: String, _ deviceId: String, _ at: Date) -> Void)?
+
   func noteAppActivated(appId: String, deviceId: String, at timestamp: Date = Date()) {
+    // Notify platform sync first so an explicit launch always reaches CloudKit, even if the local
+    // value is already current (dedupe below would otherwise early-return).
+    onExplicitLaunch?(appId, deviceId, timestamp)
+
     var map = mruByDevice[deviceId] ?? [:]
     let t = timestamp.timeIntervalSince1970
     if map[appId] == t { return }

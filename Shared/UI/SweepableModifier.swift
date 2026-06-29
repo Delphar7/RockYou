@@ -87,15 +87,17 @@ struct SweepableModifier: ViewModifier {
   // MARK: - Cancel distance tuning
   //
   // Shared rule across platforms:
-  // - Start with a platform-tuned baseline distance.
-  // - While the press is still "tentative", allow a small amount of wiggle (initialMultiplier).
-  // - Once we've committed to a hold (overlay shown), allow more wiggle (lockedMultiplier).
+  // - The "tentative" phase (before the overlay shows) is the only place that contends with
+  //   scroll/pan gestures, so it stays tight: a platform-tuned baseline with a tiny bit of wiggle.
+  // - Once we've committed to a hold (overlay shown) the overlay is modal — the source button's
+  //   frame no longer matters, and scroll is no longer a plausible intent — so we can be generous.
+  //   We use a flat, absolute distance here rather than scaling the (scroll-tuned) baseline.
   //
   // Note: On platforms where we rely on SwiftUI's `onLongPressGesture(maximumDistance:)`,
   // we only get one threshold, so we use the "initial" phase there.
   private enum SweepCancelTuning {
     static let initialMultiplier: CGFloat = 1.10  // "tiny bit bigger"
-    static let lockedMultiplier: CGFloat = 2.40  // +240% once committed (when supported)
+    static let lockedDistance: CGFloat = 32  // absolute slop once committed (touch-router path)
   }
 
   // Baseline distance (used by the touch-router path).
@@ -109,7 +111,7 @@ struct SweepableModifier: ViewModifier {
   // Threshold used by the "committed" phase (touch-router path only).
   @MainActor
   private var cancelDistanceLocked: CGFloat {
-    SweepableModifierPlatform.baseCancelDistance * SweepCancelTuning.lockedMultiplier
+    SweepCancelTuning.lockedDistance
   }
 
   private var sweepManager: SweepManager { SweepManager.shared }

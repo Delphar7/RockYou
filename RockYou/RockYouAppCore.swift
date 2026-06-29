@@ -10,6 +10,13 @@ enum RockYouAppCore {
     // Initialize CloudKit household sync (pairings + MRU).
     CloudKitHouseholdStore.shared.startIfNeeded()
 
+    // Route explicit in-app launches to CloudKit immediately (no wait for the active-app observer)
+    // so the household converges on the same "most recent first" order. Observed active-app changes
+    // (hardware remote / other members) funnel through the same `recordUse` path.
+    AppCacheManager.shared.onExplicitLaunch = { appId, deviceId, at in
+      CloudKitHouseholdStore.shared.recordUse(deviceId: deviceId, appId: appId, at: at, source: "launch")
+    }
+
     // Kick off non-forced icon maintenance on startup (shared behavior across iOS + macOS).
     Task.detached(priority: .background) {
       // Route heavy icon maintenance off MainActor; only bounce to main for lightweight UI refresh.

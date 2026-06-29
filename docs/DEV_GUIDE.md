@@ -130,27 +130,34 @@ Deployment target is higher than your simulator runtime. Lower:
 - `WATCHOS_DEPLOYMENT_TARGET`
 - `MACOSX_DEPLOYMENT_TARGET`
 
-## Regenerating app icons (iOS + watchOS + macOS)
+## Regenerating the app icon (iOS + iPadOS + watchOS + macOS)
 
-**Source of truth:** `Resources/R_monogram.svg`
+The app icon is a single Liquid Glass Icon Composer bundle, **`Resources/AppIcon.icon`**
+(committed). `actool` compiles it into every platform variant plus flat PNG/`.icns`
+fallbacks for pre-26 OSes; the OS applies the glass effect at runtime. It is wired into
+the `RockYou` and `RockYou Watch App` targets, both with
+`ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`.
 
-- **Background**: `#662D91`
-- **Foreground**: pure white
+**Source of truth:** `Resources/R_bold_monogram.svg`
 
-Icons are stored in:
+- **Background**: `#662D91` (Roku purple) — supplied as the bundle fill, not baked in
+- **Foreground**: pure white bold cursive `R`, inset to clear the watchOS circle
 
-- iOS/macOS: `RockYou/Assets.xcassets/AppIcon.appiconset/`
-- watchOS: `RockYou Watch App/Assets.xcassets/AppIcon.appiconset/`
-
-To regenerate all PNGs from the SVG (including mac icon sizes), run:
-
-```bash
-# From the repo root:
-python3 Scripts/regenerate_app_icons_from_svg.py --open
-```
-
-Watch-only regeneration (useful if you have a watch-specific SVG to avoid clipping in circular icons):
+Regenerate (headless — requires Node 18+ and Xcode 26+'s `ictool`):
 
 ```bash
-python3 Scripts/regenerate_app_icons_from_svg.py --svg Resources/R_monogram.watch.svg --watch-only --open
+# From the repo root. Rebuilds Resources/AppIcon.icon in place.
+python3 Scripts/build_app_icon.py
+
+# Add glass previews (iOS + watchOS) and a flat App Store PNG while tuning:
+python3 Scripts/build_app_icon.py --preview --marketing /tmp/marketing.png
+
+# Retune the inset (smaller = more margin); the watchOS circle is the tight constraint:
+python3 Scripts/build_app_icon.py --glyph-scale 0.62
+
+# Verify the toolchain if a build can't find the icon renderer:
+npx -y -p icon-composer-mcp icon-composer doctor
 ```
+
+Commit the regenerated `Resources/AppIcon.icon` — no Xcode project changes are needed
+unless the bundle is renamed or moved.

@@ -66,6 +66,12 @@
       // Host SwiftUI content (keep a stable documentView to avoid scroll position resets)
       let hostingView = NSHostingView(rootView: content)
       hostingView.translatesAutoresizingMaskIntoConstraints = false
+      // Hug the SwiftUI content's intrinsic size. Without this, NSHostingView's default sizing
+      // (changed under the Xcode 27 / SDK 26 beta) greedily fills the proposed width — so in the
+      // wide landscape-split layout the document view expands far beyond the grid and the narrow
+      // strip is left-padded with dead space. Because the document view is reused (never replaced),
+      // that inflated geometry then persists when shrinking back to true portrait.
+      hostingView.sizingOptions = [.intrinsicContentSize]
       scrollView.documentView = hostingView
       context.coordinator.hostingView = hostingView
 
@@ -78,24 +84,24 @@
     func updateNSView(_ scrollView: InterceptingScrollView, context: Context) {
       // DO NOT replace documentView here (that resets scroll offset back to zero).
       // Just update the existing hosting view's rootView.
-      if let existing = context.coordinator.hostingView {
+      let existing =
+        context.coordinator.hostingView ?? (scrollView.documentView as? NSHostingView<Content>)
+      if let existing {
+        context.coordinator.hostingView = existing
         let preservedOrigin = scrollView.contentView.bounds.origin
         existing.rootView = content
         existing.invalidateIntrinsicContentSize()
+        // Force a synchronous layout so the *reused* document view recomputes its frame for the new
+        // content/size. Without this, after a layout-mode transition (e.g. landscape-split ↔ true
+        // portrait) the reused document view can retain a stale frame (greedy width / offset),
+        // which shows up as leading "dead space" in the strip and persists because the document
+        // view is never replaced. Pairs with `sizingOptions = .intrinsicContentSize` (makeNSView).
+        scrollView.layoutSubtreeIfNeeded()
         // Preserve scroll offset across content updates / state toggles.
         if scrollView.contentView.bounds.origin != preservedOrigin {
           scrollView.contentView.scroll(to: preservedOrigin)
         }
         // Reflect so scroller size stays correct when content size changes.
-        scrollView.reflectScrolledClipView(scrollView.contentView)
-      } else if let existing = scrollView.documentView as? NSHostingView<Content> {
-        context.coordinator.hostingView = existing
-        let preservedOrigin = scrollView.contentView.bounds.origin
-        existing.rootView = content
-        existing.invalidateIntrinsicContentSize()
-        if scrollView.contentView.bounds.origin != preservedOrigin {
-          scrollView.contentView.scroll(to: preservedOrigin)
-        }
         scrollView.reflectScrolledClipView(scrollView.contentView)
       }
 
