@@ -1,6 +1,7 @@
 //
 //  WakeOnLAN.swift
 //  RockYou (Shared)
+//  SPDX-License-Identifier: MPL-2.0
 //
 //  Cross-platform Wake-on-LAN helper.
 //

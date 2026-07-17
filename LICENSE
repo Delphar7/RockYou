@@ -1,0 +1,54 @@
+RockYou — Licensing
+===================
+
+This repository is split-licensed on purpose. Two goals pull in different
+directions, so two licenses apply:
+
+  1. The reverse-engineered Roku ECP-2 protocol layer is the part worth
+     sharing with the world — the hard-won knowledge about the undocumented
+     authenticated WebSocket protocol Roku devices actually speak, plus the
+     discovery and parsing code around it. Improvements to it should flow
+     back. It is licensed under the Mozilla Public License 2.0 (file-level
+     copyleft): use it, ship it inside anything you like, but if you change
+     one of those files, publish your changes to that file.
+
+  2. Everything else — the application: the UI, the household sync design,
+     the watch app, the shader playgrounds, the product design — is
+     source-available, not open source. You may read it, run it, learn from
+     it, and build non-competing things on it. You may NOT repackage it as a
+     competing or substitute product (a rename, a port to another
+     language/platform, or a reskin still counts). It is licensed under the
+     PolyForm Perimeter License 1.0.1.
+
+Neither is legal advice; both are standard, lawyer-drafted licenses used as-is.
+
+--------------------------------------------------------------------------------
+The application  →  PolyForm Perimeter License 1.0.1
+--------------------------------------------------------------------------------
+
+All files in this repository are licensed under the PolyForm Perimeter License
+1.0.1, EXCEPT the protocol-layer files listed below. Full text:
+
+    LICENSES/PolyForm-Perimeter-1.0.1.md
+
+Required Notice: Copyright (c) 2026 Delphar Se7en
+
+--------------------------------------------------------------------------------
+The Roku ECP-2 protocol layer  →  Mozilla Public License 2.0
+--------------------------------------------------------------------------------
+
+The following files are licensed under the Mozilla Public License 2.0 instead.
+Each source file also carries an `SPDX-License-Identifier: MPL-2.0` header.
+Full text:
+
+    LICENSES/MPL-2.0.txt
+
+Protocol-layer files (the authoritative list):
+
+  RockYou/Network/RokuWebSocketClient.swift
+  RockYou/Network/RokuDiscoveryService.swift
+  Shared/RokuXMLFieldParser.swift
+  Shared/Services/WakeOnLAN.swift
+
+The protocol reference material in Resources/Docs/ (Protocol.md,
+TV-Protocols.md) is likewise offered under MPL-2.0.

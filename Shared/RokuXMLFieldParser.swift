@@ -1,6 +1,7 @@
 //
 //  RokuXMLFieldParser.swift
 //  RockYou (Shared)
+//  SPDX-License-Identifier: MPL-2.0
 //
 //  Utility for parsing "flat" Roku XML responses into a tag->value dictionary.
 //  Intended primarily for /query/device-info.

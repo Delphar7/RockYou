@@ -154,8 +154,12 @@ Sec-WebSocket-Protocol: ecp-2
 
 ### Response Computation
 
+The key value is not stored in this repository. The app fetches it at runtime from an
+app-scoped CloudKit record (`RokuAuthKeyStore`); builds provisioned for a different CloudKit
+container must supply their own copy of the key there.
+
 ```
-KEY = "<ECP2-AUTH-KEY-REDACTED>"
+KEY = <32 hex chars in UUID format, fetched at runtime>
 
 function charTransform(char, shift=9):
     if char is hex digit (0-9, A-F):

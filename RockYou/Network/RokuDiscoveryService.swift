@@ -1,6 +1,7 @@
 //
 //  RokuDiscoveryService.swift
 //  RockYou
+//  SPDX-License-Identifier: MPL-2.0
 //
 //  Network discovery service for Roku devices.
 //  Supports multiple discovery methods via provider pattern.

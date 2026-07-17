@@ -18,7 +18,7 @@ final class CloudKitHouseholdStore {
   // MARK: - Schema
 
   private enum Schema {
-    static let containerId = "iCloud.com.jtr.RockYou"
+    static let containerId = CloudKitConfig.containerId
 
     static let zoneName = "RockYouZone"
     static let rootRecordType = "RockYouRoot"

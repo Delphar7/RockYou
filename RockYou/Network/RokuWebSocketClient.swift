@@ -1,5 +1,6 @@
 // RokuWebSocketClient.swift
-// RockYou - MIT License
+// RockYou
+// SPDX-License-Identifier: MPL-2.0
 //
 // Clean-room implementation of Roku's ecp-2 WebSocket protocol
 // using Apple's Network framework for consistency with discovery.
@@ -64,8 +65,8 @@ actor RokuWebSocketClient {
 
   // MARK: - Authentication Constants
 
-  /// The authentication key used for ecp-2 challenge-response
-  private static let authKey = "<ECP2-AUTH-KEY-REDACTED>"
+  // The ecp-2 challenge-response key is not compiled in; it is fetched at runtime
+  // (and cached) by RokuAuthKeyStore. See Resources/Docs/Protocol.md § Authentication.
 
   /// Transform a character for auth key derivation
   private static nonisolated func charTransform(_ char: UInt8, _ shift: UInt8) -> UInt8 {
@@ -88,13 +89,13 @@ actor RokuWebSocketClient {
   }
 
   /// Derive the auth seed from the key
-  private static nonisolated var authSeed: Data {
-    Data(authKey.utf8.map { charTransform($0, 9) })
+  private static nonisolated func authSeed(from key: String) -> Data {
+    Data(key.utf8.map { charTransform($0, 9) })
   }
 
   /// Compute the challenge response
-  private static nonisolated func computeAuthResponse(challenge: String) -> String {
-    let data = challenge.data(using: .utf8)! + authSeed
+  private static nonisolated func computeAuthResponse(challenge: String, key: String) -> String {
+    let data = challenge.data(using: .utf8)! + authSeed(from: key)
     return SHA1.digest(data).base64EncodedString()
   }
 
@@ -156,6 +157,10 @@ actor RokuWebSocketClient {
     }
 
     state = .connecting
+
+    // Warm the auth key cache in parallel with the TCP/WebSocket handshake so
+    // handleAuthentication() usually finds it already resolved.
+    RokuAuthKeyStore.shared.prefetch()
 
     // Create WebSocket URL with the ecp-session path
     guard let url = URL(string: "ws://\(deviceIP):8060/ecp-session") else {
@@ -304,8 +309,16 @@ actor RokuWebSocketClient {
       throw ECPError.authenticationFailed("Failed to parse challenge: \(json)")
     }
 
+    // Resolve the auth key (cached after first fetch; see RokuAuthKeyStore).
+    let authKey: String
+    do {
+      authKey = try await RokuAuthKeyStore.shared.authKey()
+    } catch {
+      throw ECPError.authenticationFailed("Auth key unavailable: \(error.localizedDescription)")
+    }
+
     // Compute response
-    let response = Self.computeAuthResponse(challenge: challenge.paramChallenge)
+    let response = Self.computeAuthResponse(challenge: challenge.paramChallenge, key: authKey)
 
     // Build authentication response JSON manually to ensure correct key format
     let authJSON = """
