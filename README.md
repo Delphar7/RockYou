@@ -3,16 +3,24 @@
 A Roku remote for iPhone, iPad, Mac, and Apple Watch, built on a clean-room
 implementation of Roku's undocumented ECP-2 WebSocket protocol.
 
-Roku's public control API (ECP-1, plain HTTP on port 8060) is unauthenticated —
-and for exactly that reason, newer Roku firmware ships a "Limited Mode" that
-answers it with HTTP 403. Roku's own mobile app keeps working because it speaks
-a second, undocumented protocol: ECP-2, an authenticated WebSocket session on
-the same port. This repository documents that protocol and implements it from
-observed behavior: the challenge-response authentication, the event
-subscription model, the request/response correlation scheme, and the quirks
-that only show up on real hardware. The protocol reference lives in
-[Resources/Docs/Protocol.md](Resources/Docs/Protocol.md) and is licensed MPL-2.0
-specifically so it can be reused outside this app.
+## Why this is harder than it sounds
+
+Controlling a Roku over the network *should* be trivial — Roku ships a public
+HTTP control API (ECP-1, port 8060). In practice it isn't, for three reasons
+this project had to solve:
+
+1. **The public API is unauthenticated — so newer firmware disables it.**
+   Because ECP-1 has no auth, recent Roku "Limited Mode" answers it with HTTP
+   403. Roku's own app keeps working because it speaks a *second* protocol.
+2. **That second protocol is undocumented.** ECP-2 is an authenticated
+   WebSocket session on the same port — a SHA-1 challenge-response, an
+   event-subscription model, and a request/response correlation scheme, none of
+   it published. This repository implements it from observed behavior and writes
+   the spec down in [Resources/Docs/Protocol.md](Resources/Docs/Protocol.md)
+   (licensed MPL-2.0 so the knowledge can be reused outside this app).
+3. **The devices don't behave the way they advertise** (see *When the hardware
+   doesn't cooperate*, below), and the platform fights back too — watchOS
+   forbids the very networking the protocol needs.
 
 ## How it works
 
@@ -31,6 +39,24 @@ per-request timeout tasks. A connection health probe uses a 3-second
 `query-device-info` round trip — dead TCP connections fail fast, so the full
 timeout is rarely paid.
 ([RockYou/Network/RokuWebSocketClient.swift](RockYou/Network/RokuWebSocketClient.swift))
+
+**When the hardware doesn't cooperate.** Real Rokus don't match their own
+documentation, and the client is built around the discrepancies rather than
+pretending they aren't there:
+
+- Roku *advertises* events it then never emits (`active-app-changed`,
+  `screensaver-started`), so active-app tracking rides
+  `media-player-state-changed` instead — and because Netflix omits even *that*,
+  a 5-second poll backs it up.
+- The wire is inconsistent about its own field names (`param-mute` vs
+  `param-muted`), so both are handled.
+- Streaming sticks can't control TV volume or power at all — which is why a
+  stick can be *paired* to a Roku TV so those specific keys route to the TV
+  while navigation stays on the stick.
+
+Every one of these is catalogued in
+[Resources/Docs/Protocol.md](Resources/Docs/Protocol.md), not silently patched
+around, so the next person doesn't have to rediscover them.
 
 **Command routing.** A higher-level client owns a WebSocket pool keyed by IP
 with single-flight connects, and routes commands through per-device FIFO
@@ -64,15 +90,11 @@ Non-obvious decisions, each with the file or doc that motivates it:
   explicit `-DROCKYOU_ENABLE_ECP1_FALLBACK` flag, so Limited-Mode 403s cannot
   silently reappear as a degraded path
   ([RockYou/Network/RokuECPClient.swift](RockYou/Network/RokuECPClient.swift)).
-- **Streamer↔TV pairing** routes volume/power keys to a paired Roku TV while
-  navigation goes to the streaming stick — streaming devices cannot control TV
-  volume or power themselves
-  ([Resources/Docs/Protocol.md](Resources/Docs/Protocol.md)).
-- **Protocol quirks are documented, not patched around silently**: which
-  advertised events are accepted but never emitted, `param-mute` vs
-  `param-muted`, why active-app tracking rides `media-player-state-changed`,
-  and why a 5-second poll backs up apps (Netflix) that omit state events
-  ([Resources/Docs/Protocol.md](Resources/Docs/Protocol.md)).
+- **The remote layout was migrated, and the old one deleted — not kept as a
+  fallback.** An earlier per-orientation composite renderer (behind a
+  `useSlotShellRenderer` toggle) was fully replaced by one slot-based shell;
+  once the shell shipped, the toggle and ~1,000 lines of legacy layout were
+  removed rather than left as dead alternatives.
 - **CloudKit schema-version gating**: if cloud data was written by a newer app
   version, this build blocks CloudKit access entirely rather than risk
   corrupting it; shared-zone migration is deliberately deferred
@@ -131,16 +153,20 @@ CryptoKit, paginated build query) instead of hand-managing it.
 
 ## Support matrix
 
-| Area | Status |
-| --- | --- |
-| Roku TVs and streaming players (ECP-2) | Implemented; the protocol surface marked `Unverified*` in code is best-guess and untested |
-| Non-Roku TVs (Samsung, LG, Sony, Vizio, Android/Fire TV) | Research notes only ([Resources/Docs/TV-Protocols.md](Resources/Docs/TV-Protocols.md), [Resources/Docs/OtherTVPlans.md](Resources/Docs/OtherTVPlans.md)); not implemented |
-| Wake-on-LAN | iOS/macOS only; watchOS cannot send it |
-| watchOS direct device control | Not possible (OS networking policy); watch proxies through the phone |
-| HDMI-CEC power control | Deliberately deferred — needs a hardware bridge |
-| CloudKit schema migration | Placeholder only; mismatched schema blocks sync rather than migrating |
+Honest about what's actually been run against hardware versus what's built,
+deferred, or research-only. `—` means not implemented.
 
-Known gaps are tracked honestly in [docs/WORK_REMAINING.md](docs/WORK_REMAINING.md).
+| Area | Verified | Notes |
+|---|---|---|
+| Roku TVs & streaming players (ECP-2) | ✓ | Built and used against real Roku hardware. The `Unverified*` methods in code are best-guess ECP-1→ECP-2 mappings and are untested. |
+| Wake-on-LAN power-on | ✓ (iOS/macOS) | watchOS cannot send it. |
+| Household sync (CloudKit) | ✓ | Newest-wins MRU. Schema *migration* is a placeholder — a mismatch blocks sync rather than migrating. |
+| watchOS direct device control | — | Impossible under OS network policy; the watch proxies through the phone. |
+| Non-Roku TVs (Samsung, LG, Sony, Vizio, Android/Fire TV) | — | Research notes only ([TV-Protocols.md](Resources/Docs/TV-Protocols.md), [OtherTVPlans.md](Resources/Docs/OtherTVPlans.md)); not implemented. |
+| HDMI-CEC power control | — | Deliberately deferred — needs a hardware bridge. |
+
+Remaining work, including what's deliberately *not* being done, is tracked in
+[docs/WORK_REMAINING.md](docs/WORK_REMAINING.md).
 
 ## Architecture
 
